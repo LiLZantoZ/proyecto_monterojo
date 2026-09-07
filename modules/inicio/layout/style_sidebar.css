@@ -1,0 +1,247 @@
+/* =========================================
+   SIDEBAR
+   =========================================
+   Una tarjeta blanca redondeada que FLOTA sobre el fondo, no una columna pegada al borde. Es la
+   misma estructura del sistema de bodega, con la paleta de Monterojo: donde allá va el verde, acá
+   va el vino, y la cabecera es negra porque el logo de Monterojo es un círculo negro y sobre
+   blanco quedaría un disco recortado en medio de la tarjeta.
+
+   Los colores salen de las variables de 00-tema.css. */
+
+.sidebar {
+    width: var(--ancho-sidebar);
+    flex: none;                       /* no se encoge cuando la tabla de al lado es ancha */
+    height: calc(100vh - 80px);       /* 80 = los 40px de padding que pone .app-shell arriba y abajo */
+    background-color: var(--blanco);
+    border-radius: 20px;
+    /* Sombra marcada: sobre el fondo oscuro, una sombra tenue no despega la tarjeta y el sidebar
+       parece pegado al fondo en vez de flotar sobre él. */
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 20px 16px;
+}
+
+/* --- Cabecera con la marca --- */
+
+.sidebar-header {
+    text-align: center;
+    padding: 16px 12px 14px;
+    margin-bottom: 14px;
+    background: var(--negro);
+    border-radius: 14px;
+    border-bottom: 3px solid var(--vino);
+}
+
+.sidebar-marca {
+    width: 86px;
+    height: auto;
+    display: block;
+    margin: 0 auto 8px;
+}
+
+.sidebar-sistema {
+    display: block;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+}
+
+/* --- Opciones --- */
+
+/* Scroll propio, independiente del logo y del pie: así agregar módulos al menú nunca empuja ni
+   achica la foto y el nombre del usuario. min-height:0 es lo que habilita overflow-y dentro de
+   un hijo flex en columna — sin eso el contenedor crece en vez de scrollear. */
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-grow: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar        { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-track  { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb  { background: #e0d8d8; border-radius: 10px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: var(--vino); }
+
+.nav-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 11px 13px;
+    color: #374151;
+    text-decoration: none;
+    font-size: 0.92rem;
+    font-weight: 500;
+    border-radius: 10px;
+    transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+/* La barrita de acento va como ::before y no como border-left: un borde que aparece al pasar el
+   mouse empuja el texto 3 px a la derecha y el menú entero tiembla. */
+.nav-link::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 0;                        /* crece desde el centro al activarse */
+    border-radius: 0 3px 3px 0;
+    background-color: var(--vino);
+    transition: height 0.18s ease;
+}
+
+.nav-link i {
+    font-size: 1.05rem;
+    width: 20px;
+    text-align: center;
+    color: var(--vino);
+    transition: color 0.18s ease;
+}
+
+/* El :not() excluye Cerrar sesión, que lleva las dos clases: sin él, esta regla le ganaría por
+   orden de cascada al hover propio del logout y los dos se verían igual. */
+.nav-link:not(.nav-link-logout):hover {
+    background-color: var(--vino-claro);
+    color: var(--vino-oscuro);
+    transform: translateX(2px);
+}
+
+.nav-link:not(.nav-link-logout):hover::before { height: 20px; }
+
+.nav-link:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: -2px;
+}
+
+/* La pantalla en la que está parado el usuario. La clase la pone el script de sidebar.php
+   comparando la URL. */
+.nav-link.active {
+    background-color: var(--vino-claro);
+    color: var(--vino-oscuro);
+    font-weight: 700;
+}
+
+.nav-link.active::before { height: 22px; }
+.nav-link.active i       { color: var(--vino-oscuro); }
+.nav-link.active:hover   { transform: none; }   /* el activo no se mueve: ya está donde está */
+
+/* Cerrar sesión: gris en reposo para que no compita con los módulos, y su propio hover. */
+.nav-link-logout {
+    margin-top: 8px;
+    color: var(--texto-suave);
+}
+
+.nav-link-logout i      { color: #9ca3af; }
+.nav-link-logout:hover  { background-color: var(--vino-claro); color: var(--vino-oscuro); }
+.nav-link-logout:hover i{ color: var(--vino); }
+
+/* --- Perfil al pie --- */
+
+.sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 13px 12px;
+    border-radius: 12px;
+    background-color: var(--vino-claro);
+    border: 1px solid #eddcdc;
+}
+
+.user-avatar {
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    object-fit: cover;                /* una foto no cuadrada se recorta, no se deforma */
+    border: 2px solid var(--blanco);
+    box-shadow: 0 0 0 2px var(--vino);
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;                     /* habilita el recorte con … de los textos de abajo */
+}
+
+.user-name,
+.user-role {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;              /* un nombre largo recorta, no ensancha el sidebar */
+}
+
+.user-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.user-role {
+    font-size: 0.75rem;
+    color: var(--vino);
+    font-weight: 500;
+}
+
+/* =========================================
+   PANTALLAS ANGOSTAS
+   =========================================
+   Por debajo de 900 px el menú se pliega fuera de pantalla y se abre con el botón. */
+
+.btn-menu,
+.fondo-menu {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .btn-menu {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        z-index: 1200;
+        width: 42px;
+        height: 42px;
+        border: none;
+        border-radius: 10px;
+        background: var(--negro);
+        color: var(--blanco);
+        font-size: 1rem;
+        cursor: pointer;
+        box-shadow: var(--sombra-media);
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        height: calc(100vh - 28px);
+        z-index: 1300;
+        transform: translateX(-120%);   /* -120% y no -100%: así la sombra tampoco asoma */
+        transition: transform 0.22s ease;
+    }
+
+    .sidebar.sidebar-abierto {
+        transform: translateX(0);
+    }
+
+    .fondo-menu.activo {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 1250;
+        background: rgba(0, 0, 0, 0.5);
+    }
+}

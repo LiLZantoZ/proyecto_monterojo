@@ -1,0 +1,47 @@
+/* =========================================
+   TEMA — LA PALETA DE MONTEROJO
+   =========================================
+   Todos los colores del sistema salen de acá. Ninguna otra hoja escribe un color a mano.
+
+   POR QUÉ: en el sistema de bodega el verde de la marca está escrito literal (#2e7d32) en
+   decenas de reglas repartidas por quince archivos. Cambiar un tono significa buscar y
+   reemplazar a ciegas, y siempre queda alguno afuera.
+
+   De dónde sale la paleta: el logo de Monterojo Gourmet es un círculo NEGRO con la tipografía y
+   la montaña en blanco. De ahí el negro como color de marca. El vino es el "rojo" del nombre —
+   se usa solo como acento (foco, enlaces, el estado activo del menú), nunca como fondo grande,
+   porque en superficie amplia compite con el logo en vez de acompañarlo. */
+
+:root {
+    /* Marca */
+    --negro:        #111111;
+    --negro-suave:  #1e1e1e;
+    --vino:         #8e1b1b;   /* el acento: monte ROJO */
+    --vino-oscuro:  #6f1414;
+    --vino-claro:   #f6ebeb;   /* fondos muy tenues del acento */
+
+    /* Superficies */
+    --crema:        #f5f2ed;   /* fondo de las zonas de contenido */
+    --blanco:       #ffffff;
+    --borde:        #e3ded6;
+
+    /* Texto */
+    --texto:        #1b1b1b;
+    --texto-suave:  #6b6560;
+
+    /* Estados. Verde y rojo puros, no de marca: acá lo que importa es que se lean como
+       "salió bien" y "salió mal" a primera vista, no que combinen. */
+    --exito:        #2e7d32;
+    --error:        #c62828;
+
+    /* Sombras, para no repetir la misma tripleta de valores en cada tarjeta */
+    --sombra-suave: 0 2px 10px rgba(0, 0, 0, 0.06);
+    --sombra-media: 0 10px 30px rgba(0, 0, 0, 0.14);
+    --sombra-fuerte: 0 18px 45px rgba(0, 0, 0, 0.28);
+
+    /* Medidas compartidas entre el sidebar y el contenido: el ancho del menú aparece en los dos
+       lados (el aside lo fija, el contenido lo descuenta) y con dos números sueltos se
+       desincronizan al primer ajuste. */
+    --ancho-sidebar: 260px;
+    --radio:         14px;
+}

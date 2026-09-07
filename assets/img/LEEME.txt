@@ -1,0 +1,32 @@
+FOTOS DE MARCA
+==============
+
+El sistema busca estos archivos por nombre exacto. El que no exista NO rompe nada: la pantalla
+muestra el logo de Monterojo sobre negro en su lugar (ver imagenDeMarca() en config/config.php).
+Apenas se copie el archivo acá, aparece solo — no hay que tocar código ni reiniciar nada.
+
+En la raíz de assets/img/
+-------------------------
+  fondo.jpg          Fondo de TODAS las pantallas. Apaisada y grande (1920x1080 o mas).
+                     Encima se le aplica un velo vinoso, asi que sirve una foto con color fuerte.
+                     Sugerencia: la de las papas cayendo sobre fondo rojo.
+
+  bienvenida.jpg     Cabecera de la tarjeta del panel de inicio. Apaisada, se recorta a 260 px
+                     de alto tomando la franja del centro.
+                     Sugerencia: la campana "El arte de la crocancia" o la caja de madera.
+
+  stand.jpg          Miniatura del bloque "Portafolio Monterojo Gourmet" (140x96, se recorta).
+                     Sugerencia: las cinco bolsas en fila sobre fondo rojo.
+
+En assets/img/sabores/
+----------------------
+Fotos de empaque, preferible con fondo claro o blanco: se muestran completas, sin recortar.
+
+  bbq_dulce.jpg
+  lima_limon.jpg
+  sal_rosada.jpg
+  ron_viejo_caldas.jpg
+  club_colombia.jpg
+
+Para agregar o quitar un sabor de la galeria se edita UN archivo:
+modules/inicio/layout/sabores_lista.php

@@ -1,0 +1,837 @@
+/* =========================================
+   PANTALLAS DE MÓDULO: CABECERA, TABLA, MODALES
+   =========================================
+   Todo lo que comparten Consolidados, Maestro y Picking. Va acá y no dentro de cada módulo
+   justamente para que la tercera pantalla no traiga su propia versión de la misma tabla. */
+
+/* Toda la pantalla del módulo va dentro de una tarjeta blanca.
+ *
+ * Antes el título, las píldoras y las etiquetas de los filtros iban sueltos sobre el fondo
+ * oscuro: había que ponerles color claro y sombra de texto para que se leyeran, y aun así
+ * quedaban a merced de las zonas claras de la foto de fondo. Dentro de la tarjeta el texto vuelve
+ * a ser negro sobre blanco, que es donde mejor se lee y no depende de qué foto haya detrás. */
+.modulo {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: var(--blanco);
+    border-radius: 16px;
+    box-shadow: var(--sombra-fuerte);
+    padding: 24px 26px 28px;
+}
+
+/* --- Cabecera de la pantalla --- */
+
+.modulo-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.modulo-header h2 {
+    font-size: 1.4rem;
+    color: var(--negro);
+}
+
+.modulo-acciones {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+/* --- Píldoras de resumen --- */
+
+.pastillas {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+/* Fondo crema y no blanco: la píldora vive DENTRO de la tarjeta blanca del módulo, y en blanco
+   sobre blanco solo se vería su borde. */
+.pastilla {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 7px 13px;
+    border-radius: 999px;
+    background: var(--crema);
+    border: 1px solid var(--borde);
+    font-size: 0.82rem;
+    color: var(--texto-suave);
+}
+
+.pastilla strong {
+    color: var(--negro);
+    font-size: 0.95rem;
+}
+
+/* La píldora de alerta: se usa para "PLU sin maestro", que no es un error del sistema sino un
+   dato que falta cargar. Por eso es ámbar y no roja. */
+.pastilla-alerta {
+    background: #fef6e7;
+    border-color: #f0d9a8;
+    color: #92400e;
+}
+
+.pastilla-alerta strong {
+    color: #92400e;
+}
+
+/* --- Botones --- */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 15px;
+    border: 1px solid var(--borde);
+    border-radius: 9px;
+    background: var(--blanco);
+    color: var(--texto);
+    font-size: 0.86rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.btn:hover {
+    background: var(--crema);
+    border-color: #cfc8bd;
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: 1px;
+}
+
+.btn-primario {
+    background: var(--negro);
+    border-color: var(--negro);
+    color: var(--blanco);
+}
+
+.btn-primario:hover {
+    background: var(--vino);
+    border-color: var(--vino);
+}
+
+.btn-acento {
+    background: var(--vino);
+    border-color: var(--vino);
+    color: var(--blanco);
+}
+
+.btn-acento:hover {
+    background: var(--vino-oscuro);
+    border-color: var(--vino-oscuro);
+}
+
+.btn-chico {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* --- Buscador --- */
+
+.buscador {
+    position: relative;
+    margin-bottom: 16px;
+}
+
+.buscador i {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--texto-suave);
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+
+.buscador input {
+    width: 100%;
+    padding: 11px 14px 11px 40px;
+    border: 1px solid var(--borde);
+    border-radius: 9px;
+    font-size: 0.9rem;
+    background: var(--blanco);
+    color: var(--texto);
+}
+
+.buscador input:focus {
+    outline: none;
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+/* --- Filtros --- */
+
+.filtros {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 16px;
+}
+
+.filtro {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.filtro label {
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--texto-suave);
+}
+
+.filtro select,
+.filtro input {
+    padding: 8px 11px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    font-size: 0.86rem;
+    background: var(--blanco);
+    color: var(--texto);
+    min-width: 190px;
+}
+
+.filtro select:focus,
+.filtro input:focus {
+    outline: none;
+    border-color: var(--vino);
+}
+
+/* --- Tabla --- */
+
+/* El scroll horizontal vive en este contenedor y NO en la página: una tabla ancha no tiene que
+   arrastrar el sidebar ni la cabecera fuera de la pantalla. */
+/* Sin sombra propia: la tabla ya está dentro de la tarjeta blanca del módulo, y una tarjeta con
+   sombra dentro de otra con sombra se lee como dos capas apiladas sin motivo. El borde alcanza
+   para delimitarla. */
+.tabla-caja {
+    background: var(--blanco);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    overflow-x: auto;
+}
+
+table.tabla {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+table.tabla thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;              /* la cabecera queda por encima de las filas al hacer scroll */
+    background: var(--negro);
+    color: var(--blanco);
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.76rem;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 11px 12px;
+    white-space: nowrap;
+}
+
+table.tabla tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--borde);
+    vertical-align: middle;
+}
+
+table.tabla tbody tr:last-child td {
+    border-bottom: none;
+}
+
+table.tabla tbody tr:hover {
+    background: var(--crema);
+}
+
+/* La última columna se queda pegada al borde derecho mientras la tabla se desplaza, para que la
+   acción de cada fila esté siempre a la vista. Lleva fondo propio —sin él se transparenta el
+   contenido que pasa por debajo— y el mismo cambio de color en :hover que la fila, o al pasar el
+   mouse se vería un recuadro de otro color al final. */
+/* El `:not(.fila-detalle)` es imprescindible: la fila de detalle tiene UNA sola celda con
+   colspan, así que también es "la última" y sin excluirla se volvería pegajosa — la tabla de
+   productos entera quedaría flotando sobre la de pedidos al desplazarse. */
+.tabla-accion-fija > thead > tr > th:last-child,
+.tabla-accion-fija > tbody > tr:not(.fila-detalle) > td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--blanco);
+    box-shadow: -6px 0 8px -6px rgba(0, 0, 0, 0.18);   /* insinúa que hay más tabla debajo */
+}
+
+.tabla-accion-fija > thead > tr > th:last-child {
+    z-index: 3;                                        /* por encima de las celdas fijas del cuerpo */
+    background: var(--negro);
+}
+
+.tabla-accion-fija > tbody > tr:not(.fila-detalle):hover > td:last-child        { background: var(--crema); }
+.tabla-accion-fija > tbody > tr.fila-sin-maestro > td:last-child                { background: #fffaf2; }
+.tabla-accion-fija > tbody > tr.fila-sin-maestro:hover > td:last-child          { background: #fdf3e3; }
+.tabla-accion-fija > tbody > tr.fila-pedido-abierta > td:last-child             { background: var(--vino-claro); }
+
+/* =========================================
+   TABLA DE PEDIDOS CON DETALLE DESPLEGABLE (Picking)
+   =========================================
+   Una fila por pedido y, debajo, una fila oculta con sus productos. */
+
+/* Los dos botones de la fila del pedido. En columna y no en fila: uno al lado del otro obligan a
+   la columna a medir el doble, y esa columna está fija al borde derecho (ver .tabla-accion-fija),
+   así que se comería el ancho de la tabla. */
+.acciones-pedido {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: stretch;
+}
+
+.acciones-pedido .btn {
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.btn-detalle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--borde);
+    border-radius: 7px;
+    background: var(--blanco);
+    color: var(--vino);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background 0.14s ease, transform 0.18s ease;
+}
+
+.btn-detalle:hover {
+    background: var(--vino-claro);
+}
+
+.btn-detalle:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: 1px;
+}
+
+/* El chevron gira con el propio botón: es un solo icono y no hay que cambiarlo por otro. */
+.btn-detalle[aria-expanded="true"] {
+    transform: rotate(90deg);
+}
+
+/* El pedido abierto se marca para no perderlo de vista cuando su detalle empuja las filas
+   siguientes hacia abajo. */
+.fila-pedido-abierta > td {
+    background: var(--vino-claro);
+}
+
+/* La celda que contiene la tabla de productos: sin padding, para que la tabla de adentro llegue
+   a los bordes en vez de quedar flotando en un marco. */
+.fila-detalle > td {
+    padding: 0 !important;
+    background: var(--crema);
+    border-bottom: 2px solid var(--borde);
+}
+
+/* La tabla anidada. Su cabecera NO puede ser sticky —heredarlo de .tabla la dejaría flotando
+   sobre la tabla de pedidos al scrollear— y va en gris, no en el negro de la tabla principal,
+   para que se lea como un nivel de adentro y no como otra tabla independiente. */
+.tabla-productos thead th {
+    position: static;
+    background: #3a3a3a;
+    font-size: 0.7rem;
+}
+
+.tabla-productos tbody td {
+    padding: 8px 12px;
+    font-size: 0.82rem;
+}
+
+/* Texto solo para lectores de pantalla: la columna del desplegable no lleva título visible
+   —es una flecha— pero sin encabezado la tabla queda con una columna sin nombre. */
+.sr-solo {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Las columnas numéricas van CENTRADAS, encabezado y contenido.
+   Antes el encabezado quedaba a la izquierda (lo heredaba de thead th) y el número a la derecha,
+   así que el título y su dato no se leían en la misma vertical y había que rastrear a qué columna
+   pertenecía cada cifra. Se conserva tabular-nums para que los dígitos midan todos lo mismo y las
+   cifras sigan alineándose entre filas. */
+.num,
+table.tabla thead th.num {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.centro,
+table.tabla thead th.centro {
+    text-align: center;
+}
+
+/* El dato que falta se muestra así y no como 0: un cero se lee como "no lleva ninguna", que es
+   una afirmación distinta de "no sabemos". */
+.sin-dato {
+    color: #b0a89e;
+}
+
+/* Fila cuyo PLU no está en el maestro: no se puede calcular cajas. Se marca entera para que se
+   vea de un vistazo cuántas faltan, en vez de tener que leer celda por celda. */
+tr.fila-sin-maestro {
+    background: #fffaf2;
+}
+
+tr.fila-sin-maestro:hover {
+    background: #fdf3e3;
+}
+
+.tabla-vacia {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--texto-suave);
+    font-size: 0.9rem;
+}
+
+/* --- Grupos por CEDI --- */
+
+/* Cada CEDI es un <details>: la cabecera despliega su tabla. Arrancan cerrados —el <details> sin
+   atributo `open`— porque con tres CEDI abiertos hay que scrollear cien filas para llegar al
+   segundo. El margen es el mismo abierto y cerrado, así la lista de cabeceras queda compacta. */
+.grupo-desplegable {
+    margin-bottom: 14px;
+}
+
+.grupo-cabecera {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: var(--negro);
+    color: var(--blanco);
+    border-radius: var(--radio) var(--radio) 0 0;
+    border-bottom: 3px solid var(--vino);
+    cursor: pointer;
+
+    /* El triángulo que el navegador pone por defecto en un <summary>. Se quita en las dos formas
+       que hacen falta: `list-style` para los navegadores actuales y el pseudoelemento para los
+       basados en WebKit, que lo ignoran. En su lugar va el chevron de abajo, que sí se puede
+       alinear y girar. */
+    list-style: none;
+}
+
+.grupo-cabecera::-webkit-details-marker {
+    display: none;
+}
+
+.grupo-cabecera:hover {
+    background: var(--negro-suave);
+}
+
+/* El foco del teclado tiene que verse: el <summary> es un control, y con el borde por defecto
+   del navegador quedaría casi invisible sobre negro. */
+.grupo-cabecera:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: -2px;
+}
+
+/* Cerrado no hay tabla debajo, así que la cabecera redondea las cuatro esquinas en vez de quedar
+   con el borde recto colgando de la nada. */
+.grupo-desplegable:not([open]) .grupo-cabecera {
+    border-radius: var(--radio);
+}
+
+.grupo-flecha {
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    color: var(--vino);
+    transition: transform 0.18s ease;
+}
+
+.grupo-desplegable[open] .grupo-flecha {
+    transform: rotate(90deg);
+}
+
+/* Empuja el botón del PDF contra el borde derecho, que es lo que antes hacía el
+   justify-content: space-between (ya no sirve: ahora hay tres hijos, no dos). */
+.grupo-titulo {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Lo que va a la derecha de la cabecera de un grupo, cuando lleva acciones propias.
+   flex-shrink: 0 para que el nombre —que puede ser largo— no las aplaste. */
+.grupo-acciones {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.grupo-nombre {
+    font-weight: 600;
+    font-size: 0.98rem;
+}
+
+/* El conteo al lado del nombre del CEDI. En su propia píldora y no pegado al texto: es un dato
+   distinto —cuántos pedidos hay— y así se lee de un vistazo sin tener que buscarlo dentro de la
+   línea de totales de abajo. */
+.grupo-conteo {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--vino);
+    color: var(--blanco);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    vertical-align: 2px;
+}
+
+.grupo-resumen {
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.grupo-desplegable .tabla-caja {
+    border-radius: 0 0 var(--radio) var(--radio);
+    border-top: none;
+}
+
+/* --- Modales --- */
+
+/* Se abren y se cierran SOLO con la clase .active, nunca tocando style.display: con display
+   escrito a mano, la animación de entrada no corre y el modal aparece de golpe. */
+.modal-fondo {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+.modal-fondo.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal-caja {
+    width: 100%;
+    max-width: 540px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--blanco);
+    border-radius: var(--radio);
+    box-shadow: var(--sombra-fuerte);
+    transform: translateY(-12px);
+    transition: transform 0.18s ease;
+}
+
+.modal-fondo.active .modal-caja {
+    transform: translateY(0);
+}
+
+.modal-caja-ancha {
+    max-width: 780px;
+}
+
+.modal-cabecera {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--negro);
+    color: var(--blanco);
+    border-radius: var(--radio) var(--radio) 0 0;
+    border-bottom: 3px solid var(--vino);
+}
+
+.modal-cabecera h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.modal-cerrar {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.modal-cerrar:hover {
+    color: var(--blanco);
+}
+
+.modal-cuerpo {
+    padding: 20px;
+    overflow-y: auto;   /* el que scrollea es el cuerpo, no el modal entero: la cabecera y los
+                           botones se quedan siempre a la vista */
+}
+
+.modal-pie {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--borde);
+    background: var(--crema);
+    border-radius: 0 0 var(--radio) var(--radio);
+}
+
+/* --- Campos dentro de un modal --- */
+
+.campo {
+    margin-bottom: 16px;
+}
+
+.campo label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.campo input[type="file"],
+.campo input[type="text"],
+.campo select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    background: var(--blanco);
+    color: var(--texto);
+}
+
+.campo input:focus,
+.campo select:focus {
+    outline: none;
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+.campo .ayuda {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--texto-suave);
+    line-height: 1.5;
+}
+
+.campo-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+
+.campo-check input {
+    margin-top: 2px;
+}
+
+/* Aviso dentro de una pantalla (no flotante): explica algo del estado actual, como que falta
+   cargar el maestro. Se queda hasta que la causa se resuelva. */
+.aviso {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    padding: 13px 16px;
+    margin-bottom: 18px;
+    border-radius: 10px;
+    border-left: 4px solid;
+    font-size: 0.86rem;
+    line-height: 1.5;
+}
+
+.aviso i {
+    font-size: 1.05rem;
+    margin-top: 1px;
+    flex-shrink: 0;
+}
+
+/* Sin esto, el display:flex de arriba le gana al display:none que el navegador aplica a
+   [hidden], y un aviso que el JavaScript "ocultó" se sigue viendo — vacío, que es peor que
+   verlo con texto. Pasa con el aviso de saldos del rótulo. */
+.aviso[hidden] {
+    display: none;
+}
+
+.aviso-atencion {
+    background: #fef6e7;
+    border-left-color: #d97706;
+    color: #7c4a03;
+}
+
+.aviso-info {
+    background: var(--vino-claro);
+    border-left-color: var(--vino);
+    color: var(--vino-oscuro);
+}
+
+/* =========================================
+   PERSONAL Y ASIGNACIÓN
+   ========================================= */
+
+/* El botón de asignar muestra a quién está asignada la entrega. Ancho mínimo para que la columna
+   no cambie de tamaño entre "Sin asignar" y un nombre largo, que hace saltar la tabla entera al
+   guardar. */
+.btn-asignar {
+    min-width: 140px;
+    justify-content: center;
+}
+
+/* Sin asignar: en gris y con el borde punteado, para que se lea como un hueco por llenar y no
+   como un dato ya cargado. */
+.btn-sin-asignar {
+    border-style: dashed;
+    color: var(--texto-suave);
+}
+
+.btn-asignar .texto-asignado {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+}
+
+/* Confirmación momentánea de guardado, la misma que usa el campo de texto de la tabla. */
+.btn.guardado {
+    border-color: var(--exito);
+    background: #f0f7f0;
+}
+
+.asignar-entrega {
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    border-radius: 9px;
+    background: var(--crema);
+    border: 1px solid var(--borde);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--negro);
+}
+
+/* Los dos botones de acción de la tabla de personal, uno al lado del otro. */
+.acciones-fila {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+}
+
+/* Estado del personal. Verde/gris y no los colores de marca: acá lo que importa es que se lea
+   "está" o "no está" de un vistazo, no que combine. */
+.etiqueta-estado {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.etiqueta-activo {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    color: #2e7d32;
+}
+
+.etiqueta-inactivo {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+}
+
+/* La fila de alguien inactivo se atenúa, pero no se esconde: sus entregas ya asignadas siguen
+   siendo suyas y hay que poder verlas. */
+.fila-inactiva td {
+    opacity: 0.62;
+}
+
+/* Marca los campos que se pueden dejar en blanco. Sin esto hay que probar a guardar para
+   descubrir cuáles eran obligatorios. */
+.opcional {
+    font-weight: 400;
+    color: var(--texto-suave);
+}
+
+/* Campo del pedido SAP dentro de la tabla de Picking: se edita en el sitio, sin abrir un modal
+   para escribir un número. */
+.input-tabla {
+    width: 118px;
+    padding: 5px 8px;
+    border: 1px solid var(--borde);
+    border-radius: 7px;
+    font-size: 0.82rem;
+    background: var(--blanco);
+    color: var(--texto);
+}
+
+.input-tabla:focus {
+    outline: none;
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+/* Se pinta al guardar y se apaga sola: confirma que ese campo concreto quedó guardado, cosa que
+   un aviso general arriba de la pantalla no dice. */
+.input-tabla.guardado {
+    border-color: var(--exito);
+    background: #f0f7f0;
+}
+
+@media (max-width: 700px) {
+    .modulo-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .filtro select,
+    .filtro input {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .filtro {
+        flex: 1 1 100%;
+    }
+}

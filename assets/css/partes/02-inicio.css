@@ -1,0 +1,377 @@
+/* =========================================
+   ARMAZÓN DE LAS PANTALLAS CON MENÚ
+   =========================================
+   El sidebar flota sobre el fondo con aire alrededor, y el contenido ocupa el resto. El fondo del
+   body (foto + velo vinoso) se ve a través de los dos: ni este contenedor ni .content-area pintan
+   fondo propio, a propósito. */
+
+.app-shell {
+    display: flex;
+    gap: 24px;
+    height: 100vh;
+    padding: 40px;
+}
+
+/* El scroll vive ACÁ y no en la página. Con la página scrolleando, el sidebar —que mide
+   100vh − 80px— se iría hacia arriba al bajar en una tabla de 348 filas y el menú dejaría de
+   estar a mano justo cuando más se navega. */
+.content-area {
+    flex: 1;
+    min-width: 0;              /* sin esto, una tabla ancha estira el flex y desborda la pantalla */
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.content-area::-webkit-scrollbar        { width: 8px; }
+.content-area::-webkit-scrollbar-track  { background: rgba(255, 255, 255, 0.08); border-radius: 10px; }
+.content-area::-webkit-scrollbar-thumb  { background: rgba(255, 255, 255, 0.28); border-radius: 10px; }
+.content-area::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.45); }
+
+/* Columna del panel de inicio. Sin este contenedor cada bloque se centraría por su cuenta y los
+   tres quedarían de anchos distintos. */
+.panel-inicio {
+    width: 100%;
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+/* =========================================
+   TARJETA DE BIENVENIDA
+   ========================================= */
+
+.welcome-box {
+    background: var(--blanco);
+    border-radius: 16px;
+    box-shadow: var(--sombra-fuerte);
+    overflow: hidden;          /* la foto de arriba llega a los bordes redondeados */
+    text-align: center;
+}
+
+/* La foto de cabecera. `cover` y una altura fija: son fotos de campaña apaisadas y lo que
+   interesa es la franja central, no verlas enteras. */
+.welcome-hero {
+    display: block;
+    width: 100%;
+    height: 260px;
+    object-fit: cover;
+}
+
+/* Lo que se muestra mientras no exista la foto: el logo sobre su propio negro. No es un hueco
+   gris ni una imagen rota — es la identidad de la marca igual. */
+.welcome-hero-marca {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 190px;
+    background: var(--negro);
+}
+
+.welcome-hero-marca img {
+    width: 120px;
+    height: auto;
+}
+
+.welcome-texto {
+    padding: 26px 32px 30px;
+    border-top: 3px solid var(--vino);
+}
+
+.welcome-box h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.3px;
+    color: var(--negro);
+    margin-bottom: 10px;
+}
+
+.welcome-box p {
+    color: var(--texto-suave);
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.welcome-box p strong {
+    color: var(--vino);
+    font-weight: 700;
+}
+
+/* =========================================
+   ESTADO DEL SISTEMA
+   =========================================
+   La franja de datos reales debajo del saludo. Sin esto el panel de inicio es una tarjeta con un
+   nombre y nada más: hay que entrar a cada módulo para saber si el archivo del día está cargado. */
+
+.estado-sistema {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.estado-dato {
+    background: var(--blanco);
+    border-radius: 12px;
+    box-shadow: var(--sombra-media);
+    padding: 16px 18px;
+    text-align: left;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    border-left: 4px solid var(--vino);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Solo los que son enlace reaccionan: un dato que no lleva a ninguna parte no debe parecer
+   pulsable. */
+a.estado-dato:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--sombra-fuerte);
+}
+
+.estado-dato-valor {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--negro);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.estado-dato-etiqueta {
+    display: block;
+    margin-top: 5px;
+    font-size: 0.78rem;
+    color: var(--texto-suave);
+    line-height: 1.35;
+}
+
+/* El dato que pide acción: falta cargar el maestro. Ámbar y no rojo — no es un error del
+   sistema, es un archivo que todavía no subieron. */
+.estado-dato-alerta {
+    border-left-color: #d97706;
+    background: #fffaf2;
+}
+
+.estado-dato-alerta .estado-dato-valor { color: #92400e; }
+
+/* =========================================
+   PORTAFOLIO DE SABORES
+   ========================================= */
+
+.portafolio {
+    background: var(--blanco);
+    border-radius: 16px;
+    box-shadow: var(--sombra-fuerte);
+    padding: 24px 28px 28px;
+    margin-top: 18px;
+    text-align: left;
+}
+
+.portafolio-header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 20px;
+}
+
+.portafolio-stand {
+    width: 140px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 10px;
+    flex-shrink: 0;
+    background: var(--negro);
+}
+
+.portafolio-header h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--negro);
+    letter-spacing: -0.3px;
+    margin-bottom: 5px;
+}
+
+.portafolio-header p {
+    color: var(--texto-suave);
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+/* auto-fill + minmax: las tarjetas se reacomodan solas según el ancho, sin un media query por
+   cada tamaño de pantalla. */
+.portafolio-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+}
+
+.portafolio-item {
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--crema);
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.portafolio-item:hover {
+    box-shadow: var(--sombra-media);
+    transform: translateY(-2px);
+}
+
+/* `contain` y no `cover`: son fotos de empaque, y recortarlas cortaría la bolsa y el logotipo,
+   que es justo lo que hay que ver. */
+.portafolio-item img {
+    display: block;
+    width: 100%;
+    height: 130px;
+    object-fit: contain;
+    background: var(--blanco);
+    padding: 8px;
+}
+
+/* El hueco de un sabor cuya foto todavía no está cargada. Mantiene la altura de la fila para que
+   la grilla no quede con tarjetas de distinto alto. */
+.portafolio-item-sinfoto {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 130px;
+    background: var(--negro);
+}
+
+.portafolio-item-sinfoto img {
+    width: 54px;
+    height: auto;
+    padding: 0;
+    background: none;
+    opacity: 0.85;
+}
+
+.portafolio-item figcaption {
+    padding: 10px 10px 12px;
+    text-align: center;
+    border-top: 1px solid var(--borde);
+    background: var(--blanco);
+}
+
+.portafolio-nombre {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--negro);
+    line-height: 1.3;
+}
+
+.portafolio-etiqueta {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 9px;
+    border-radius: 12px;
+    background: var(--vino-claro);
+    border: 1px solid #eddcdc;
+    color: var(--vino);
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.portafolio-etiqueta-especial {
+    background: #fdf3e3;
+    border-color: #f0d9a8;
+    color: #92400e;
+}
+
+/* =========================================
+   PANTALLAS ANGOSTAS
+   ========================================= */
+
+@media (max-width: 900px) {
+    .app-shell {
+        padding: 14px;
+        gap: 0;
+    }
+
+    /* Hueco para que el botón del menú no tape el título de la pantalla */
+    .content-area {
+        padding-top: 54px;
+    }
+}
+
+@media (max-width: 600px) {
+    .welcome-hero      { height: 180px; }
+    .welcome-texto     { padding: 22px 20px 26px; }
+    .welcome-box h1    { font-size: 1.2rem; }
+    .portafolio        { padding: 20px 18px 22px; }
+    .portafolio-header { flex-direction: column; align-items: flex-start; }
+    .portafolio-stand  { width: 100%; height: 120px; }
+}
+
+/* =========================================
+   AVISO FLOTANTE DE RESULTADO (config/mensajes.php)
+   =========================================
+   Aparece arriba y al centro, por encima de todo, y se va solo. Deliberadamente NO bloquea la
+   pantalla: informa el resultado de algo que ya ocurrió, no pide una decisión. */
+
+.mensaje-sistema {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4000;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: min(560px, calc(100vw - 32px));
+    padding: 14px 16px;
+    border-radius: 12px;
+    border-left: 5px solid;
+    background-color: var(--blanco);
+    box-shadow: var(--sombra-fuerte);
+    animation: mensaje-sistema-entra 0.22s ease-out;
+}
+
+@keyframes mensaje-sistema-entra {
+    from { opacity: 0; transform: translate(-50%, -14px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.mensaje-sistema.mensaje-sistema-saliendo {
+    opacity: 0;
+    transform: translate(-50%, -14px);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.mensaje-sistema.mensaje-exito { border-left-color: var(--exito); }
+.mensaje-sistema.mensaje-error { border-left-color: var(--error); }
+
+.mensaje-sistema-icono {
+    font-size: 20px;
+    line-height: 1.35;
+}
+
+.mensaje-exito .mensaje-sistema-icono { color: var(--exito); }
+.mensaje-error .mensaje-sistema-icono { color: var(--error); }
+
+.mensaje-sistema-texto {
+    flex: 1;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--texto);
+}
+
+.mensaje-sistema-cerrar {
+    flex: none;
+    border: none;
+    background: none;
+    padding: 0 2px;
+    font-size: 22px;
+    line-height: 1;
+    color: #9ca3af;
+    cursor: pointer;
+}
+
+.mensaje-sistema-cerrar:hover {
+    color: var(--texto);
+}

@@ -1,0 +1,358 @@
+/* =========================================
+   RESETEO Y PANTALLA DE LOGIN
+   ========================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Fondo de toda la aplicación: la foto de producto, fija y cubriendo la pantalla, con un velo
+   vinoso encima.
+
+   El velo NO es decoración: sin él, las tarjetas blancas del contenido pierden contraste contra
+   los rojos y los dorados de las fotos de producto, y el texto negro sobre la foto se vuelve
+   ilegible en las zonas claras. `fixed` evita que la foto se mueva al scrollear una tabla larga.
+
+   El color de respaldo y el degradado están escritos SIEMPRE, no solo cuando hay foto: mientras
+   assets/img/fondo.jpg no exista, el fondo es ese degradado y la pantalla se ve terminada igual
+   (ver imagenDeMarca() en config/config.php y la regla .con-fondo de abajo). */
+body {
+    color: var(--texto);
+    min-height: 100vh;
+    background-color: var(--negro);
+    background-image: radial-gradient(circle at 22% 18%, #3a1a1a 0%, #1a0d0d 55%, #000000 100%);
+    background-attachment: fixed;
+}
+
+/* La pone el PHP solo cuando el archivo existe. El degradado va PRIMERO en la lista para quedar
+   por encima de la foto: en CSS, la primera capa de background-image es la de más arriba. */
+body.con-fondo {
+    /* Las dos paradas son densas a propósito (0.90 y 0.76). Con el velo más liviano, una foto de
+       producto con zonas claras deja la esquina de abajo casi al descubierto y las tarjetas
+       blancas pierden el borde contra ella. La foto tiene que dar ambiente, no protagonismo. */
+    background-image:
+        linear-gradient(165deg, rgba(20, 10, 10, 0.90), rgba(96, 18, 18, 0.76)),
+        var(--foto-fondo);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* El centrado va en la clase de la pantalla de login y NO en body.
+   En el sistema de bodega el body centraba con flex para todo el sistema, y las pantallas con
+   menú tenían que envolverse en un <main> de 100vh exactos para contrarrestarlo; cualquier
+   padding que se le agregara al body les sacaba una barra de scroll de 48 px que no llevaba a
+   ninguna parte. Acá cada tipo de pantalla dice cómo se acomoda. */
+/* El fondo lo pone body (foto + velo, o el degradado si todavía no hay foto). Acá solo se centra
+   la tarjeta. */
+.pantalla-login {
+    display: flex;
+    justify-content: center;
+    /* `safe center`: centrado normal cuando la tarjeta entra en pantalla, alineado al inicio
+       cuando no — si no, lo que se desborda hacia arriba queda fuera del alcance del scroll. */
+    align-items: safe center;
+    padding: 24px;
+}
+
+/* =========================================
+   TARJETA DE LOGIN
+   ========================================= */
+
+.login-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    max-width: 880px;
+    background: var(--blanco);
+    border-radius: var(--radio);
+    box-shadow: var(--sombra-fuerte);
+    overflow: hidden;   /* recorta el panel negro contra las esquinas redondeadas */
+}
+
+/* Columna de marca */
+.login-panel {
+    background: var(--negro);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 36px;
+    /* La línea vino es lo único de color en toda la columna: marca el borde entre el panel y el
+       formulario, que sin ella se pierde cuando el blanco y el negro se tocan directamente. */
+    border-right: 3px solid var(--vino);
+}
+
+.login-panel-contenido {
+    text-align: center;
+    max-width: 260px;
+}
+
+.login-panel-marca {
+    width: 170px;
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto 24px;
+}
+
+.login-panel-titulo {
+    color: var(--blanco);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+.login-panel-texto {
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+/* Columna del formulario */
+.login-formulario {
+    padding: 48px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.login-formulario h2 {
+    font-size: 1.6rem;
+    color: var(--negro);
+    margin-bottom: 6px;
+}
+
+.login-subtitulo {
+    color: var(--texto-suave);
+    font-size: 0.9rem;
+    margin-bottom: 26px;
+}
+
+.login-error {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--vino-claro);
+    border-left: 4px solid var(--error);
+    color: #7f1d1d;
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    margin-bottom: 20px;
+}
+
+.login-error i {
+    font-size: 1.05rem;
+    flex-shrink: 0;
+}
+
+/* =========================================
+   CAMPOS
+   ========================================= */
+
+.input-group {
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--texto);
+    margin-bottom: 7px;
+}
+
+.campo-con-icono {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.campo-con-icono > i {
+    position: absolute;
+    left: 14px;
+    color: var(--texto-suave);
+    font-size: 0.95rem;
+    pointer-events: none;   /* el clic tiene que llegar al input que está debajo */
+    transition: color 0.15s ease;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px 14px 12px 40px;   /* el 40 de la izquierda es el hueco del icono */
+    border: 1px solid var(--borde);
+    border-radius: 9px;
+    font-size: 0.95rem;
+    color: var(--texto);
+    background: var(--blanco);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input-group input::placeholder {
+    color: #a8a29b;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+.campo-con-icono:focus-within > i {
+    color: var(--vino);
+}
+
+/* El campo de la contraseña deja sitio a la derecha para el ojo */
+#password {
+    padding-right: 44px;
+}
+
+.btn-ver-clave {
+    position: absolute;
+    right: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--texto-suave);
+    font-size: 0.95rem;
+    padding: 8px 10px;
+    border-radius: 6px;
+    line-height: 1;
+}
+
+.btn-ver-clave:hover {
+    color: var(--vino);
+}
+
+.btn-ver-clave:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: 1px;
+}
+
+.aviso-mayusculas {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+    font-size: 0.78rem;
+    color: #92400e;
+}
+
+/* El atributo hidden lo pone y lo saca el JS. Sin esta regla no haría nada: el display:flex de
+   arriba le gana al display:none que el navegador aplica por defecto a [hidden]. */
+.aviso-mayusculas[hidden] {
+    display: none;
+}
+
+/* Quita las flechitas del input numérico de la cédula: no se incrementa una cédula de a uno, y
+   ocupan justo donde va el cursor. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* =========================================
+   BOTÓN DE ENTRAR
+   ========================================= */
+
+.btn-login {
+    width: 100%;
+    padding: 13px;
+    margin-top: 8px;
+    background: var(--negro);
+    color: var(--blanco);
+    border: none;
+    border-radius: 9px;
+    font-size: 0.98rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.08s ease;
+}
+
+.btn-login:hover:not(:disabled) {
+    background: var(--vino);
+}
+
+.btn-login:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.btn-login:focus-visible {
+    outline: 2px solid var(--vino);
+    outline-offset: 2px;
+}
+
+.btn-login:disabled {
+    opacity: 0.75;
+    cursor: default;
+}
+
+/* El giro que aparece mientras se envía. Es un ::after y no un icono aparte para que el ancho del
+   botón no cambie al aparecer, que produce un salto visible justo cuando se hace clic. */
+.btn-login.cargando .btn-login-texto::after {
+    content: '';
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    margin-left: 9px;
+    vertical-align: -2px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: var(--blanco);
+    border-radius: 50%;
+    animation: girar-boton 0.65s linear infinite;
+}
+
+@keyframes girar-boton {
+    to { transform: rotate(360deg); }
+}
+
+/* =========================================
+   PANTALLAS ANGOSTAS
+   ========================================= */
+
+/* Por debajo de 760 px las dos columnas no entran una al lado de la otra: el panel de marca pasa
+   arriba, en una banda baja, y el formulario ocupa todo el ancho. */
+@media (max-width: 760px) {
+    .login-box {
+        grid-template-columns: 1fr;
+        max-width: 420px;
+    }
+
+    .login-panel {
+        padding: 30px 24px;
+        border-right: none;
+        border-bottom: 3px solid var(--vino);
+    }
+
+    .login-panel-marca {
+        width: 110px;
+        margin-bottom: 14px;
+    }
+
+    .login-panel-texto {
+        display: none;   /* en móvil el logo y el título ya identifican al sistema */
+    }
+
+    .login-formulario {
+        padding: 32px 26px;
+    }
+}
+
+@media (max-width: 480px) {
+    .pantalla-login {
+        padding: 14px;
+    }
+
+    .login-formulario {
+        padding: 26px 20px;
+    }
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Usuario sin foto de perfil">
+    <!-- Avatar por defecto para usuarios sin foto. Antes esto era un enlace a una imagen
+         suelta en un blog externo (i.blogs.es), repetido en 24 vistas: una petición a un
+         servidor ajeno en cada carga de cada pantalla, que además podía desaparecer o
+         cambiar de contenido sin aviso. Es un SVG y no un JPG para que pese ~600 bytes y
+         se vea nítido en cualquier tamaño.
+         Los colores son los de la marca (verde Nutrium sobre gris claro). -->
+    <circle cx="64" cy="64" r="64" fill="#e8ede9"/>
+    <circle cx="64" cy="49" r="22" fill="#2e7d32"/>
+    <path d="M64 78c-22 0-40 14-43 33a64 64 0 0 0 86 0c-3-19-21-33-43-33z" fill="#2e7d32"/>
+</svg>

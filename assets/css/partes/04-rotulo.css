@@ -1,0 +1,237 @@
+/* =========================================
+   RÓTULO DE PICKING
+   =========================================
+   El papel que se pega en cada caja. Se genera uno por caja: si el punto de venta lleva 5 cajas
+   de ese SKU, salen 5 rótulos numerados 1 de 5 … 5 de 5.
+
+   Las medidas están en MILÍMETROS y no en px a propósito: esto termina en una impresora, y en
+   papel un píxel no es una medida — depende del DPI con el que cada navegador decida imprimir.
+   En mm, el rótulo mide lo mismo salga de donde salga. */
+
+.rotulo {
+    width: 100mm;
+    /* flex-shrink: 0 porque en la vista previa el rótulo es un hijo flex y, por defecto, un hijo
+       flex se encoge para caber. Encogido, la previa muestra un rótulo más chico que el que va a
+       salir impreso —y con las barras más finas de lo que serán—, que es justo lo que no se
+       quiere poder creer de una vista previa. */
+    flex-shrink: 0;
+    min-height: 70mm;
+    padding: 7mm;
+    background: #ffffff;
+    color: #000000;
+    border: 1.2mm solid #000000;
+    display: flex;
+    flex-direction: column;
+    /* Se fija la tipografía en vez de heredarla: la hoja de la aplicación puede cambiar y el
+       rótulo tiene que seguir imprimiéndose igual. */
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.rotulo-marca {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    padding-bottom: 3mm;
+    margin-bottom: 4mm;
+    border-bottom: 0.6mm solid #000000;
+}
+
+.rotulo-marca img {
+    width: 14mm;
+    height: auto;
+}
+
+.rotulo-marca span {
+    font-size: 3.4mm;
+    font-weight: bold;
+    letter-spacing: 0.6mm;
+    text-transform: uppercase;
+}
+
+.rotulo-campo {
+    margin-bottom: 3.2mm;
+}
+
+.rotulo-etiqueta {
+    display: block;
+    font-size: 2.8mm;
+    letter-spacing: 0.4mm;
+    text-transform: uppercase;
+    color: #444444;
+}
+
+.rotulo-valor {
+    display: block;
+    font-size: 5mm;
+    font-weight: bold;
+    line-height: 1.2;
+    /* El nombre del punto de venta puede ser largo ("4212 - SUPER INTER EXPRESS Av SEXTA"): se
+       parte en dos renglones en vez de desbordar el borde del rótulo. */
+    overflow-wrap: anywhere;
+}
+
+.rotulo-valor-grande {
+    font-size: 7mm;
+}
+
+/* El nombre del producto es el valor más largo del rótulo ("PLÁTANOS VERDES LIMA LIMÓN MR100G
+   PX24"): un punto menos de cuerpo evita que se coma tres renglones y empuje el código de barras
+   fuera de la etiqueta. */
+.rotulo-valor-producto {
+    font-size: 4.2mm;
+    line-height: 1.25;
+}
+
+/* La numeración: es lo que mira el que descarga el camión para saber si llegó todo, así que va
+   abajo, sola, y es lo más grande de la hoja. */
+.rotulo-conteo {
+    margin-top: auto;
+    padding-top: 4mm;
+    border-top: 0.6mm solid #000000;
+    text-align: center;
+    font-size: 9mm;
+    font-weight: bold;
+    letter-spacing: 0.5mm;
+}
+
+/* --- Código de barras --- */
+
+/* Los márgenes negativos cancelan parte del padding de 7 mm del rótulo, para que el código use
+   94 mm en vez de 86. No es cosmética: con un identificador de 32 caracteres, esos 8 mm de más
+   engordan cada barra de 0,28 a 0,30 mm, y el grosor de la barra más fina es exactamente lo que
+   decide si el lector engancha a la primera o hay que pasarlo tres veces. Quedan 3 mm a cada
+   lado como zona muda, que el estándar exige para que el lector sepa dónde empieza el código. */
+.rotulo-codigo {
+    margin: 3mm -4mm 0;
+    padding: 0 3mm;
+    text-align: center;
+}
+
+/* Altura fija en mm y no en porcentaje: un código de barras se mide en milímetros, no en
+   píxeles. El estirado vertical no afecta la lectura — lo que codifica un Code 128 son los
+   anchos, y esos se escalan todos por igual. */
+.rotulo-codigo img {
+    display: block;
+    width: 100%;
+    height: 14mm;
+    margin: 0 auto;
+}
+
+/* El mismo identificador en texto, para poder teclearlo si el lector no engancha. Monoespaciada
+   con separación entre letras: es un código que se copia carácter por carácter, y en una
+   tipografía proporcional un 1 y una l se confunden. */
+.rotulo-codigo-texto {
+    display: block;
+    margin-top: 1mm;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 3.2mm;
+    letter-spacing: 0.3mm;
+}
+
+/* --- Panel de edición (solo en pantalla) --- */
+
+/* Los campos que se pueden ajustar antes de imprimir. En grilla y no en una fila: son cinco y
+   dos de ellos —punto de venta y CEDI— llevan textos largos que necesitan el ancho completo. */
+.rotulo-controles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: var(--crema);
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+}
+
+.rotulo-controles .campo {
+    margin-bottom: 0;
+}
+
+.rotulo-controles .campo-ancho {
+    grid-column: span 2;
+}
+
+.rotulo-controles input {
+    width: 100%;
+    padding: 8px 11px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    background: var(--blanco);
+    color: var(--texto);
+}
+
+.rotulo-controles input:focus {
+    outline: none;
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+.rotulo-nota {
+    margin-bottom: 14px;
+    font-size: 0.78rem;
+    color: var(--texto-suave);
+    line-height: 1.5;
+}
+
+.rotulo-nota i {
+    color: var(--vino);
+    margin-right: 4px;
+}
+
+/* En una sola columna el `span 2` desbordaría la grilla. */
+@media (max-width: 560px) {
+    .rotulo-controles .campo-ancho {
+        grid-column: span 1;
+    }
+}
+
+/* --- Vista previa en pantalla --- */
+
+/* En pantalla los rótulos se ven en fila; al imprimir cada uno se va a su propia hoja.
+   El scroll horizontal es la contrapartida de que no se encojan (ver .rotulo): en una ventana
+   angosta se desplazan en vez de deformarse. */
+.rotulos-previa {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    justify-content: center;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+/* --- Impresión --- */
+
+@media print {
+    /* Se oculta TODO y después se vuelve a mostrar solo el área de impresión. Es al revés de lo
+       que parece natural (ocultar "lo que sobra"), pero es la única forma que no se rompe cuando
+       la pantalla gana un elemento nuevo que nadie se acordó de agregar a la lista de ocultos. */
+    body.imprimiendo-rotulos > * {
+        display: none !important;
+    }
+
+    body.imprimiendo-rotulos > #area-impresion-rotulos {
+        display: block !important;
+    }
+
+    body.imprimiendo-rotulos {
+        background: #ffffff;
+    }
+
+    #area-impresion-rotulos .rotulo {
+        /* Uno por hoja: pegar dos rótulos cortados a la mitad no le sirve a nadie. El último no
+           lleva salto, para no imprimir una página en blanco al final. */
+        page-break-after: always;
+        break-after: page;
+        margin: 0;
+    }
+
+    #area-impresion-rotulos .rotulo:last-child {
+        page-break-after: auto;
+        break-after: auto;
+    }
+
+    @page {
+        margin: 8mm;
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "require": {
+        "phpoffice/phpspreadsheet": "^5.9",
+        "dompdf/dompdf": "^3.1",
+        "picqer/php-barcode-generator": "^3.3"
+    }
+}
