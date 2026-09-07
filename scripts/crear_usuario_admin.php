@@ -109,7 +109,7 @@ if (preguntarContrasena('Repetir la contraseña: ') !== $contrasena) {
 }
 
 // El hash se genera con password_hash igual que en el alta normal de usuarios: si acá se guardara
-// el texto plano, el login (qasdasdue usa password_verify) nunca lo aceptaría.
+// el texto plano, el login (qasdasdue usasdasdaa password_verify) nunca lo aceptaría.
 $stmt = $pdo->prepare(
     "INSERT INTO usuarios (nombre_usuario, cedula_usuario, contrasena_usuario, id_rol, estado)
      VALUES (:nombre, :cedula, :hash, :rol, 'Activo')"
