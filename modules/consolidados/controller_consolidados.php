@@ -216,18 +216,12 @@ switch ($accion) {
     case 'pdf':
         requierePermiso('modulo_consolidados', $vistaConsolidados);
 
-        $carga = cargaVigente($pdo);
-        if (!$carga) {
-            header("Location: {$vistaConsolidados}?error=sin_datos");
-            exit();
-        }
-
         $filtros = [
             'cedi'  => trim($_GET['cedi'] ?? ''),
             'linea' => trim($_GET['linea'] ?? ''),
         ];
 
-        $porCedi = consolidadoPorCedi($pdo, $carga['id_carga'], $filtros);
+        $porCedi = consolidadoPorCedi($pdo, $filtros);
         if (empty($porCedi)) {
             header("Location: {$vistaConsolidados}?error=sin_datos");
             exit();
@@ -239,7 +233,10 @@ switch ($accion) {
             ? nombreArchivoCedi($filtros['cedi'])
             : 'Consolidado_todos_los_CEDI_' . date('Ymd') . '.pdf';
 
-        descargarConsolidadoPdf($porCedi, $carga, $nombre);
+        // $meta ya no es "la carga vigente" (puede haber varias pendientes): se le pasa la última
+        // importada solo como referencia de "emitido" en el encabezado del PDF, no como el alcance
+        // de los datos —eso ya lo decidió consolidadoPorCedi() mirando TODO lo pendiente.
+        descargarConsolidadoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
         // descargarConsolidadoPdf() termina la ejecución.
 
     default:

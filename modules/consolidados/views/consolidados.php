@@ -9,7 +9,12 @@ require_once __DIR__ . '/../model_consolidados.php';
 
 requierePermiso('modulo_consolidados', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
-$carga = cargaVigente($pdo);
+// Ya no "la carga vigente": los archivos se acumulan (ver importarConsolidado en
+// model_consolidados_import.php), así que acá se juntan los pendientes de TODAS las que sigan
+// activas. $cargasActivas es la lista completa (para la cabecera, "3 archivos"); $hayPendientes
+// es el gate simple que reemplaza al viejo "si hay carga" en el resto de la pantalla.
+$cargasActivas  = cargasActivas($pdo);
+$hayPendientes  = !empty($cargasActivas);
 
 $filtros = [
     'cedi'  => trim($_GET['cedi'] ?? ''),
@@ -17,10 +22,10 @@ $filtros = [
     'plu'   => trim($_GET['plu'] ?? ''),
 ];
 
-$porCedi        = $carga ? consolidadoPorCedi($pdo, $carga['id_carga'], $filtros) : [];
-$cedisDisponibles = $carga ? cedisDeLaCarga($pdo, $carga['id_carga']) : [];
+$porCedi           = $hayPendientes ? consolidadoPorCedi($pdo, $filtros) : [];
+$cedisDisponibles  = $hayPendientes ? cedisPendientes($pdo) : [];
 $lineasDisponibles = lineasDelMaestro($pdo);
-$sinMaestro     = $carga ? pluSinMaestro($pdo, $carga['id_carga']) : 0;
+$sinMaestro        = $hayPendientes ? pluSinMaestro($pdo) : 0;
 
 // Totales generales: se suman los de cada CEDI ya calculados, para no recorrer las filas dos veces.
 $totalGeneral = ['unidades' => 0, 'cajas' => 0, 'saldos' => 0, 'peso_kg' => 0, 'productos' => 0];
@@ -79,10 +84,23 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 </div>
             </header>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
+                <?php
+                // El tooltip lista cada archivo activo con su fecha: la pastilla sola dice "3
+                // archivos", y sin esto no habría forma de ver CUÁLES sin ir a Picking a mirar
+                // fila por fila.
+                $tituloArchivos = implode("\n", array_map(
+                    fn($c) => $c['nombre_archivo'] . ' · ' . date('d/m/Y H:i', strtotime($c['fecha_carga'])),
+                    $cargasActivas
+                ));
+                ?>
                 <div class="pastillas">
-                    <span class="pastilla">Archivo <strong><?php echo htmlspecialchars($carga['nombre_archivo']); ?></strong></span>
-                    <span class="pastilla">Cargado <strong><?php echo date('d/m/Y H:i', strtotime($carga['fecha_carga'])); ?></strong></span>
+                    <span class="pastilla" title="<?php echo htmlspecialchars($tituloArchivos); ?>">
+                        <?php echo count($cargasActivas) === 1 ? 'Archivo' : 'Archivos activos'; ?>
+                        <strong><?php echo count($cargasActivas) === 1
+                            ? htmlspecialchars($cargasActivas[0]['nombre_archivo'])
+                            : count($cargasActivas); ?></strong>
+                    </span>
                     <span class="pastilla">CEDI <strong><?php echo count($cedisDisponibles); ?></strong></span>
                     <span class="pastilla">Unidades <strong><?php echo number_format($totalGeneral['unidades'], 0, ',', '.'); ?></strong></span>
                     <span class="pastilla">Cajas <strong><?php echo number_format($totalGeneral['cajas'], 0, ',', '.'); ?></strong></span>
@@ -117,7 +135,7 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 </div>
             <?php endif; ?>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
                 <form class="filtros" method="GET">
                     <div class="filtro">
                         <label for="f-cedi">CEDI</label>
@@ -160,11 +178,11 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 </form>
             <?php endif; ?>
 
-            <?php if (!$carga): ?>
+            <?php if (!$hayPendientes): ?>
                 <div class="tabla-caja">
                     <p class="tabla-vacia">
-                        Todavía no hay ningún Consolidado cargado.<br>
-                        Usa <strong>Importar Consolidado</strong> para subir el archivo del día.
+                        No hay ningún pedido pendiente.<br>
+                        Usa <strong>Importar Consolidado</strong> para subir un archivo.
                     </p>
                 </div>
 
@@ -282,9 +300,9 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 <div class="aviso aviso-info" style="margin-bottom: 0;">
                     <i class="fa-solid fa-circle-info"></i>
                     <div>
-                        El archivo del día <strong>reemplaza por completo</strong> al anterior: es la foto
-                        entera del pedido, no un agregado. Los números de pedido SAP que ya se hayan
-                        escrito en Picking se pierden con él.
+                        Este archivo se <strong>agrega</strong> a lo que ya está pendiente, no lo
+                        reemplaza: los pedidos que traiga se suman a los que hubiera de otros
+                        archivos, diferenciados por su fecha en Picking y en Consolidados.
                     </div>
                 </div>
             </div>
@@ -334,10 +352,9 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
             <div class="aviso aviso-atencion" style="margin-bottom: 0;">
                 <i class="fa-solid fa-triangle-exclamation"></i>
                 <div>
-                    Volver a importarlo <strong>reemplaza las líneas actuales</strong>, y con ellas se
-                    pierden las <strong>asignaciones de personal</strong> que ya se hubieran hecho sobre
-                    este pedido. Como el archivo es el mismo, los datos van a quedar igual — lo único
-                    que se pierde es ese trabajo.
+                    Como los archivos ya no se reemplazan, volver a importarlo <strong>agrega una
+                    segunda copia</strong> de estos mismos pedidos: van a aparecer duplicados en
+                    Picking y en Consolidados, cada uno pidiendo el doble de lo que corresponde.
                 </div>
             </div>
         </div>

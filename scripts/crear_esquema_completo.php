@@ -413,10 +413,11 @@ $permisos = [
     'modulo_picking'      => 'Ver el alistamiento por punto de venta y generar los rótulos.',
     'modulo_personal'     => 'Dar de alta, editar y eliminar el personal de alistamiento.',
     'modulo_historial'    => 'Consultar los pedidos ya despachados y restaurarlos si hizo falta.',
+    'modulo_rotulos'      => 'Generar rótulos sueltos, sin que vengan de ningún pedido del sistema.',
 ];
 
 $permisosPorRol = [
-    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial'],
+    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos'],
 ];
 
 if ($permisos) {

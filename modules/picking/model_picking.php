@@ -5,26 +5,33 @@
 // Se apoya en el mismo Consolidado que la pantalla anterior; la diferencia es la agrupación. El
 // Consolidado suma todo el CEDI porque el elevador baja producto; Picking abre por punto de venta
 // porque el picker arma una entrega por tienda.
+//
+// YA NO MIRA "LA CARGA VIGENTE". Antes cada importación reemplazaba lo pendiente y solo podía
+// haber una carga activa a la vez; ahora los archivos se acumulan (ver importarConsolidado en
+// model_consolidados_import.php) y acá se mira TODO lo pendiente de TODAS las cargas juntas,
+// diferenciado por su fecha —decidido con el usuario el 2026-09-08—. Por eso cada entrega lleva
+// su propio id_carga en la clave, y ya no solo cedi+orden_compra+punto_venta: la misma tienda
+// puede tener un pedido pendiente de ayer y otro de hoy, y son dos entregas distintas.
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../consolidados/model_consolidados.php';   // desglosarCajas()
 
 /**
- * Una fila por (CEDI, orden de compra, punto de venta, PLU).
+ * Una fila por (carga, CEDI, orden de compra, punto de venta, PLU).
  *
- * Se agrupa por los cuatro y no solo por punto de venta + PLU porque una misma tienda puede
- * aparecer en dos órdenes de compra distintas, y son dos entregas separadas: sumarlas daría un
- * número de cajas que no corresponde a ningún despacho real.
+ * El id_carga entra en la agrupación por la misma razón que el resto: dos entregas de la misma
+ * tienda en cargas distintas no se pueden sumar como si fueran una, aunque coincida hasta el
+ * número de orden de compra.
  *
  * $filtros acepta 'cedi', 'punto_venta' y 'busqueda' (PLU, SKU o descripción).
  */
-function filasPicking($pdo, $idCarga, array $filtros = []) {
+function filasPicking($pdo, array $filtros = []) {
     // despachado = 0 SIEMPRE, no como filtro opcional: una vez que una entrega salió, tiene que
     // dejar de existir para Picking (y, como Consolidados se apoya en la misma columna, también
     // para Consolidados). Si esto fuera condicional, un pedido despachado seguiría apareciendo
     // cada vez que alguien llamara a esta función sin acordarse de excluirlo.
-    $where  = ['l.id_carga = :carga', 'l.despachado = 0'];
-    $params = [':carga' => $idCarga];
+    $where  = ['l.despachado = 0'];
+    $params = [];
 
     // En SQL solo lo que es columna del propio Consolidado. La búsqueda por SKU o descripción
     // toca el maestro, que se resuelve en PHP (ver mapaMaestro en model_consolidados.php).
@@ -48,16 +55,23 @@ function filasPicking($pdo, $idCarga, array $filtros = []) {
     // MAX(id_personal) y MAX(nombre): la asignación se guarda en todas las líneas de la entrega
     // (ver asignarPersonalAEntrega), así que dentro del grupo es siempre el mismo valor. MAX es lo
     // que permite traerlo dentro de un GROUP BY sin sumarlo a la agrupación.
-    $sql = "SELECT l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
+    // MAX(fecha_carga) y MAX(nombre_archivo): igual que el resto de los MAX de acá arriba —dentro
+    // del grupo (que ya incluye id_carga) son siempre el mismo valor—, y son lo que permite
+    // mostrar de qué archivo y de qué fecha vino cada entrega, ahora que puede haber varias cargas
+    // pendientes al mismo tiempo.
+    $sql = "SELECT l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
                    SUM(l.unidades) AS unidades,
                    MAX(l.pedido_sap) AS pedido_sap,
                    MAX(l.ean_punto_venta) AS ean_punto_venta,
                    MAX(l.id_personal) AS id_personal,
-                   MAX(p.nombre) AS personal_nombre
+                   MAX(p.nombre) AS personal_nombre,
+                   MAX(cc.fecha_carga) AS fecha_carga,
+                   MAX(cc.nombre_archivo) AS nombre_archivo
             FROM consolidado_lineas l
             LEFT JOIN personal p ON p.id_personal = l.id_personal
+            LEFT JOIN consolidado_cargas cc ON cc.id_carga = l.id_carga
             WHERE " . implode(' AND ', $where) . "
-            GROUP BY l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item";
+            GROUP BY l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -82,8 +96,12 @@ function filasPicking($pdo, $idCarga, array $filtros = []) {
         $filas[] = $fila;
     }
 
-    // Por CEDI, punto de venta y descripción; los que no tienen maestro al final de su tienda.
+    // Por fecha (lo más nuevo primero), después CEDI, punto de venta y descripción; los que no
+    // tienen maestro al final de su tienda. La fecha manda porque es justo lo que separa una
+    // entrega de otra ahora que puede haber varias cargas pendientes a la vez.
     usort($filas, function ($a, $b) {
+        $cmp = strcmp((string) $b['fecha_carga'], (string) $a['fecha_carga']);
+        if ($cmp !== 0) { return $cmp; }
         $cmp = strcmp($a['cedi'] . $a['punto_venta'], $b['cedi'] . $b['punto_venta']);
         if ($cmp !== 0) { return $cmp; }
         if (($a['descripcion'] === null) !== ($b['descripcion'] === null)) {
@@ -96,12 +114,18 @@ function filasPicking($pdo, $idCarga, array $filtros = []) {
 }
 
 /**
- * Agrupa las filas de filasPicking() por ENTREGA: CEDI + orden de compra + punto de venta.
+ * Agrupa las filas de filasPicking() por ENTREGA: carga + CEDI + orden de compra + punto de
+ * venta.
  *
  * Es la unidad real de trabajo del picker —arma una tienda entera y la despacha—, y es también lo
- * que se repetía en cada fila de la tabla plana: la misma tienda, el mismo CEDI y la misma orden
+ * que se repetía en cada fila de la tabla plana: la misma carga, el mismo CEDI y la misma orden
  * escritos otra vez en cada producto. Al subirlos a la cabecera del grupo, cada fila queda con lo
  * único que cambia entre una y otra: el producto.
+ *
+ * La carga entra en la clave (y no solo CEDI+orden+punto de venta) porque ahora pueden convivir
+ * pendientes de varios archivos: la misma tienda con la misma orden de compra en dos cargas
+ * distintas son DOS entregas, no una —fusionarlas sumaría cajas de dos pedidos que llegaron por
+ * separado como si fueran uno solo.
  *
  * El pedido SAP también es de la entrega y no del producto (ver guardarPedidoSap), así que vive
  * en la cabecera: un solo campo por entrega en vez del mismo número repetido en seis filas.
@@ -112,11 +136,14 @@ function agruparPorEntrega(array $filas) {
     $entregas = [];
 
     foreach ($filas as $f) {
-        $clave = $f['cedi'] . '|' . $f['orden_compra'] . '|' . $f['punto_venta'];
+        $clave = $f['id_carga'] . '|' . $f['cedi'] . '|' . $f['orden_compra'] . '|' . $f['punto_venta'];
 
         if (!isset($entregas[$clave])) {
             $entregas[$clave] = [
                 'clave'           => $clave,
+                'id_carga'        => $f['id_carga'],
+                'fecha_carga'     => $f['fecha_carga'],
+                'nombre_archivo'  => $f['nombre_archivo'],
                 'cedi'            => $f['cedi'],
                 'orden_compra'    => $f['orden_compra'],
                 'punto_venta'     => $f['punto_venta'],
@@ -207,7 +234,9 @@ function agruparPorEntrega(array $filas) {
  *
  * Cada CEDI queda con su lista de entregas y sus totales sumados, para poder mostrar en la
  * cabecera el nombre del CEDI y cuántos pedidos lleva sin recorrer las entregas otra vez desde
- * la vista.
+ * la vista. Un mismo CEDI puede traer entregas de varias fechas a la vez —cada una lo dice en su
+ * propia fila (ver fecha_carga)—, así que acá no hace falta separarlas: se agrupan igual que
+ * siempre y la fecha se distingue dentro del grupo, no entre grupos.
  */
 function agruparPorCedi(array $entregas) {
     $porCedi = [];
@@ -241,7 +270,12 @@ function agruparPorCedi(array $entregas) {
     }
     unset($grupo);
 
-    ksort($porCedi);
+    // El CEDI con MENOS líneas primero, hacia abajo de menor a mayor —el mismo criterio que
+    // consolidadoPorCedi() en model_consolidados.php, y por la misma razón (decidido con el
+    // usuario el 2026-09-08): un CEDI chico se resuelve rápido, y verlo primero deja el grande
+    // para después de haber arrancado con lo fácil, en vez de tener que ir a buscarlo entre CEDI
+    // ordenados alfabéticamente sin relación con cuánto trabajo representan.
+    uasort($porCedi, fn($a, $b) => $a['totales']['lineas'] <=> $b['totales']['lineas']);
 
     return $porCedi;
 }
@@ -249,24 +283,26 @@ function agruparPorCedi(array $entregas) {
 /**
  * Varias entregas de una vez, para imprimir sus hojas juntas.
  *
- * $claves es una lista de ['cedi' => ..., 'oc' => ..., 'pv' => ...]. Se lee TODO el picking una
- * sola vez y después se filtra en memoria: llamando a entregaPicking() en un bucle, veinte
- * pedidos seleccionados serían veinte consultas más veinte lecturas del maestro.
+ * $claves es una lista de ['carga' => ..., 'cedi' => ..., 'oc' => ..., 'pv' => ...]. Se lee TODO
+ * lo pendiente una sola vez y después se filtra en memoria: llamando a entregaPicking() en un
+ * bucle, veinte pedidos seleccionados serían veinte consultas más veinte lecturas del maestro.
  *
  * Devuelve las entregas en el mismo orden en que aparecen en la pantalla, no en el que se hayan
  * tildado: la carpeta de hojas impresas queda ordenada como la tabla.
  */
-function entregasPicking($pdo, $idCarga, array $claves) {
+function entregasPicking($pdo, array $claves) {
     if (!$claves) {
         return [];
     }
 
     $buscadas = [];
     foreach ($claves as $c) {
-        $buscadas[trim($c['cedi'] ?? '') . '|' . trim($c['oc'] ?? '') . '|' . trim($c['pv'] ?? '')] = true;
+        $clave = trim((string) ($c['carga'] ?? '')) . '|' . trim((string) ($c['cedi'] ?? ''))
+               . '|' . trim((string) ($c['oc'] ?? '')) . '|' . trim((string) ($c['pv'] ?? ''));
+        $buscadas[$clave] = true;
     }
 
-    $entregas = agruparPorEntrega(filasPicking($pdo, $idCarga));
+    $entregas = agruparPorEntrega(filasPicking($pdo));
 
     return array_values(array_filter(
         $entregas,
@@ -283,18 +319,19 @@ function entregasPicking($pdo, $idCarga, array $claves) {
  * desde la que se pidió, que es la peor forma de descubrir un error de cálculo.
  */
 function entregaPicking($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta) {
-    $filas = filasPicking($pdo, $idCarga, ['cedi' => $cedi, 'punto_venta' => $puntoVenta]);
+    $filas = filasPicking($pdo, ['cedi' => $cedi, 'punto_venta' => $puntoVenta]);
 
     $entregas = agruparPorEntrega($filas);
-    $clave = $cedi . '|' . $ordenCompra . '|' . $puntoVenta;
+    $clave = $idCarga . '|' . $cedi . '|' . $ordenCompra . '|' . $puntoVenta;
 
     return $entregas[$clave] ?? null;
 }
 
-// Los puntos de venta de la carga, para el desplegable de filtro.
-function puntosDeVenta($pdo, $idCarga, $cedi = null) {
-    $sql = "SELECT DISTINCT punto_venta FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0";
-    $params = [':carga' => $idCarga];
+// Los puntos de venta con algo pendiente, para el desplegable de filtro. Ya no se limita a una
+// carga: junta los de todas las que sigan teniendo líneas sin despachar.
+function puntosDeVenta($pdo, $cedi = null) {
+    $sql = "SELECT DISTINCT punto_venta FROM consolidado_lineas WHERE despachado = 0";
+    $params = [];
 
     if (!empty($cedi)) {
         $sql .= " AND cedi = :cedi";
@@ -310,10 +347,10 @@ function puntosDeVenta($pdo, $idCarga, $cedi = null) {
 /**
  * Guarda el número de pedido SAP.
  *
- * Se escribe en TODAS las líneas de (CEDI, orden de compra, punto de venta), no solo en la del
- * PLU desde el que se escribió: el pedido SAP identifica la ENTREGA a esa tienda, no el producto.
- * Guardarlo por producto haría que la misma entrega apareciera con cinco números distintos, y el
- * rótulo de cada caja diría uno diferente.
+ * Se escribe en TODAS las líneas de (carga, CEDI, orden de compra, punto de venta), no solo en la
+ * del PLU desde el que se escribió: el pedido SAP identifica la ENTREGA a esa tienda, no el
+ * producto. Guardarlo por producto haría que la misma entrega apareciera con cinco números
+ * distintos, y el rótulo de cada caja diría uno diferente.
  *
  * Devuelve true si guardó.
  */
@@ -355,41 +392,44 @@ function guardarPedidoSap($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta, $ped
  * base justo antes de despacharla.
  *
  * Es TODO O NADA: si alguna de las entregas pedidas no tiene personal (o ya no existe, por ejemplo
- * porque el Consolidado se volvió a cargar), NINGUNA se despacha. Despachar la mitad de un lote y
+ * porque esa carga se restauró o cambió), NINGUNA se despacha. Despachar la mitad de un lote y
  * dejar la otra mitad pendiente sin que quien lo pidió lo haya decidido así es más confuso que
  * simplemente no hacer nada y decir por qué.
  *
- * $claves es una lista de ['cedi' => ..., 'oc' => ..., 'pv' => ...].
+ * $claves es una lista de ['carga' => ..., 'cedi' => ..., 'oc' => ..., 'pv' => ...]. La carga es
+ * obligatoria acá —a diferencia de antes— porque ahora una misma tienda puede tener más de un
+ * pedido pendiente a la vez, cada uno en su propia carga.
  *
  * Devuelve:
  *   ['exito' => true,  'despachadas' => int]  — cuántas entregas se marcaron
  *   ['exito' => false, 'mensaje' => string, 'sin_personal' => [['punto_venta'=>, 'orden_compra'=>], ...]]
  */
-function despacharEntregas($pdo, $idCarga, array $claves, $idUsuario) {
+function despacharEntregas($pdo, array $claves, $idUsuario) {
     if (!$claves) {
         return ['exito' => false, 'mensaje' => 'No se recibió ninguna entrega para despachar.', 'sin_personal' => []];
     }
 
-    // Se relee TODO el picking vigente una sola vez (igual que hace entregasPicking()) y se
-    // comprueba cada clave pedida contra ese estado fresco, en vez de una consulta por clave.
-    $entregasActuales = agruparPorEntrega(filasPicking($pdo, $idCarga));
+    // Se relee TODO lo pendiente una sola vez (igual que hace entregasPicking()) y se comprueba
+    // cada clave pedida contra ese estado fresco, en vez de una consulta por clave.
+    $entregasActuales = agruparPorEntrega(filasPicking($pdo));
 
     $porDespachar = [];
     $sinPersonal  = [];
 
     foreach ($claves as $c) {
-        $cedi = trim((string) ($c['cedi'] ?? ''));
-        $oc   = trim((string) ($c['oc'] ?? $c['orden_compra'] ?? ''));
-        $pv   = trim((string) ($c['pv'] ?? $c['punto_venta'] ?? ''));
+        $carga = trim((string) ($c['carga'] ?? ''));
+        $cedi  = trim((string) ($c['cedi'] ?? ''));
+        $oc    = trim((string) ($c['oc'] ?? $c['orden_compra'] ?? ''));
+        $pv    = trim((string) ($c['pv'] ?? $c['punto_venta'] ?? ''));
 
-        if ($cedi === '' || $oc === '' || $pv === '') {
+        if ($carga === '' || $cedi === '' || $oc === '' || $pv === '') {
             continue;
         }
 
-        $clave = $cedi . '|' . $oc . '|' . $pv;
+        $clave = $carga . '|' . $cedi . '|' . $oc . '|' . $pv;
         $entrega = $entregasActuales[$clave] ?? null;
 
-        // No existe (ya se despachó, o el Consolidado cambió): no hay nada que despachar, pero
+        // No existe (ya se despachó, o esa carga cambió): no hay nada que despachar, pero
         // tampoco es un error a mostrar — simplemente no entra ni a la lista buena ni a la mala.
         if ($entrega === null) {
             continue;
@@ -400,7 +440,7 @@ function despacharEntregas($pdo, $idCarga, array $claves, $idUsuario) {
             continue;
         }
 
-        $porDespachar[] = ['cedi' => $cedi, 'oc' => $oc, 'pv' => $pv];
+        $porDespachar[] = ['carga' => $carga, 'cedi' => $cedi, 'oc' => $oc, 'pv' => $pv];
     }
 
     if ($sinPersonal) {
@@ -430,7 +470,7 @@ function despacharEntregas($pdo, $idCarga, array $claves, $idUsuario) {
         foreach ($porDespachar as $p) {
             $stmt->execute([
                 ':usuario' => $idUsuario ?: null,
-                ':carga'   => $idCarga,
+                ':carga'   => $p['carga'],
                 ':cedi'    => $p['cedi'],
                 ':oc'      => $p['oc'],
                 ':pv'      => $p['pv'],
@@ -454,7 +494,7 @@ function despacharEntregas($pdo, $idCarga, array $claves, $idUsuario) {
 function resumenPicking(array $filas) {
     $resumen = [
         'puntos_venta' => count(array_unique(array_map(
-            fn($f) => $f['cedi'] . '|' . $f['orden_compra'] . '|' . $f['punto_venta'], $filas
+            fn($f) => $f['id_carga'] . '|' . $f['cedi'] . '|' . $f['orden_compra'] . '|' . $f['punto_venta'], $filas
         ))),
         'lineas'      => count($filas),
         'unidades'    => 0,

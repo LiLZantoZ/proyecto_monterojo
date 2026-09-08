@@ -53,10 +53,11 @@
         barraConteo.textContent = marcadas.length;
 
         // Los campos ocultos del formulario de descarga se rehacen en cada cambio: así el POST
-        // siempre lleva exactamente lo que está tildado ahora.
+        // siempre lleva exactamente lo que está tildado ahora. 'carga' es nuevo: antes todo el
+        // lote era de la única carga vigente, y ahora cada pedido puede ser de una distinta.
         camposPdf.innerHTML = '';
         marcadas.forEach(function (chk) {
-            ['cedi', 'oc', 'pv'].forEach(function (campo) {
+            ['carga', 'cedi', 'oc', 'pv'].forEach(function (campo) {
                 var input = document.createElement('input');
                 input.type = 'hidden';
                 input.name = campo + '[]';
@@ -148,7 +149,7 @@
 
         var actual = boton.dataset.idPersonal;
         abrirModalAsignar(
-            [{ cedi: boton.dataset.cedi, orden_compra: boton.dataset.oc, punto_venta: boton.dataset.pv }],
+            [{ carga: boton.dataset.carga, cedi: boton.dataset.cedi, orden_compra: boton.dataset.oc, punto_venta: boton.dataset.pv }],
             boton.dataset.pv + ' · O/C ' + boton.dataset.oc,
             (actual && actual !== '0') ? actual : ''
         );
@@ -161,7 +162,7 @@
 
         abrirModalAsignar(
             marcadas.map(function (chk) {
-                return { cedi: chk.dataset.cedi, orden_compra: chk.dataset.oc, punto_venta: chk.dataset.pv };
+                return { carga: chk.dataset.carga, cedi: chk.dataset.cedi, orden_compra: chk.dataset.oc, punto_venta: chk.dataset.pv };
             }),
             marcadas.length + ' pedido(s) seleccionado(s)',
             ''
@@ -261,12 +262,12 @@
     // asignado dejaría despachar con datos que ya cambiaron.
     // =============================================================================
 
-    // Arma {cedi, orden_compra, punto_venta} a partir de cualquier elemento que lleve esos tres
-    // data- (el checkbox de la fila, el propio botón de despachar...). Es también la misma forma
-    // en la que el servidor devuelve cada pedido en `sin_personal` (sin el cedi, que ahí no hace
-    // falta para mostrarlo).
+    // Arma {carga, cedi, orden_compra, punto_venta} a partir de cualquier elemento que lleve esos
+    // cuatro data- (el checkbox de la fila, el propio botón de despachar...). 'carga' es
+    // obligatorio ahora: cedi+oc+pv ya no alcanzan para identificar la entrega si hay más de una
+    // carga pendiente con esos mismos tres datos.
     function datosDeEntrega(el) {
-        return { cedi: el.dataset.cedi, orden_compra: el.dataset.oc, punto_venta: el.dataset.pv };
+        return { carga: el.dataset.carga, cedi: el.dataset.cedi, orden_compra: el.dataset.oc, punto_venta: el.dataset.pv };
     }
 
     // Si la fila tiene personal asignado. Se lee del botón "Asignar personal" de esa misma fila

@@ -70,21 +70,13 @@ if (($_GET['accion'] ?? '') === 'codigo_barras') {
 if (($_GET['accion'] ?? '') === 'pdf') {
     $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
 
-    $carga = cargaVigente($pdo);
-    if (!$carga) {
-        header("Location: {$vistaPicking}?error=sin_datos");
-        exit();
-    }
+    $idCarga = (int) ($_GET['carga'] ?? 0);
+    $entrega = $idCarga > 0
+        ? entregaPicking($pdo, $idCarga, trim($_GET['cedi'] ?? ''), trim($_GET['oc'] ?? ''), trim($_GET['pv'] ?? ''))
+        : null;
 
-    $entrega = entregaPicking(
-        $pdo,
-        $carga['id_carga'],
-        trim($_GET['cedi'] ?? ''),
-        trim($_GET['oc'] ?? ''),
-        trim($_GET['pv'] ?? '')
-    );
-
-    // La entrega se identifica por tres valores que vienen de la URL. Si no coinciden con
+    // La entrega se identifica por CUATRO valores que vienen de la URL (antes eran tres: la carga
+    // se agrega ahora que puede haber más de una pendiente a la vez). Si no coinciden con
     // ninguna, se devuelve al listado en vez de generar una hoja vacía que alguien podría
     // imprimir y llevarse a la bodega.
     if ($entrega === null) {
@@ -92,8 +84,10 @@ if (($_GET['accion'] ?? '') === 'pdf') {
         exit();
     }
 
+    // $meta va vacío: la entrega ya trae su propio nombre_archivo (ver agruparPorEntrega en
+    // model_picking.php), que es lo que usa htmlPickingPdf() para el encabezado "Archivo: ...".
     require_once __DIR__ . '/helper_picking_pdf.php';
-    descargarPickingPdf($entrega, $carga);
+    descargarPickingPdf($entrega, []);
     // descargarPickingPdf() termina la ejecución.
 }
 
@@ -109,36 +103,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_m
 
     $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
 
-    $carga = cargaVigente($pdo);
-    if (!$carga) {
-        header("Location: {$vistaPicking}?error=sin_datos");
-        exit();
-    }
-
-    // Llegan como tres arrays paralelos (cedi[], oc[], pv[]), que es lo que produce un formulario
-    // con varios campos del mismo nombre.
-    $cedis = (array) ($_POST['cedi'] ?? []);
-    $ocs   = (array) ($_POST['oc'] ?? []);
-    $pvs   = (array) ($_POST['pv'] ?? []);
+    // Llegan como cuatro arrays paralelos (carga[], cedi[], oc[], pv[]), que es lo que produce un
+    // formulario con varios campos del mismo nombre. carga[] es nuevo: antes todo el lote era de
+    // la única carga vigente, y ahora cada pedido seleccionado puede ser de una carga distinta.
+    $cargas = (array) ($_POST['carga'] ?? []);
+    $cedis  = (array) ($_POST['cedi'] ?? []);
+    $ocs    = (array) ($_POST['oc'] ?? []);
+    $pvs    = (array) ($_POST['pv'] ?? []);
 
     $claves = [];
     foreach ($cedis as $i => $cedi) {
-        // Solo las posiciones que tengan los tres valores: un array descuadrado —porque el POST
+        // Solo las posiciones que tengan los cuatro valores: un array descuadrado —porque el POST
         // llegó recortado— produciría claves a medias que no cruzan con nada.
-        if (isset($ocs[$i], $pvs[$i])) {
-            $claves[] = ['cedi' => $cedi, 'oc' => $ocs[$i], 'pv' => $pvs[$i]];
+        if (isset($cargas[$i], $ocs[$i], $pvs[$i])) {
+            $claves[] = ['carga' => $cargas[$i], 'cedi' => $cedi, 'oc' => $ocs[$i], 'pv' => $pvs[$i]];
         }
     }
 
-    $entregas = entregasPicking($pdo, $carga['id_carga'], $claves);
+    $entregas = entregasPicking($pdo, $claves);
 
     if (!$entregas) {
         header("Location: {$vistaPicking}?error=invalid_id");
         exit();
     }
 
+    // $meta va vacío: cada entrega ya trae su propio nombre_archivo, y en un lote de varias
+    // pueden ser de archivos distintos —no hay UN meta que ponerle al PDF entero (ver el mismo
+    // criterio en el pdf_masivo de Historial).
     require_once __DIR__ . '/helper_picking_pdf.php';
-    descargarPickingPdf($entregas, $carga);
+    descargarPickingPdf($entregas, []);
     // descargarPickingPdf() termina la ejecución.
 }
 
@@ -164,12 +157,8 @@ if (!in_array($accion, ['guardar_pedido_sap', 'asignar_personal', 'despachar_ped
     exit();
 }
 
-$carga = cargaVigente($pdo);
-if (!$carga) {
-    http_response_code(409);
-    echo json_encode(['exito' => false, 'error' => 'No hay un Consolidado cargado.']);
-    exit();
-}
+// Ya no se exige "una carga vigente" acá: cada entrega que llega en el cuerpo trae su propia
+// carga (ver más abajo), porque ahora puede haber pendientes de varias a la vez.
 
 // -------------------------------------------------------------------------------------------
 // ASIGNAR PERSONAL A UNA O VARIAS ENTREGAS
@@ -210,16 +199,20 @@ if ($accion === 'asignar_personal') {
 
     $guardadas = [];
     foreach ($entregas as $entrega) {
-        $cedi = trim((string) ($entrega['cedi'] ?? ''));
-        $oc   = trim((string) ($entrega['orden_compra'] ?? ''));
-        $pv   = trim((string) ($entrega['punto_venta'] ?? ''));
+        $idCarga = (int) ($entrega['carga'] ?? 0);
+        $cedi    = trim((string) ($entrega['cedi'] ?? ''));
+        $oc      = trim((string) ($entrega['orden_compra'] ?? ''));
+        $pv      = trim((string) ($entrega['punto_venta'] ?? ''));
 
-        if ($cedi === '' || $oc === '' || $pv === '') {
+        if ($idCarga <= 0 || $cedi === '' || $oc === '' || $pv === '') {
             continue;
         }
 
-        if (asignarPersonalAEntrega($pdo, $carga['id_carga'], $cedi, $oc, $pv, $idPersonal)) {
-            $guardadas[] = $cedi . '|' . $oc . '|' . $pv;
+        if (asignarPersonalAEntrega($pdo, $idCarga, $cedi, $oc, $pv, $idPersonal)) {
+            // La clave lleva la carga adelante (igual que data-entrega en la vista): así el botón
+            // que se actualiza en pantalla es exactamente el de esta entrega, y no otro que
+            // coincida en cedi+oc+pv pero sea de una carga distinta.
+            $guardadas[] = $idCarga . '|' . $cedi . '|' . $oc . '|' . $pv;
         }
     }
 
@@ -260,7 +253,7 @@ if ($accion === 'despachar_pedidos') {
         exit();
     }
 
-    $resultado = despacharEntregas($pdo, $carga['id_carga'], $pedidos, $_SESSION['usuario_id'] ?? null);
+    $resultado = despacharEntregas($pdo, $pedidos, $_SESSION['usuario_id'] ?? null);
 
     if (!$resultado['exito']) {
         // 409 y no 500: no es una falla del servidor, es que la condición pedida (personal
@@ -280,18 +273,19 @@ if ($accion === 'despachar_pedidos') {
 }
 
 // El pedido SAP sigue apuntando a UNA entrega (hoy no se usa desde ninguna pantalla).
+$idCarga     = (int) ($cuerpo['carga'] ?? 0);
 $cedi        = trim($cuerpo['cedi'] ?? '');
 $ordenCompra = trim($cuerpo['orden_compra'] ?? '');
 $puntoVenta  = trim($cuerpo['punto_venta'] ?? '');
 
-if ($cedi === '' || $ordenCompra === '' || $puntoVenta === '') {
+if ($idCarga <= 0 || $cedi === '' || $ordenCompra === '' || $puntoVenta === '') {
     http_response_code(400);
     echo json_encode(['exito' => false, 'error' => 'Faltan datos para identificar la entrega.']);
     exit();
 }
 
 $pedidoSap = trim($cuerpo['pedido_sap'] ?? '');
-$guardado  = guardarPedidoSap($pdo, $carga['id_carga'], $cedi, $ordenCompra, $puntoVenta, $pedidoSap);
+$guardado  = guardarPedidoSap($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta, $pedidoSap);
 
 if (!$guardado) {
     http_response_code(500);

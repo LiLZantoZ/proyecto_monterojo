@@ -100,10 +100,13 @@ body  { margin: 0; font-family: Helvetica, Arial, sans-serif; color: #000; }
 CSS;
 }
 
-function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto) {
+// $tiendaParaCodigo es lo que entra al código de barras en vez del punto de venta —el EAN de la
+// tienda, cuando hay uno— y por defecto es el propio $pv: así un llamador que no lo pase (o pase
+// null) se comporta igual que antes de agregar este parámetro.
+function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tiendaParaCodigo = null) {
     $esc = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-    $idCaja  = identificadorDeCajaPdf($oc, $pv, $numero);
+    $idCaja  = identificadorDeCajaPdf($oc, $tiendaParaCodigo ?? $pv, $numero);
     $codigo  = codigoBarrasDataUri($idCaja);
     $nombreProducto = trim((string) $producto) !== ''
         ? $esc($producto)
@@ -178,7 +181,8 @@ function descargarRotulosPdf(array $entregas, $nombreArchivo) {
                     $entrega['cedi'],
                     $desde + $i,
                     $totalPedido,
-                    $producto
+                    $producto,
+                    $tienda
                 );
             }
         }

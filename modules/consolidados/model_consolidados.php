@@ -97,9 +97,9 @@ function decorarConMaestro(array $linea, array $mapa) {
     return $linea;
 }
 
-// La carga vigente: siempre la última importada. No hay pantalla para elegir entre cargas viejas
-// porque el archivo del día es la foto completa — mirar el de ayer al lado del de hoy solo sirve
-// para alistar lo que no era.
+// La última carga importada, sea cual sea su estado. Ya no es "el alcance de todo lo pendiente"
+// —eso ahora lo dan cargasActivas()— sino solo un dato de referencia: qué fue lo último que se
+// subió, para el aviso de "¿archivo repetido?" al importar y para mostrarlo en pantalla.
 function cargaVigente($pdo) {
     $stmt = $pdo->query(
         "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
@@ -110,19 +110,43 @@ function cargaVigente($pdo) {
     return $stmt->fetch() ?: null;
 }
 
-// Los CEDI que trae la carga. Salen del propio archivo y no de una lista fija: hoy vienen tres,
-// otro día pueden ser cuatro, y una lista escrita a mano dejaría el cuarto sin pantalla.
+/**
+ * Todas las cargas que todavía tienen alguna línea pendiente (despachado = 0), de la más nueva a
+ * la más vieja.
+ *
+ * Antes solo existía "la carga vigente" —la última— porque importar reemplazaba lo pendiente y
+ * nunca podía haber más de una activa. Ahora los archivos se acumulan (ver importarConsolidado en
+ * model_consolidados_import.php) y Picking/Consolidados muestran los pendientes de TODAS estas
+ * juntos, diferenciados por su fecha. Esta es la lista que arma esa cabecera ("3 archivos
+ * activos") y la que usan Picking/Consolidados para saber sobre qué cargas construir su consulta.
+ */
+function cargasActivas($pdo) {
+    return $pdo->query(
+        "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
+         FROM consolidado_cargas c
+         LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
+         WHERE EXISTS (
+             SELECT 1 FROM consolidado_lineas l WHERE l.id_carga = c.id_carga AND l.despachado = 0
+         )
+         ORDER BY c.id_carga DESC"
+    )->fetchAll();
+}
+
+// Los CEDI que traen las cargas pendientes. Salen del propio archivo y no de una lista fija: hoy
+// vienen tres, otro día pueden ser cuatro, y una lista escrita a mano dejaría el cuarto sin
+// pantalla.
+//
+// Ya no se filtra por UNA carga (ver cargasActivas): un CEDI puede tener pendientes de varios
+// archivos a la vez, y acá se suman todos.
 //
 // despachado = 0: un CEDI cuyas entregas ya salieron todas no debe seguir ofreciéndose en el
-// filtro ni contando para "cuántos CEDI trae la carga" — ya no queda nada pendiente ahí.
-function cedisDeLaCarga($pdo, $idCarga) {
-    $stmt = $pdo->prepare(
+// filtro ni contando para "cuántos CEDI hay pendientes" — ya no queda nada pendiente ahí.
+function cedisPendientes($pdo) {
+    return $pdo->query(
         "SELECT cedi, COUNT(*) AS lineas, SUM(unidades) AS unidades
-         FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0
+         FROM consolidado_lineas WHERE despachado = 0
          GROUP BY cedi ORDER BY cedi"
-    );
-    $stmt->execute([':carga' => $idCarga]);
-    return $stmt->fetchAll();
+    )->fetchAll();
 }
 
 // Las líneas de producto que existen en el maestro, para el desplegable de filtro.
@@ -136,17 +160,19 @@ function lineasDelMaestro($pdo) {
 // ---------------------------------------------------------------------------------------------
 // EL CONSOLIDADO PARA EL ELEVADOR
 //
-// Una fila por CEDI y PLU, con las unidades de TODOS los puntos de venta de ese CEDI sumadas:
-// al elevador no le sirve saber a qué tienda va cada caja, sino cuántas cajas de cada producto
-// tiene que bajar para ese CEDI. El reparto por tienda es problema de Picking.
+// Una fila por CEDI y PLU, con las unidades de TODOS los puntos de venta de ese CEDI sumadas —y,
+// desde que los archivos se acumulan (ver importarConsolidado), de TODAS las cargas pendientes
+// también: al elevador no le importa si dos cajas del mismo producto vinieron en archivos
+// distintos, solo cuántas tiene que bajar en total para ese CEDI ahora mismo. El reparto por
+// tienda (y por fecha) es problema de Picking.
 //
 // $filtros acepta 'cedi', 'linea' y 'plu' (búsqueda por PLU, SKU o descripción).
 // ---------------------------------------------------------------------------------------------
-function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
+function consolidadoPorCedi($pdo, array $filtros = []) {
     // despachado = 0 SIEMPRE: una entrega despachada ya salió de bodega, y no tiene que seguir
     // apareciendo como pendiente ni acá ni en el PDF que se arma con esto mismo.
-    $where  = ['l.id_carga = :carga', 'l.despachado = 0'];
-    $params = [':carga' => $idCarga];
+    $where  = ['l.despachado = 0'];
+    $params = [];
 
     // Solo el CEDI se filtra en SQL: es una columna del propio Consolidado. La línea y la búsqueda
     // por descripción viven en el maestro, que se resuelve en PHP (ver mapaMaestro), así que se
@@ -191,7 +217,14 @@ function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
         $porCedi[$fila['cedi']][] = $fila;
     }
 
-    // ORDEN: primero los productos que van a MÁS puntos de venta.
+    // ORDEN DE LOS CEDI: el que tiene MENOS productos primero, hacia abajo de menor a mayor
+    // (decidido con el usuario el 2026-09-08). Un CEDI con pocos productos es un consolidado
+    // chico que se resuelve rápido, y verlo primero deja lo grande —lo que va a tomar más
+    // tiempo— para cuando ya se calentó con lo fácil, en vez de tener que buscarlo entre CEDI
+    // ordenados alfabéticamente sin ninguna relación con cuánto trabajo representan.
+    uasort($porCedi, fn($a, $b) => count($a) <=> count($b));
+
+    // ORDEN DENTRO DE CADA CEDI: primero los productos que van a MÁS puntos de venta.
     //
     // Es el orden de trabajo del elevador: el producto que se reparte entre más tiendas es el que
     // más veces hay que tocar, así que conviene tenerlo bajado y a mano desde el principio. Los
@@ -200,7 +233,6 @@ function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
     // A igual cantidad de tiendas manda el que mueve más unidades, y recién ahí el orden
     // alfabético — que no aporta nada operativo, pero hace que dos cargas del mismo archivo
     // salgan siempre en el mismo orden en vez de depender de cómo las devolvió la base.
-    ksort($porCedi);
     foreach ($porCedi as &$filas) {
         usort($filas, function ($a, $b) {
             $cmp = (int) $b['puntos_venta'] <=> (int) $a['puntos_venta'];
@@ -246,16 +278,15 @@ function totalesDelGrupo(array $filas) {
     return $totales;
 }
 
-// Cuántos productos distintos de la carga no se pueden convertir a cajas: o no están en el
-// maestro, o están pero sin unidades por caja. Es el número que decide si la pantalla muestra el
-// aviso de "falta cargar el maestro".
+// Cuántos productos distintos de TODO lo pendiente no se pueden convertir a cajas: o no están en
+// el maestro, o están pero sin unidades por caja. Es el número que decide si la pantalla muestra
+// el aviso de "falta cargar el maestro".
 //
 // Se cuenta por PLU + EAN y no solo por PLU porque la resolución del maestro mira los dos.
-function pluSinMaestro($pdo, $idCarga) {
-    $stmt = $pdo->prepare(
-        "SELECT DISTINCT plu, ean_item FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0"
+function pluSinMaestro($pdo) {
+    $stmt = $pdo->query(
+        "SELECT DISTINCT plu, ean_item FROM consolidado_lineas WHERE despachado = 0"
     );
-    $stmt->execute([':carga' => $idCarga]);
 
     $mapa = mapaMaestro($pdo);
     $faltan = 0;

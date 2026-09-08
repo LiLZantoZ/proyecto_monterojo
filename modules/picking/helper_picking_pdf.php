@@ -93,7 +93,10 @@ function htmlPickingPdf(array $entrega, $meta) {
     $html .= '<td><div class="titulo">Hoja de alistamiento</div>'
            . '<div class="tienda">' . $esc($entrega['punto_venta']) . '</div></td>'
            . '<td class="meta">Emitido: ' . date('d/m/Y H:i') . '<br>'
-           . 'Archivo: ' . $esc($meta['nombre_archivo'] ?? '') . '</td>'
+           // La entrega trae su propio archivo (ver agruparPorEntrega en model_picking.php) desde
+           // que puede haber varias cargas pendientes a la vez; $meta queda de respaldo para quien
+           // todavía llame a esto pasando el archivo por fuera (ver Historial).
+           . 'Archivo: ' . $esc($entrega['nombre_archivo'] ?? ($meta['nombre_archivo'] ?? '')) . '</td>'
            . '</tr></table>';
 
     // Quién alista. Puede estar sin asignar: se imprime la casilla igual, con una raya, para que

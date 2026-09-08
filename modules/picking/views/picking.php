@@ -20,23 +20,27 @@ requierePermiso('modulo_picking', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
 // la propia asignación y no de esta lista.
 $personalActivo = listarPersonal($pdo, true);
 
-$carga = cargaVigente($pdo);
-
+// Ya no depende de "la carga vigente": los archivos se acumulan (ver importarConsolidado en
+// model_consolidados_import.php), así que acá se junta lo pendiente de TODAS las cargas activas a
+// la vez, cada entrega con su propia fecha (decidido con el usuario el 2026-09-08).
 $filtros = [
     'cedi'        => trim($_GET['cedi'] ?? ''),
     'punto_venta' => trim($_GET['punto_venta'] ?? ''),
     'busqueda'    => trim($_GET['q'] ?? ''),
 ];
 
-$filas    = $carga ? filasPicking($pdo, $carga['id_carga'], $filtros) : [];
+$filas    = filasPicking($pdo, $filtros);
 $resumen  = resumenPicking($filas);
 $entregas = agruparPorEntrega($filas);
 // La zona de despacho es el CEDI (decidido con el usuario el 2026-09-07): el sistema no guarda
 // ninguna otra noción de zona, y la dirección del punto de venta no trae ciudad.
 $porCedi  = agruparPorCedi($entregas);
 
-$cedisDisponibles  = $carga ? cedisDeLaCarga($pdo, $carga['id_carga']) : [];
-$puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['cedi']) : [];
+// Sin filtrar: es lo que decide si hay ALGO pendiente en todo el sistema, no si el filtro actual
+// encontró algo —esas son las dos cosas que antes distinguían "sin carga" de "sin resultados".
+$cedisDisponibles  = cedisPendientes($pdo);
+$hayPendientes     = !empty($cedisDisponibles);
+$puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -70,7 +74,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                 </div>
             </header>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
                 <div class="pastillas">
                     <span class="pastilla">Entregas <strong><?php echo number_format(count($entregas), 0, ',', '.'); ?></strong></span>
                     <span class="pastilla">Líneas <strong><?php echo number_format($resumen['lineas'], 0, ',', '.'); ?></strong></span>
@@ -91,7 +95,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                 </div>
             <?php endif; ?>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
                 <form class="filtros" method="GET">
                     <div class="filtro">
                         <label for="f-cedi">CEDI</label>
@@ -132,11 +136,11 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                 </form>
             <?php endif; ?>
 
-            <?php if (!$carga): ?>
+            <?php if (!$hayPendientes): ?>
                 <div class="tabla-caja">
                     <p class="tabla-vacia">
-                        Todavía no hay ningún Consolidado cargado.<br>
-                        Picking se arma con ese archivo: súbelo primero en <strong>Consolidados</strong>.
+                        No hay ningún pedido pendiente.<br>
+                        Picking se arma con esos archivos: súbelos primero en <strong>Consolidados</strong>.
                     </p>
                 </div>
 
@@ -193,6 +197,11 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                         <th style="width: 34px;"><span class="sr-solo">Detalle</span></th>
                                         <th>Punto de venta</th>
                                         <th>O/C</th>
+                                        <!-- Distingue pedidos que antes se habrían mezclado o
+                                             reemplazado entre sí: ahora los archivos se acumulan
+                                             (ver importarConsolidado), y esta es la columna que
+                                             dice de cuál vino cada uno. -->
+                                        <th>Fecha</th>
                                         <th class="num">Productos</th>
                                         <th class="num">Unidades</th>
                                         <th class="num">Cajas</th>
@@ -211,9 +220,13 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                                 <!-- Los datos de la entrega van acá y no solo en el botón
                                                      de asignar: la barra de acciones lee las casillas
                                                      tildadas y necesita identificar cada pedido sin
-                                                     depender de qué otros botones tenga la fila. -->
+                                                     depender de qué otros botones tenga la fila.
+                                                     data-carga es obligatorio ahora: cedi+oc+pv ya no
+                                                     alcanzan para identificar la entrega si hay más de
+                                                     una carga pendiente con esos mismos tres datos. -->
                                                 <input type="checkbox" class="chk-pedido"
                                                        aria-label="Seleccionar <?php echo htmlspecialchars($entrega['punto_venta']); ?>"
+                                                       data-carga="<?php echo (int) $entrega['id_carga']; ?>"
                                                        data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                        data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                        data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
@@ -231,6 +244,15 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                             </td>
                                             <td><?php echo htmlspecialchars($entrega['punto_venta']); ?></td>
                                             <td><?php echo htmlspecialchars($entrega['orden_compra']); ?></td>
+                                            <td>
+                                                <?php if ($entrega['fecha_carga']): ?>
+                                                    <span title="<?php echo htmlspecialchars($entrega['nombre_archivo'] ?? ''); ?>">
+                                                        <?php echo date('d/m', strtotime($entrega['fecha_carga'])); ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="sin-dato">—</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td class="num"><?php echo $t['lineas']; ?></td>
                                             <td class="num"><?php echo number_format($t['unidades'], 0, ',', '.'); ?></td>
                                             <td class="num"><strong><?php echo number_format($t['cajas'], 0, ',', '.'); ?></strong></td>
@@ -247,6 +269,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                                 <button type="button"
                                                         class="btn btn-chico btn-asignar<?php echo empty($entrega['id_personal']) ? ' btn-sin-asignar' : ''; ?>"
                                                         data-entrega="<?php echo htmlspecialchars($clave); ?>"
+                                                        data-carga="<?php echo (int) $entrega['id_carga']; ?>"
                                                         data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                         data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                         data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>"
@@ -298,7 +321,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                                     </button>
 
                                                     <a class="btn btn-chico"
-                                                       href="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php?accion=pdf&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
+                                                       href="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php?accion=pdf&carga=<?php echo (int) $entrega['id_carga']; ?>&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
                                                         <i class="fa-solid fa-print"></i> Imprimir
                                                     </a>
 
@@ -310,6 +333,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                                     <button type="button" class="btn btn-chico btn-despachar"
                                                             title="Marca este pedido como despachado: desaparece de Picking y de Consolidados."
                                                             data-entrega="<?php echo htmlspecialchars($clave); ?>"
+                                                            data-carga="<?php echo (int) $entrega['id_carga']; ?>"
                                                             data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                             data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                             data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
@@ -324,7 +348,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                              tener que meter una tabla dentro de una celda de la fila de
                                              arriba y que las dos peleen por el ancho de las columnas. -->
                                         <tr class="fila-detalle" hidden data-entrega="<?php echo htmlspecialchars($clave); ?>">
-                                            <td colspan="11">
+                                            <td colspan="12">
                                                 <table class="tabla tabla-productos">
                                                     <thead>
                                                         <tr>

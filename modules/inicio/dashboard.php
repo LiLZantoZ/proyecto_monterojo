@@ -18,12 +18,14 @@ $nombreUsuario = $_SESSION['usuario_nombre'] ?? 'Usuario';
 $rolUsuario    = $_SESSION['nombre_rol'] ?? 'Rol no asignado';
 
 // El estado real del sistema. Sin esto el panel es una tarjeta con un nombre y nada más, y hay
-// que entrar módulo por módulo para saber si el archivo del día ya está cargado.
-$carga = cargaVigente($pdo);
-$estado = null;
+// que entrar módulo por módulo para saber si hay algo pendiente.
+//
+// Ya no depende de "la carga vigente": los archivos se acumulan (ver importarConsolidado en
+// model_consolidados_import.php) y esto resume TODO lo pendiente, sea de una carga o de diez.
+$porCedi = consolidadoPorCedi($pdo);
+$estado  = null;
 
-if ($carga) {
-    $porCedi = consolidadoPorCedi($pdo, $carga['id_carga']);
+if ($porCedi) {
     $totales = ['unidades' => 0, 'cajas' => 0];
     foreach ($porCedi as $filas) {
         $t = totalesDelGrupo($filas);
@@ -35,7 +37,7 @@ if ($carga) {
         'cedis'       => count($porCedi),
         'unidades'    => $totales['unidades'],
         'cajas'       => $totales['cajas'],
-        'sin_maestro' => pluSinMaestro($pdo, $carga['id_carga']),
+        'sin_maestro' => pluSinMaestro($pdo),
     ];
 }
 
@@ -80,15 +82,15 @@ $hero = imagenDeMarca('bienvenida.jpg');
                 </div>
             </div>
 
-            <?php if (!$carga): ?>
+            <?php if (!$estado): ?>
                 <div class="estado-sistema">
                     <?php if (tienePermiso('modulo_consolidados')): ?>
                         <a class="estado-dato estado-dato-alerta"
                            href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php"
                            style="grid-column: 1 / -1;">
-                            <span class="estado-dato-valor">Sin Consolidado</span>
+                            <span class="estado-dato-valor">Sin pendientes</span>
                             <span class="estado-dato-etiqueta">
-                                Todavía no se ha cargado el archivo del día. Entra a Consolidados para subirlo.
+                                No hay ningún pedido pendiente ahora mismo. Entra a Consolidados para subir un archivo.
                             </span>
                         </a>
                     <?php endif; ?>
@@ -98,9 +100,7 @@ $hero = imagenDeMarca('bienvenida.jpg');
                 <div class="estado-sistema">
                     <div class="estado-dato">
                         <span class="estado-dato-valor"><?php echo $estado['cedis']; ?></span>
-                        <span class="estado-dato-etiqueta">
-                            CEDI en el archivo del <?php echo date('d/m/Y', strtotime($carga['fecha_carga'])); ?>
-                        </span>
+                        <span class="estado-dato-etiqueta">CEDI con pedidos pendientes</span>
                     </div>
 
                     <div class="estado-dato">

@@ -775,6 +775,7 @@ tr.fila-sin-maestro:hover {
 
 .campo input[type="file"],
 .campo input[type="text"],
+.campo input[type="password"],
 .campo select {
     width: 100%;
     padding: 10px 12px;
@@ -790,6 +791,14 @@ tr.fila-sin-maestro:hover {
     outline: none;
     border-color: var(--vino);
     box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+/* Un campo de solo lectura (la cédula, el rol en Mi perfil): se ve apagado para que se entienda
+   de un vistazo que no es editable, sin tener que leer la ayuda de al lado. */
+.campo input:disabled {
+    background: var(--crema);
+    color: var(--texto-suave);
+    cursor: not-allowed;
 }
 
 .campo .ayuda {
@@ -976,4 +985,45 @@ tr.fila-sin-maestro:hover {
     .filtro {
         flex: 1 1 100%;
     }
+}
+
+/* --- Mi perfil --- */
+
+/* Tres tarjetas (foto, datos, contraseña) en grilla: en vez de un solo formulario larguísimo,
+   cada una es su propia acción independiente con su propio botón de Guardar, así que cambiar la
+   foto no obliga a repasar ni a reenviar la contraseña. */
+.perfil-grilla {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+
+.tarjeta-perfil {
+    background: var(--blanco);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 20px;
+}
+
+.tarjeta-perfil h3 {
+    font-size: 1rem;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--borde);
+}
+
+.perfil-foto-actual {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.perfil-foto-actual img {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--blanco);
+    box-shadow: 0 0 0 3px var(--vino);
 }

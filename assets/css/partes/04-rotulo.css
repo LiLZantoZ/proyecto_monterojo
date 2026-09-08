@@ -207,6 +207,20 @@
     padding-bottom: 4px;
 }
 
+/* En una pantalla angosta (celular) el scroll horizontal de arriba deja de alcanzar: el modal
+   mismo ya ocupa casi todo el ancho disponible, así que los 100mm fijos del rótulo se salen del
+   recuadro del modal y hay que arrastrar para ver el borde derecho —que es justo lo que no se
+   quiere de una VISTA PREVIA, aunque en la hoja impresa esos 100mm sí importen tal cual.
+   Acá se encoge al ancho real disponible (contenido del modal, con su padding descontado) para
+   que se vea el rótulo COMPLETO de un vistazo; el texto interno reacomoda sus líneas solo, y no
+   afecta @media print: eso sigue imprimiendo a tamaño real sin pasar por este breakpoint. */
+@media screen and (max-width: 480px) {
+    .rotulo {
+        width: calc(100vw - 80px);
+        flex-shrink: 1;
+    }
+}
+
 /* --- Impresión --- */
 
 @media print {

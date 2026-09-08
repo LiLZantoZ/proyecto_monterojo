@@ -9,7 +9,7 @@
 // las líneas despachadas, así que sobreviven de carga en carga.
 
 require_once __DIR__ . '/../../config/config.php';
-require_once __DIR__ . '/../consolidados/model_consolidados.php';   // mapaMaestro(), decorarConMaestro(), cargaVigente()
+require_once __DIR__ . '/../consolidados/model_consolidados.php';   // mapaMaestro(), decorarConMaestro()
 
 /**
  * Una fila por (carga, CEDI, orden de compra, punto de venta, PLU) ya despachada.
@@ -194,8 +194,8 @@ function agruparPorCediHistorial(array $entregas) {
 
 /**
  * Varias entregas despachadas de una vez, para reimprimir sus hojas juntas. $claves es una lista
- * de ['id_carga'=>, 'cedi'=>, 'oc'=>, 'pv'=>] —el id_carga es obligatorio acá, a diferencia de
- * entregasPicking(), porque la misma tienda puede tener más de un despacho en distintas cargas.
+ * de ['id_carga'=>, 'cedi'=>, 'oc'=>, 'pv'=>] —el id_carga es obligatorio acá, igual que en
+ * entregasPicking(), porque la misma tienda puede tener más de un pedido en distintas cargas.
  */
 function entregasHistorial($pdo, array $claves) {
     if (!$claves) {
@@ -285,25 +285,16 @@ function resumenHistorialTotales($pdo, array $filtros = []) {
  * Restaura una entrega despachada: la vuelve a dejar pendiente, como si nunca se hubiera
  * despachado.
  *
- * SOLO se puede restaurar si su carga es la VIGENTE. Picking y Consolidados solo miran la carga
- * vigente (ver filasPicking, consolidadoPorCedi): restaurar una entrega de una carga anterior la
- * dejaría con despachado = 0 pero invisible en cualquier pantalla, huérfana, porque nada vuelve a
- * mirar esa carga vieja. Es la misma razón por la que importarConsolidado() ya no borra las cargas
- * anteriores: sirven para el historial, no para seguir trabajando sobre ellas.
+ * Ya no hace falta que su carga sea "la vigente": Picking y Consolidados ahora miran TODO lo
+ * pendiente de TODAS las cargas juntas (ver filasPicking, consolidadoPorCedi — cambiado el
+ * 2026-09-08 para que un archivo nuevo no borre los pedidos de otro canal que todavía no se habían
+ * despachado), así que una entrega restaurada de CUALQUIER carga vuelve a aparecer ahí sin
+ * quedar huérfana. Antes esto solo se permitía para la carga vigente, porque en ese momento era la
+ * única que esas dos pantallas llegaban a mirar.
  *
  * Devuelve ['exito' => bool, 'mensaje' => string] (mensaje solo si exito es false).
  */
 function restaurarEntregaHistorial($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta) {
-    $vigente = cargaVigente($pdo);
-
-    if (!$vigente || (int) $vigente['id_carga'] !== (int) $idCarga) {
-        return [
-            'exito'   => false,
-            'mensaje' => 'Este pedido es de un Consolidado anterior al vigente. No se puede '
-                       . 'restaurar porque ya no hay una carga activa a la que volver a agregarlo.',
-        ];
-    }
-
     try {
         $stmt = $pdo->prepare(
             "UPDATE consolidado_lineas

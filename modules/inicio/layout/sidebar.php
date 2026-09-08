@@ -84,13 +84,24 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             </a>
         <?php endif; ?>
 
+        <?php if (tienePermiso('modulo_rotulos')): ?>
+            <a href="<?php echo BASE_URL; ?>/modules/rotulos/views/rotulos.php" class="nav-link">
+                <i class="fa-solid fa-tags"></i>
+                <span>Generar rótulos</span>
+            </a>
+        <?php endif; ?>
+
         <a href="<?php echo BASE_URL; ?>/modules/login/controller/logout.php" class="nav-link nav-link-logout">
             <i class="fa-solid fa-right-from-bracket"></i>
             <span>Cerrar sesión</span>
         </a>
     </nav>
 
-    <div class="sidebar-footer">
+    <!-- Lleva a "Mi perfil": es la única forma de editar el nombre, la foto o la contraseña
+         propios. Un <a> y no un botón con JS porque es una navegación normal a otra pantalla,
+         no una acción que cambie algo acá mismo. -->
+    <a class="sidebar-footer" href="<?php echo BASE_URL; ?>/modules/perfil/views/perfil.php"
+       title="Editar mi perfil">
         <img src="<?php echo htmlspecialchars($imagenRuta); ?>"
              alt="Avatar de <?php echo htmlspecialchars($nombreUsuario); ?>"
              class="user-avatar">
@@ -99,7 +110,9 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             <span class="user-name"><?php echo htmlspecialchars($nombreUsuario); ?></span>
             <span class="user-role"><?php echo htmlspecialchars($rolUsuario); ?></span>
         </div>
-    </div>
+
+        <i class="fa-solid fa-pen sidebar-footer-editar" aria-hidden="true"></i>
+    </a>
 </aside>
 
 <script>

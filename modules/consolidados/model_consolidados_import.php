@@ -9,7 +9,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
-require_once __DIR__ . '/model_consolidados.php';   // cargaVigente(), usada por cargaConLaMismaHuella()
+require_once __DIR__ . '/model_consolidados.php';   // mapaMaestro(), decorarConMaestro()
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as FechaExcel;
@@ -89,11 +89,105 @@ function columnasConsolidado() {
     ];
 }
 
+// ---------------------------------------------------------------------------------------------
+// CONSOLIDADO, DESDE EL MISMO EXPORT DE FACTURACIÓN DE SAP QUE USA EL MAESTRO
+//
+// Además del Consolidado "prolijo" (columnas en español, un archivo pensado para esta pantalla),
+// Monterojo también despacha directo a distribuidores y clientes propios facturados desde SAP —
+// sin pasar por un CEDI de cadena— y ESE pedido sale del mismo export de facturación que ya se
+// usa para el Maestro (ver columnasSap()). Confirmado con un archivo real (2026-09-08):
+//
+//   'Nombre 1'          -> el cliente/tienda que recibe la factura (20 distintos en un archivo de
+//                          prueba, desde FARMATODO hasta personas naturales) = punto de venta.
+//   'Factura'            -> identifica el despacho. Es MÁS confiable que 'Pedido Cliente' para
+//                          "orden de compra": la mayoría de los clientes chicos no mandan un
+//                          número propio y esa columna les queda con el texto fijo "MONTEROJO" —
+//                          dos entregas del MISMO cliente en facturas distintas compartirían ese
+//                          "MONTEROJO" y se mezclarían en una sola entrega. La Factura, en cambio,
+//                          es única por despacho SIEMPRE (se comprobó con un cliente que tenía dos
+//                          facturas el mismo día: dos números de Factura distintos, un solo
+//                          "Pedido Cliente" = "MONTEROJO" para las dos).
+//   'Población'          -> la ciudad del cliente. No es un CEDI con nombre propio (este canal no
+//                          pasa por los CEDI de cadena), pero es la zona de despacho más parecida
+//                          que trae el archivo, y agrupa igual que un CEDI: todos los clientes de
+//                          una misma ciudad quedan juntos.
+//   'Material'            -> PLU/SKU, 'Código EAN/UPC' -> EAN, 'Ctd.facturada' -> unidades,
+//                          'Calle' -> dirección, 'Fecha factura' -> fecha del documento — estas
+//                          cuatro son la misma idea que ya usa columnasSap() para el Maestro.
+//
+// No trae EAN del punto de venta (ese dato es de las cadenas grandes, no de un cliente directo):
+// el rótulo, cuando no lo tiene, usa el nombre de la tienda en el código de barras en su lugar —
+// ya está resuelto así en identificadorDeCaja() (scripts_historial.js) y su par en PHP.
+// ---------------------------------------------------------------------------------------------
+function columnasConsolidadoSap() {
+    return [
+        'poblacion'       => 'cedi',
+        'factura'         => 'orden_compra',
+        'material'        => 'plu',
+        'codigo ean/upc'  => 'ean_item',
+        'nombre 1'        => 'punto_venta',
+        'calle'           => 'direccion_punto_venta',
+        'ctd.facturada'   => 'unidades',
+        'fecha factura'   => 'fecha_documento',
+    ];
+}
+
+// Las cinco columnas sin las que un Consolidado —de cualquiera de los dos formatos— no tiene
+// nada que guardar.
+function columnasObligatoriasConsolidado() {
+    return ['cedi', 'orden_compra', 'plu', 'punto_venta', 'unidades'];
+}
+
+// Prueba el encabezado contra los DOS formatos válidos de Consolidado —el prolijo primero, el de
+// SAP si ese no alcanza— y devuelve el primer mapeo que tenga las cinco columnas obligatorias, o
+// el del prolijo (aunque le falten) si ninguno las tiene: entre dos mapeos igual de incompletos,
+// da lo mismo cuál se devuelva, porque lo único que hace después quien llama es mirar qué falta.
+function mapaDeConsolidado(array $encabezado) {
+    $obligatorias = columnasObligatoriasConsolidado();
+
+    $mapa = mapearColumnas($encabezado, columnasConsolidado());
+    if (array_diff($obligatorias, array_keys($mapa))) {
+        $mapaSap = mapearColumnas($encabezado, columnasConsolidadoSap());
+        if (!array_diff($obligatorias, array_keys($mapaSap))) {
+            return $mapaSap;
+        }
+    }
+
+    return $mapa;
+}
+
 // Deja un encabezado comparable: sin tildes, en minúsculas y con los espacios colapsados.
 function normalizarEncabezado($texto) {
     $texto = mb_strtolower(trim((string) $texto), 'UTF-8');
     $texto = strtr($texto, ['á'=>'a', 'é'=>'e', 'í'=>'i', 'ó'=>'o', 'ú'=>'u', 'ñ'=>'n', 'ü'=>'u']);
     return preg_replace('/\s+/', ' ', $texto);
+}
+
+// ---------------------------------------------------------------------------------------------
+// "SUBISTE EL ARCHIVO EN LA PANTALLA QUE NO ES"
+//
+// El Consolidado (el pedido de la cadena, con CEDI/punto de venta/orden de compra) y el export de
+// facturación de SAP (con lo que factura la fábrica a UN distribuidor, sin desglose por tienda)
+// son dos archivos completamente distintos que además se llaman parecido —los dos dicen
+// "Consolidado" en el nombre—, así que es fácil subir uno a la pantalla del otro. Cuando pasa,
+// "al archivo le faltan estas columnas: cedi, orden_compra..." no dice NADA de qué hacer distinto;
+// esto reconoce el otro formato y dice exactamente adónde va.
+// ---------------------------------------------------------------------------------------------
+
+// El encabezado, ¿tiene pinta de ser el export de facturación de SAP? 'material', 'cantidad' y
+// 'cajas' juntos no aparecen en un Consolidado real —ahí la cantidad se llama "Cantidad Pto Vta"
+// y no hay ninguna columna de cajas—, así que alcanzan para no confundirlo con uno.
+function pareceExportSap(array $encabezado) {
+    $mapa = mapearColumnas($encabezado, columnasSap());
+    return isset($mapa['sku'], $mapa['cantidad'], $mapa['cajas']);
+}
+
+// Al revés: ¿tiene pinta de ser un Consolidado real? cedi + punto de venta + orden de compra
+// juntos no aparecen en el export de SAP, que factura a un distribuidor entero y no desglosa por
+// tienda ni trae ninguna columna de "orden de compra" de ese tipo.
+function pareceConsolidado(array $encabezado) {
+    $mapa = mapearColumnas($encabezado, columnasConsolidado());
+    return isset($mapa['cedi'], $mapa['punto_venta'], $mapa['orden_compra']);
 }
 
 // Devuelve ['campo' => índice de columna] a partir de la fila de encabezado.
@@ -135,8 +229,11 @@ function huellaDelConsolidado($rutaArchivo) {
         return null;
     }
 
-    $mapa = mapearColumnas(array_shift($filas), columnasConsolidado());
-    if (array_diff(['cedi', 'orden_compra', 'plu', 'punto_venta', 'unidades'], array_keys($mapa))) {
+    // mapaDeConsolidado(): si el formato prolijo no alcanza, prueba el del export de SAP. Sin
+    // esto, un Consolidado de ese formato nunca calcularía huella y el aviso de "esto ya está
+    // cargado" jamás dispararía para él.
+    $mapa = mapaDeConsolidado(array_shift($filas));
+    if (array_diff(columnasObligatoriasConsolidado(), array_keys($mapa))) {
         return null;
     }
 
@@ -166,23 +263,21 @@ function huellaDelConsolidado($rutaArchivo) {
 }
 
 /**
- * La carga VIGENTE, si tiene esta misma huella. Sirve para avisar antes de reimportar algo que ya
- * está cargado.
+ * Una carga con esta misma huella que TODAVÍA tenga líneas pendientes. Sirve para avisar antes de
+ * importar algo que ya está pendiente ahora mismo.
  *
- * Compara solo contra la vigente y no contra el historial completo de cargas a propósito: las
- * cargas viejas ya no se borran (ver importarConsolidado — se conservan para el Historial de
- * Pedidos), así que buscar en toda la tabla encontraría coincidencias con archivos de hace
- * semanas que ya fueron reemplazados hace rato. El aviso "esto ya está cargado" solo tiene sentido
- * para lo que está activo AHORA; reimportar el archivo de un día viejo no es un error, es una
- * decisión válida (por ejemplo, para corregir algo que se reemplazó de más).
+ * Antes esto comparaba solo contra "la vigente", porque importar reemplazaba lo pendiente y solo
+ * podía haber UNA carga activa a la vez. Ahora importar ya no reemplaza nada (ver
+ * importarConsolidado): los pendientes de varias cargas conviven, así que el archivo de hoy puede
+ * coincidir con el de anteayer si ese todavía no se despachó. Por eso se busca entre TODAS las
+ * cargas con algo pendiente, no solo la última.
+ *
+ * despachado = 0 en la subconsulta: si una carga vieja con esta huella ya se despachó por
+ * completo, volver a importarla no es un duplicado de nada activo — es simplemente un pedido
+ * nuevo que por casualidad coincide con uno que ya se completó, y no hay nada que avisar.
  */
 function cargaConLaMismaHuella($pdo, $huella) {
     if (empty($huella)) {
-        return null;
-    }
-
-    $vigente = cargaVigente($pdo);
-    if (!$vigente) {
         return null;
     }
 
@@ -190,18 +285,31 @@ function cargaConLaMismaHuella($pdo, $huella) {
         "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
          FROM consolidado_cargas c
          LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
-         WHERE c.id_carga = :id_carga AND c.huella = :huella"
+         WHERE c.huella = :huella
+           AND EXISTS (
+               SELECT 1 FROM consolidado_lineas l
+               WHERE l.id_carga = c.id_carga AND l.despachado = 0
+           )
+         ORDER BY c.id_carga DESC LIMIT 1"
     );
-    $stmt->execute([':id_carga' => $vigente['id_carga'], ':huella' => $huella]);
+    $stmt->execute([':huella' => $huella]);
 
     return $stmt->fetch() ?: null;
 }
 
 /**
- * Importa el archivo Consolidado. Reemplaza lo PENDIENTE que había —el archivo del día es la foto
- * entera de lo que falta, no un agregado, así que mezclarlo con el anterior dejaría alistando
- * pedidos que ya salieron— pero conserva para siempre lo que ya se despachó: eso es el Historial
- * de Pedidos, y no tiene por qué desaparecer solo porque llegó el archivo de mañana.
+ * Importa el archivo Consolidado. Se AGREGA a lo que ya está pendiente —no lo reemplaza—: cada
+ * carga queda con su propio id_carga y su propia fecha, y Picking/Consolidados muestran los
+ * pendientes de TODAS las cargas juntos, diferenciados por esa fecha (decidido con el usuario el
+ * 2026-09-08, después de que un archivo nuevo se comiera de un plumazo los pedidos de otro canal
+ * que todavía no se habían despachado).
+ *
+ * Antes esto reemplazaba lo pendiente (DELETE de las líneas sin despachar) porque se asumía que
+ * "el archivo del día es la foto completa de todo lo que falta". Eso vale para el Consolidado de
+ * una cadena que manda su pedido completo cada vez, pero no para los despachos directos (ver
+ * columnasConsolidadoSap): ese canal factura de a poco durante el día, y cada archivo es apenas
+ * una PARTE de lo pendiente, no el todo. Reemplazar con ese archivo borraba lo que llegó en el
+ * anterior sin que nadie lo hubiera despachado.
  *
  * Devuelve ['exito' => bool, 'mensaje' => string, 'filas' => int, 'id_carga' => int|null].
  */
@@ -217,13 +325,34 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
     // segunda lectura de un archivo de 60 KB.
     $huella = huellaDelConsolidado($rutaArchivo);
 
-    $mapa = mapearColumnas(array_shift($filas), columnasConsolidado());
+    $encabezado = array_shift($filas);
+    $obligatorias = columnasObligatoriasConsolidado();
 
-    // Sin estas cuatro no hay nada que guardar. Se avisa cuál falta en vez de un "formato
-    // incorrecto" genérico, que obliga a adivinar qué tiene de malo el archivo.
-    $obligatorias = ['cedi', 'orden_compra', 'plu', 'punto_venta', 'unidades'];
+    // mapaDeConsolidado() prueba el formato prolijo y, si no alcanza, el del export de SAP (ver
+    // columnasConsolidadoSap()): es el otro formato válido de Consolidado, para los despachos
+    // directos que no pasan por un CEDI de cadena.
+    $mapa = mapaDeConsolidado($encabezado);
+
+    // Sin estas cinco no hay nada que guardar, en NINGUNO de los dos formatos. Se avisa cuál
+    // falta en vez de un "formato incorrecto" genérico, que obliga a adivinar qué tiene de malo
+    // el archivo.
     $faltan = array_diff($obligatorias, array_keys($mapa));
     if ($faltan) {
+        // Ni el Consolidado prolijo ni su variante de SAP tienen lo necesario: ¿es en realidad el
+        // export de facturación completo, para el Maestro, y no para acá? (por ejemplo, si le
+        // falta 'Nombre 1' o 'Factura' pero sí tiene 'Material' y 'Cajas Físicas', que acá no se
+        // usan pero sí identifican el archivo).
+        if (pareceExportSap($encabezado)) {
+            return [
+                'exito'   => false,
+                'mensaje' => 'Este archivo es el export de facturación de SAP (trae "Material", '
+                           . '"Ctd.facturada", "Cajas Físicas"), no un Consolidado. Va en '
+                           . '"Maestro de productos → Cargar desde SAP", no acá.',
+                'filas'   => 0,
+                'id_carga' => null,
+            ];
+        }
+
         return [
             'exito'   => false,
             'mensaje' => 'Al archivo le faltan estas columnas: ' . implode(', ', $faltan) . '.',
@@ -251,16 +380,9 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
 
     $pdo->beginTransaction();
     try {
-        // Se borran las líneas PENDIENTES de cargas anteriores —el archivo nuevo es la foto
-        // completa de lo que falta, así que lo viejo sin despachar ya no aplica—, pero las que ya
-        // se DESPACHARON se conservan para siempre. Son el Historial de Pedidos, y antes de este
-        // cambio desaparecían en cuanto alguien subía el archivo del día siguiente: un historial
-        // que se borra solo con la próxima carga no es un historial.
-        //
-        // consolidado_cargas tampoco se borra: queda como el registro de qué se importó y cuándo,
-        // que es justo lo que necesita el Historial para poder decir en qué carga salió cada
-        // despacho. Es una tabla de unas pocas filas por año; no pesa.
-        $pdo->exec("DELETE FROM consolidado_lineas WHERE despachado = 0");
+        // NO se borra nada de lo que ya había —ni pendiente ni despachado—. Esta carga se suma
+        // como una fila nueva de consolidado_cargas, con sus propias líneas propias; las de
+        // cargas anteriores (pendientes o ya despachadas) se quedan exactamente como estaban.
 
         $insertarCarga = $pdo->prepare(
             "INSERT INTO consolidado_cargas (nombre_archivo, filas, huella, id_usuario) VALUES (?, 0, ?, ?)"
@@ -428,9 +550,23 @@ function importarMaestroDesdeSap($pdo, $rutaArchivo) {
         return ['exito' => false, 'mensaje' => 'El archivo no tiene filas de datos.', 'filas' => 0, 'sin_empaque' => 0];
     }
 
-    $mapa = mapearColumnas(array_shift($filas), columnasSap());
+    $encabezado = array_shift($filas);
+    $mapa = mapearColumnas($encabezado, columnasSap());
 
     if (!isset($mapa['sku'])) {
+        // Al revés que en importarConsolidado(): ¿es en realidad el Consolidado de la cadena,
+        // subido acá por error?
+        if (pareceConsolidado($encabezado)) {
+            return [
+                'exito'   => false,
+                'mensaje' => 'Este archivo es un Consolidado (trae CEDI, punto de venta y orden '
+                           . 'de compra), no el export de SAP. Va en "Consolidados → Importar '
+                           . 'Consolidado", no acá.',
+                'filas'   => 0,
+                'sin_empaque' => 0,
+            ];
+        }
+
         return [
             'exito'   => false,
             'mensaje' => 'El archivo no tiene la columna "Material". ¿Es el export de facturación de SAP?',

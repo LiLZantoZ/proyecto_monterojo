@@ -18,18 +18,18 @@ $busqueda = trim($_GET['q'] ?? '');
 // cajas: es la lista de lo que hay que conseguir, que es para lo que se entra a esta pantalla.
 $soloFaltantes = ($_GET['ver'] ?? '') === 'faltantes';
 
-$carga = cargaVigente($pdo);
-
-if ($soloFaltantes && $carga) {
+if ($soloFaltantes) {
     // La resolución del maestro mira EAN y PLU, así que la lista de faltantes se arma con la
     // misma función y no con un LEFT JOIN por PLU, que daría un resultado distinto al de las
     // pantallas de Consolidados y Picking.
-    $stmt = $pdo->prepare(
+    //
+    // Sin filtrar por una sola carga: los archivos se acumulan (ver importarConsolidado), así que
+    // "lo que falta" es sobre TODO lo pendiente, no solo la última importación.
+    $stmt = $pdo->query(
         "SELECT plu, ean_item, SUM(unidades) AS unidades_pedidas
-         FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0
+         FROM consolidado_lineas WHERE despachado = 0
          GROUP BY plu, ean_item ORDER BY unidades_pedidas DESC"
     );
-    $stmt->execute([':carga' => $carga['id_carga']]);
 
     $mapa = mapaMaestro($pdo);
     $productos = [];
@@ -71,7 +71,7 @@ if ($soloFaltantes && $carga) {
 $totalMaestro = (int) $pdo->query("SELECT COUNT(*) FROM maestro_productos")->fetchColumn();
 $conUnidades  = (int) $pdo->query("SELECT COUNT(*) FROM maestro_productos WHERE unidades_por_caja > 0")->fetchColumn();
 $conPlu       = (int) $pdo->query("SELECT COUNT(*) FROM maestro_productos WHERE plu IS NOT NULL")->fetchColumn();
-$faltantes    = $carga ? pluSinMaestro($pdo, $carga['id_carga']) : 0;
+$faltantes    = pluSinMaestro($pdo);
 ?>
 <!DOCTYPE html>
 <html lang="es">

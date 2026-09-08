@@ -25,11 +25,6 @@ $entregas  = $resultado['entregas'];
 $porCedi   = agruparPorCediHistorial($entregas);
 $resumen   = resumenHistorialTotales($pdo, $filtros);
 
-// La carga vigente, para saber qué pedidos se pueden restaurar (ver restaurarEntregaHistorial:
-// solo los de la carga vigente, porque Picking y Consolidados no miran ninguna otra).
-$vigente        = cargaVigente($pdo);
-$idCargaVigente = $vigente['id_carga'] ?? null;
-
 // La URL para volver acá conservando el filtro; la usa la paginación.
 $filtrosEnUrl = http_build_query(array_filter($filtros));
 ?>
@@ -150,7 +145,6 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                 <tbody>
                                     <?php foreach ($grupo['entregas'] as $entrega): $t = $entrega['totales']; ?>
                                         <?php $clave = $entrega['clave']; ?>
-                                        <?php $esVigente = $idCargaVigente !== null && (int) $entrega['id_carga'] === (int) $idCargaVigente; ?>
                                         <tr class="fila-pedido" data-entrega="<?php echo htmlspecialchars($clave); ?>">
                                             <td class="centro">
                                                 <input type="checkbox" class="chk-pedido"
@@ -213,18 +207,14 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                                         <i class="fa-solid fa-print"></i> Imprimir
                                                     </a>
 
-                                                    <?php if ($esVigente): ?>
-                                                        <button type="button" class="btn btn-chico btn-restaurar"
-                                                                title="Vuelve a dejar este pedido pendiente en Picking."
-                                                                data-id-carga="<?php echo (int) $entrega['id_carga']; ?>"
-                                                                data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
-                                                                data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
-                                                                data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
-                                                            <i class="fa-solid fa-rotate-left"></i> Restaurar
-                                                        </button>
-                                                    <?php else: ?>
-                                                        <span class="sin-dato" title="Es de un Consolidado anterior al vigente; ya no se puede restaurar.">—</span>
-                                                    <?php endif; ?>
+                                                    <button type="button" class="btn btn-chico btn-restaurar"
+                                                            title="Vuelve a dejar este pedido pendiente en Picking."
+                                                            data-id-carga="<?php echo (int) $entrega['id_carga']; ?>"
+                                                            data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
+                                                            data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
+                                                            data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
+                                                        <i class="fa-solid fa-rotate-left"></i> Restaurar
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
