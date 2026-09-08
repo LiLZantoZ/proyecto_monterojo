@@ -30,33 +30,21 @@
         var urlCodigo = BASE_URL + '/modules/rotulos/controller_rotulos.php?accion=codigo_barras&texto='
                       + encodeURIComponent(idCaja);
 
+        // 100mm x 40mm exactos, el mismo diseño compacto en los tres lugares que arman esto (acá,
+        // en scripts_picking.js y en scripts_historial.js) y en el PDF (helper_rotulos_pdf.php,
+        // en el módulo Historial): sin logo —no entra en 4cm de alto—, sin etiqueta suelta para
+        // cada campo, orden de compra y CEDI comparten renglón, y el contador de cajas sube a
+        // compartir el encabezado con la marca. Ver el porqué completo en
+        // assets/css/partes/04-rotulo.css.
         return ''
             + '<div class="rotulo">'
             +   '<div class="rotulo-marca">'
-            +     '<img src="' + LOGO_URL + '" alt="">'
             +     '<span>Monterojo Gourmet</span>'
+            +     '<span class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</span>'
             +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Punto de venta</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.pv) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Orden de compra</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.oc) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Cajas total</span>'
-            +     '<span class="rotulo-valor">' + total + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Producto</span>'
-            +     '<span class="rotulo-valor rotulo-valor-producto">' + nombreProducto + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">CEDI</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.cedi) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</div>'
+            +   '<span class="rotulo-valor">' + esc(datos.pv) + '</span>'
+            +   '<span class="rotulo-meta">O/C ' + esc(datos.oc) + ' · CEDI ' + esc(datos.cedi) + '</span>'
+            +   '<span class="rotulo-valor-producto">' + nombreProducto + '</span>'
             +   '<div class="rotulo-codigo">'
             +     '<img src="' + urlCodigo + '" alt="Código de barras ' + esc(idCaja) + '">'
             +     '<span class="rotulo-codigo-texto">' + esc(idCaja) + '</span>'

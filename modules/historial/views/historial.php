@@ -367,7 +367,6 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
 <script>
     const BASE_URL   = '<?php echo BASE_URL; ?>';
     const CSRF_TOKEN = '<?php echo htmlspecialchars(generarTokenCSRF(), ENT_QUOTES, 'UTF-8'); ?>';
-    const LOGO_URL   = '<?php echo BASE_URL; ?>/assets/img/monterojo.png';
 </script>
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>
