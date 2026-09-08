@@ -77,6 +77,13 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             </a>
         <?php endif; ?>
 
+        <?php if (tienePermiso('modulo_historial')): ?>
+            <a href="<?php echo BASE_URL; ?>/modules/historial/views/historial.php" class="nav-link">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span>Historial de Pedidos</span>
+            </a>
+        <?php endif; ?>
+
         <a href="<?php echo BASE_URL; ?>/modules/login/controller/logout.php" class="nav-link nav-link-logout">
             <i class="fa-solid fa-right-from-bracket"></i>
             <span>Cerrar sesión</span>

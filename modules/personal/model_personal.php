@@ -14,11 +14,14 @@ require_once __DIR__ . '/../../config/config.php';
  */
 function listarPersonal($pdo, $soloActivos = false) {
     $sql = "SELECT p.id_personal, p.nombre, p.documento, p.cargo, p.estado,
-                   -- Cuántas entregas tiene asignadas HOY (en la carga vigente). Se cuentan
-                   -- entregas y no líneas: una entrega de seis productos es un solo trabajo.
+                   -- Cuántas entregas tiene asignadas Y PENDIENTES (sin despachar). Se cuentan
+                   -- entregas y no líneas: una entrega de seis productos es un solo trabajo. Las
+                   -- que ya se despacharon no cuentan: ya no son carga de trabajo, son historia,
+                   -- y dejarlas sumar haría que alguien pareciera siempre ocupado aunque ya
+                   -- hubiera terminado todo lo suyo.
                    (SELECT COUNT(DISTINCT CONCAT(l.cedi, '|', l.orden_compra, '|', l.punto_venta))
                     FROM consolidado_lineas l
-                    WHERE l.id_personal = p.id_personal) AS entregas_asignadas
+                    WHERE l.id_personal = p.id_personal AND l.despachado = 0) AS entregas_asignadas
             FROM personal p";
 
     if ($soloActivos) {
@@ -116,9 +119,11 @@ function eliminarPersona($pdo, $idPersonal) {
     }
 
     try {
+        // Solo las PENDIENTES: una entrega ya despachada no "queda sin asignar" al borrar a
+        // alguien, queda como estaba — despachada, con el registro de quién la hizo intacto.
         $contar = $pdo->prepare(
             "SELECT COUNT(DISTINCT CONCAT(cedi, '|', orden_compra, '|', punto_venta))
-             FROM consolidado_lineas WHERE id_personal = :id"
+             FROM consolidado_lineas WHERE id_personal = :id AND despachado = 0"
         );
         $contar->execute([':id' => (int) $idPersonal]);
         $entregas = (int) $contar->fetchColumn();

@@ -165,17 +165,38 @@ function htmlPickingPdf(array $entrega, $meta) {
 }
 
 /**
- * Genera el PDF de una entrega y lo manda al navegador como descarga. No devuelve: termina la
- * ejecución.
+ * Genera el PDF de UNA o VARIAS entregas y lo manda al navegador como descarga. No devuelve:
+ * termina la ejecución.
+ *
+ * Con varias sale un solo archivo con una hoja por entrega, y no un ZIP ni varias descargas: el
+ * picker imprime el lote entero de una y le quedan las hojas en orden.
  */
-function descargarPickingPdf(array $entrega, $meta) {
+function descargarPickingPdf(array $entregas, $meta, $nombreArchivo = null) {
+    // Se acepta tanto una entrega suelta como una lista, para que quien llame no tenga que
+    // envolverla. Una entrega tiene la clave 'lineas'; una lista, no.
+    if (isset($entregas['lineas'])) {
+        $entregas = [$entregas];
+    }
+
+    if (!$entregas) {
+        return;
+    }
+
     $opciones = new Options();
     $opciones->set('isRemoteEnabled', false);   // el logo va como data URI; nada sale a la red
     $opciones->set('defaultFont', 'Helvetica');
 
+    $hojas = [];
+    foreach ($entregas as $entrega) {
+        $hojas[] = htmlPickingPdf($entrega, $meta);
+    }
+
+    // El salto va ENTRE hojas y no al final de cada una: con un page-break después de la última,
+    // el PDF termina con una página en blanco.
+    $cuerpo = implode('<div style="page-break-before: always;"></div>', $hojas);
+
     $html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
-          . cssPickingPdf() . '</style></head><body>'
-          . htmlPickingPdf($entrega, $meta) . '</body></html>';
+          . cssPickingPdf() . '</style></head><body>' . $cuerpo . '</body></html>';
 
     $dompdf = new Dompdf($opciones);
     $dompdf->loadHtml($html, 'UTF-8');
@@ -188,7 +209,13 @@ function descargarPickingPdf(array $entrega, $meta) {
         ob_end_clean();
     }
 
-    $dompdf->stream(nombreArchivoPicking($entrega), ['Attachment' => true]);
+    if ($nombreArchivo === null) {
+        $nombreArchivo = count($entregas) === 1
+            ? nombreArchivoPicking($entregas[0])
+            : 'Picking_' . count($entregas) . '_pedidos_' . date('Ymd_His') . '.pdf';
+    }
+
+    $dompdf->stream($nombreArchivo, ['Attachment' => true]);
     exit();
 }
 

@@ -214,6 +214,19 @@
     border-color: var(--vino);
 }
 
+/* --- Paginación --- */
+/* Solo aparece en pantallas que acumulan datos sin límite (Historial): Picking y Consolidados
+   muestran una carga entera porque es un conjunto acotado, así que no la necesitan. */
+.paginacion {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--texto-suave);
+}
+
 /* --- Tabla --- */
 
 /* El scroll horizontal vive en este contenedor y NO en la página: una tabla ancha no tiene que
@@ -307,6 +320,102 @@ table.tabla tbody tr:hover {
 .acciones-pedido .btn {
     justify-content: center;
     white-space: nowrap;
+}
+
+/* =========================================
+   SELECCIÓN DE VARIOS PEDIDOS
+   ========================================= */
+
+.chk-pedido,
+.chk-todos {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--vino);   /* el tilde en color de marca, sin tener que dibujar la casilla */
+}
+
+/* La fila tildada se resalta: con el detalle de un pedido abierto entre medio, la casilla queda
+   lejos y no se vería qué está seleccionado. */
+.fila-seleccionada > td {
+    background: var(--vino-claro);
+}
+
+.tabla-accion-fija > tbody > tr.fila-seleccionada > td:last-child {
+    background: var(--vino-claro);
+}
+
+/* La barra flotante de acciones. Va pegada abajo y no encima de la tabla porque con 97 entregas
+   hay que scrollear: arriba, al llegar al pedido veinte habría que volver al principio para
+   pulsar el botón. */
+.barra-seleccion {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+    max-width: calc(100vw - 40px);
+    padding: 12px 18px;
+    border-radius: 14px;
+    background: var(--negro);
+    color: var(--blanco);
+    box-shadow: var(--sombra-fuerte);
+    border-bottom: 3px solid var(--vino);
+}
+
+/* El display:flex de arriba le ganaría al display:none de [hidden]. */
+.barra-seleccion[hidden] {
+    display: none;
+}
+
+.barra-seleccion-info {
+    font-size: 0.88rem;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.barra-seleccion-info strong {
+    color: var(--blanco);
+    font-size: 1.05rem;
+}
+
+.barra-limpiar {
+    margin-left: 12px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.barra-limpiar:hover {
+    color: var(--blanco);
+}
+
+.barra-seleccion-acciones {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* El formulario de descarga no debe romper la fila de botones. */
+.barra-seleccion-acciones form {
+    display: contents;
+}
+
+@media (max-width: 700px) {
+    .barra-seleccion {
+        left: 12px;
+        right: 12px;
+        transform: none;
+        max-width: none;
+        gap: 10px;
+    }
 }
 
 .btn-detalle {
@@ -611,11 +720,44 @@ tr.fila-sin-maestro:hover {
 .modal-pie {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 10px;
     padding: 14px 20px;
     border-top: 1px solid var(--borde);
     background: var(--crema);
     border-radius: 0 0 var(--radio) var(--radio);
+}
+
+/* El pie puede llevar cada botón dentro de su propio <form> (así pasa en la confirmación de
+   importar un archivo repetido). Sin esto los <form> se apilarían como bloques y los botones
+   quedarían uno debajo del otro. */
+.modal-pie form {
+    display: contents;
+}
+
+/* La pregunta de una confirmación, arriba del detalle. Un punto más grande que el texto normal:
+   es lo único que hay que leer para poder contestar. */
+.confirmar-pregunta {
+    font-size: 0.98rem;
+    line-height: 1.55;
+    margin-bottom: 16px;
+}
+
+/* La cabecera de un modal de aviso lleva icono; se separa del título lo justo. */
+.modal-cabecera h2 i {
+    margin-right: 8px;
+    color: #f0b429;
+}
+
+/* La lista de pedidos pendientes dentro del aviso de "no se puede despachar todavía". Sin marcador
+   propio (list-style: none) porque el aviso ya tiene su icono de alerta a la izquierda; un segundo
+   set de viñetas ahí competiría con eso en vez de leerse como una lista. */
+.lista-pendientes {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    font-size: 0.85rem;
+    line-height: 1.7;
 }
 
 /* --- Campos dentro de un modal --- */

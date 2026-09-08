@@ -217,15 +217,21 @@ $tablas['personal'] = "
 // esto, dos cargas del mismo día se vuelven indistinguibles y nadie puede decir si la pantalla
 // muestra el archivo viejo o el nuevo.
 // ----------------------------------------------------------------------------------------------
+// `huella` es un SHA-256 del CONTENIDO importado, no del archivo. Sirve para avisar cuando se
+// vuelve a subir un consolidado que ya se había cargado: la cadena reenvía el mismo pedido más de
+// una vez, y volver a importarlo borra en silencio las asignaciones de personal que ya se habían
+// hecho sobre él. Ver huellaDelConsolidado() en model_consolidados_import.php.
 $tablas['consolidado_cargas'] = "
     CREATE TABLE IF NOT EXISTS consolidado_cargas (
         `id_carga` int(11) NOT NULL AUTO_INCREMENT,
         `nombre_archivo` varchar(255) NOT NULL,
         `filas` int(11) NOT NULL DEFAULT 0,
+        `huella` char(64) DEFAULT NULL COMMENT 'SHA-256 del contenido importado, para detectar recargas',
         `id_usuario` int(11) DEFAULT NULL,
         `fecha_carga` timestamp NOT NULL DEFAULT current_timestamp(),
         PRIMARY KEY (`id_carga`),
         KEY `id_usuario` (`id_usuario`),
+        KEY `huella` (`huella`),
         CONSTRAINT `consolidado_cargas_ibfk_1` FOREIGN KEY (`id_usuario`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
@@ -258,16 +264,23 @@ $tablas['consolidado_lineas'] = "
         `fecha_maxima_entrega` date DEFAULT NULL,
         `pedido_sap` varchar(40) DEFAULT NULL COMMENT 'No viene en el archivo: se digita en Picking',
         `id_personal` int(11) DEFAULT NULL COMMENT 'Quién alista esta entrega; se asigna en Picking',
+        `despachado` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'La entrega ya salió: desaparece de Picking y Consolidados',
+        `fecha_despacho` timestamp NULL DEFAULT NULL,
+        `despachado_por` int(11) DEFAULT NULL,
         PRIMARY KEY (`id_linea`),
         KEY `id_carga` (`id_carga`),
         KEY `cedi` (`cedi`),
         KEY `plu` (`plu`),
         KEY `punto_venta` (`punto_venta`),
         KEY `id_personal` (`id_personal`),
+        KEY `despachado` (`despachado`),
         CONSTRAINT `consolidado_lineas_ibfk_1` FOREIGN KEY (`id_carga`) REFERENCES `consolidado_cargas` (`id_carga`) ON DELETE CASCADE,
         -- ON DELETE SET NULL: borrar a alguien del personal no puede borrar líneas del pedido.
         -- La entrega queda sin asignar, que es lo correcto.
-        CONSTRAINT `consolidado_lineas_ibfk_2` FOREIGN KEY (`id_personal`) REFERENCES `personal` (`id_personal`) ON DELETE SET NULL
+        CONSTRAINT `consolidado_lineas_ibfk_2` FOREIGN KEY (`id_personal`) REFERENCES `personal` (`id_personal`) ON DELETE SET NULL,
+        -- Igual con quién despachó: si se borra ese usuario, el registro de que esta entrega
+        -- salió no debe desaparecer, solo pierde de quién fue.
+        CONSTRAINT `consolidado_lineas_ibfk_3` FOREIGN KEY (`despachado_por`) REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
 // ----------------------------------------------------------------------------------------------
@@ -319,6 +332,25 @@ $tieneColumna = $pdo->query(
        AND COLUMN_NAME = 'id_personal'"
 )->fetchColumn();
 
+// Misma situación con consolidado_cargas.huella, que se agregó después.
+$tieneHuella = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_cargas'
+       AND COLUMN_NAME = 'huella'"
+)->fetchColumn();
+
+if (!$tieneHuella) {
+    echo "\n== Migración: consolidado_cargas.huella ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_cargas
+         ADD COLUMN `huella` char(64) DEFAULT NULL COMMENT 'SHA-256 del contenido importado, para detectar recargas',
+         ADD KEY `huella` (`huella`)"
+    );
+    // Las cargas anteriores quedan con huella NULL: no se puede calcular sin el archivo original.
+    // No molesta — solo significa que a esas no se las va a reconocer como repetidas.
+    echo "   Columna agregada.\n";
+}
+
 if (!$tieneColumna) {
     echo "\n== Migración: consolidado_lineas.id_personal ==\n";
     $pdo->exec(
@@ -329,6 +361,27 @@ if (!$tieneColumna) {
              REFERENCES `personal` (`id_personal`) ON DELETE SET NULL"
     );
     echo "   Columna agregada.\n";
+}
+
+// Misma situación con las tres columnas del despacho.
+$tieneDespachado = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_lineas'
+       AND COLUMN_NAME = 'despachado'"
+)->fetchColumn();
+
+if (!$tieneDespachado) {
+    echo "\n== Migración: consolidado_lineas.despachado ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_lineas
+         ADD COLUMN `despachado` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'La entrega ya salió: desaparece de Picking y Consolidados',
+         ADD COLUMN `fecha_despacho` timestamp NULL DEFAULT NULL,
+         ADD COLUMN `despachado_por` int(11) DEFAULT NULL,
+         ADD KEY `despachado` (`despachado`),
+         ADD CONSTRAINT `consolidado_lineas_ibfk_3` FOREIGN KEY (`despachado_por`)
+             REFERENCES `usuarios` (`id_usuario`) ON DELETE SET NULL"
+    );
+    echo "   Columnas agregadas.\n";
 }
 
 // ==============================================================================================
@@ -359,10 +412,11 @@ $permisos = [
     'modulo_maestro'      => 'Cargar y consultar el maestro de productos (PLU, SKU, unidades por caja).',
     'modulo_picking'      => 'Ver el alistamiento por punto de venta y generar los rótulos.',
     'modulo_personal'     => 'Dar de alta, editar y eliminar el personal de alistamiento.',
+    'modulo_historial'    => 'Consultar los pedidos ya despachados y restaurarlos si hizo falta.',
 ];
 
 $permisosPorRol = [
-    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal'],
+    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial'],
 ];
 
 if ($permisos) {

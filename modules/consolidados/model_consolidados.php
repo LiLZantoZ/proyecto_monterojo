@@ -112,10 +112,13 @@ function cargaVigente($pdo) {
 
 // Los CEDI que trae la carga. Salen del propio archivo y no de una lista fija: hoy vienen tres,
 // otro día pueden ser cuatro, y una lista escrita a mano dejaría el cuarto sin pantalla.
+//
+// despachado = 0: un CEDI cuyas entregas ya salieron todas no debe seguir ofreciéndose en el
+// filtro ni contando para "cuántos CEDI trae la carga" — ya no queda nada pendiente ahí.
 function cedisDeLaCarga($pdo, $idCarga) {
     $stmt = $pdo->prepare(
         "SELECT cedi, COUNT(*) AS lineas, SUM(unidades) AS unidades
-         FROM consolidado_lineas WHERE id_carga = :carga
+         FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0
          GROUP BY cedi ORDER BY cedi"
     );
     $stmt->execute([':carga' => $idCarga]);
@@ -140,7 +143,9 @@ function lineasDelMaestro($pdo) {
 // $filtros acepta 'cedi', 'linea' y 'plu' (búsqueda por PLU, SKU o descripción).
 // ---------------------------------------------------------------------------------------------
 function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
-    $where  = ['l.id_carga = :carga'];
+    // despachado = 0 SIEMPRE: una entrega despachada ya salió de bodega, y no tiene que seguir
+    // apareciendo como pendiente ni acá ni en el PDF que se arma con esto mismo.
+    $where  = ['l.id_carga = :carga', 'l.despachado = 0'];
     $params = [':carga' => $idCarga];
 
     // Solo el CEDI se filtra en SQL: es una columna del propio Consolidado. La línea y la búsqueda
@@ -248,7 +253,7 @@ function totalesDelGrupo(array $filas) {
 // Se cuenta por PLU + EAN y no solo por PLU porque la resolución del maestro mira los dos.
 function pluSinMaestro($pdo, $idCarga) {
     $stmt = $pdo->prepare(
-        "SELECT DISTINCT plu, ean_item FROM consolidado_lineas WHERE id_carga = :carga"
+        "SELECT DISTINCT plu, ean_item FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0"
     );
     $stmt->execute([':carga' => $idCarga]);
 

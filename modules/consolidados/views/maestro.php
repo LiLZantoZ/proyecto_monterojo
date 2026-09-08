@@ -26,7 +26,7 @@ if ($soloFaltantes && $carga) {
     // pantallas de Consolidados y Picking.
     $stmt = $pdo->prepare(
         "SELECT plu, ean_item, SUM(unidades) AS unidades_pedidas
-         FROM consolidado_lineas WHERE id_carga = :carga
+         FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0
          GROUP BY plu, ean_item ORDER BY unidades_pedidas DESC"
     );
     $stmt->execute([':carga' => $carga['id_carga']]);

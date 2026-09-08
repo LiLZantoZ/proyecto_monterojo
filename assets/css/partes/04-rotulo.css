@@ -143,6 +143,13 @@
     border-radius: 12px;
 }
 
+/* Sin esto, el display:grid de arriba le gana al display:none que el navegador aplica a [hidden],
+   y el panel "oculto" se seguiría viendo. Pasa al imprimir los rótulos de varios pedidos, donde el
+   panel se esconde porque sus campos no pueden representar a todos. */
+.rotulo-controles[hidden] {
+    display: none;
+}
+
 .rotulo-controles .campo {
     margin-bottom: 0;
 }

@@ -19,7 +19,11 @@ require_once __DIR__ . '/../consolidados/model_consolidados.php';   // desglosar
  * $filtros acepta 'cedi', 'punto_venta' y 'busqueda' (PLU, SKU o descripción).
  */
 function filasPicking($pdo, $idCarga, array $filtros = []) {
-    $where  = ['l.id_carga = :carga'];
+    // despachado = 0 SIEMPRE, no como filtro opcional: una vez que una entrega salió, tiene que
+    // dejar de existir para Picking (y, como Consolidados se apoya en la misma columna, también
+    // para Consolidados). Si esto fuera condicional, un pedido despachado seguiría apareciendo
+    // cada vez que alguien llamara a esta función sin acordarse de excluirlo.
+    $where  = ['l.id_carga = :carga', 'l.despachado = 0'];
     $params = [':carga' => $idCarga];
 
     // En SQL solo lo que es columna del propio Consolidado. La búsqueda por SKU o descripción
@@ -243,6 +247,35 @@ function agruparPorCedi(array $entregas) {
 }
 
 /**
+ * Varias entregas de una vez, para imprimir sus hojas juntas.
+ *
+ * $claves es una lista de ['cedi' => ..., 'oc' => ..., 'pv' => ...]. Se lee TODO el picking una
+ * sola vez y después se filtra en memoria: llamando a entregaPicking() en un bucle, veinte
+ * pedidos seleccionados serían veinte consultas más veinte lecturas del maestro.
+ *
+ * Devuelve las entregas en el mismo orden en que aparecen en la pantalla, no en el que se hayan
+ * tildado: la carpeta de hojas impresas queda ordenada como la tabla.
+ */
+function entregasPicking($pdo, $idCarga, array $claves) {
+    if (!$claves) {
+        return [];
+    }
+
+    $buscadas = [];
+    foreach ($claves as $c) {
+        $buscadas[trim($c['cedi'] ?? '') . '|' . trim($c['oc'] ?? '') . '|' . trim($c['pv'] ?? '')] = true;
+    }
+
+    $entregas = agruparPorEntrega(filasPicking($pdo, $idCarga));
+
+    return array_values(array_filter(
+        $entregas,
+        fn($clave) => isset($buscadas[$clave]),
+        ARRAY_FILTER_USE_KEY
+    ));
+}
+
+/**
  * Una sola entrega, con sus líneas, para la hoja de picking en PDF.
  *
  * Reutiliza filasPicking() y agruparPorEntrega() en vez de tener su propia consulta: si las dos
@@ -260,7 +293,7 @@ function entregaPicking($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta) {
 
 // Los puntos de venta de la carga, para el desplegable de filtro.
 function puntosDeVenta($pdo, $idCarga, $cedi = null) {
-    $sql = "SELECT DISTINCT punto_venta FROM consolidado_lineas WHERE id_carga = :carga";
+    $sql = "SELECT DISTINCT punto_venta FROM consolidado_lineas WHERE id_carga = :carga AND despachado = 0";
     $params = [':carga' => $idCarga];
 
     if (!empty($cedi)) {
@@ -307,6 +340,111 @@ function guardarPedidoSap($pdo, $idCarga, $cedi, $ordenCompra, $puntoVenta, $ped
     } catch (PDOException $e) {
         error_log('Error guardando el pedido SAP: ' . $e->getMessage());
         return false;
+    }
+}
+
+/**
+ * Despacha una o varias entregas: las marca como salidas, y desde ese momento filasPicking() ya
+ * no las devuelve —así desaparecen de Picking— y tampoco consolidadoPorCedi(), que se apoya en la
+ * misma columna —así desaparecen también de Consolidados.
+ *
+ * NO SE CONFÍA EN LO QUE MANDÓ EL NAVEGADOR. El botón de la pantalla ya comprueba en el cliente que
+ * haya personal asignado, pero esa comprobación mira el DOM en el momento del clic: si dos
+ * personas tienen Picking abierto y una quita una asignación mientras la otra ya tenía la pantalla
+ * cargada, el clic de la segunda vería datos viejos. Por eso cada entrega se vuelve a mirar en la
+ * base justo antes de despacharla.
+ *
+ * Es TODO O NADA: si alguna de las entregas pedidas no tiene personal (o ya no existe, por ejemplo
+ * porque el Consolidado se volvió a cargar), NINGUNA se despacha. Despachar la mitad de un lote y
+ * dejar la otra mitad pendiente sin que quien lo pidió lo haya decidido así es más confuso que
+ * simplemente no hacer nada y decir por qué.
+ *
+ * $claves es una lista de ['cedi' => ..., 'oc' => ..., 'pv' => ...].
+ *
+ * Devuelve:
+ *   ['exito' => true,  'despachadas' => int]  — cuántas entregas se marcaron
+ *   ['exito' => false, 'mensaje' => string, 'sin_personal' => [['punto_venta'=>, 'orden_compra'=>], ...]]
+ */
+function despacharEntregas($pdo, $idCarga, array $claves, $idUsuario) {
+    if (!$claves) {
+        return ['exito' => false, 'mensaje' => 'No se recibió ninguna entrega para despachar.', 'sin_personal' => []];
+    }
+
+    // Se relee TODO el picking vigente una sola vez (igual que hace entregasPicking()) y se
+    // comprueba cada clave pedida contra ese estado fresco, en vez de una consulta por clave.
+    $entregasActuales = agruparPorEntrega(filasPicking($pdo, $idCarga));
+
+    $porDespachar = [];
+    $sinPersonal  = [];
+
+    foreach ($claves as $c) {
+        $cedi = trim((string) ($c['cedi'] ?? ''));
+        $oc   = trim((string) ($c['oc'] ?? $c['orden_compra'] ?? ''));
+        $pv   = trim((string) ($c['pv'] ?? $c['punto_venta'] ?? ''));
+
+        if ($cedi === '' || $oc === '' || $pv === '') {
+            continue;
+        }
+
+        $clave = $cedi . '|' . $oc . '|' . $pv;
+        $entrega = $entregasActuales[$clave] ?? null;
+
+        // No existe (ya se despachó, o el Consolidado cambió): no hay nada que despachar, pero
+        // tampoco es un error a mostrar — simplemente no entra ni a la lista buena ni a la mala.
+        if ($entrega === null) {
+            continue;
+        }
+
+        if (empty($entrega['id_personal'])) {
+            $sinPersonal[] = ['punto_venta' => $pv, 'orden_compra' => $oc];
+            continue;
+        }
+
+        $porDespachar[] = ['cedi' => $cedi, 'oc' => $oc, 'pv' => $pv];
+    }
+
+    if ($sinPersonal) {
+        return [
+            'exito'        => false,
+            'mensaje'      => count($sinPersonal) === 1
+                ? 'Hay un pedido sin personal asignado. Asignalo antes de despachar.'
+                : 'Hay ' . count($sinPersonal) . ' pedidos sin personal asignado. Asignalos antes de despachar.',
+            'sin_personal' => $sinPersonal,
+        ];
+    }
+
+    if (!$porDespachar) {
+        return ['exito' => false, 'mensaje' => 'Ninguno de los pedidos seleccionados sigue disponible para despachar.', 'sin_personal' => []];
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        $stmt = $pdo->prepare(
+            "UPDATE consolidado_lineas
+             SET despachado = 1, fecha_despacho = NOW(), despachado_por = :usuario
+             WHERE id_carga = :carga AND cedi = :cedi AND orden_compra = :oc AND punto_venta = :pv
+               AND despachado = 0"
+        );
+
+        foreach ($porDespachar as $p) {
+            $stmt->execute([
+                ':usuario' => $idUsuario ?: null,
+                ':carga'   => $idCarga,
+                ':cedi'    => $p['cedi'],
+                ':oc'      => $p['oc'],
+                ':pv'      => $p['pv'],
+            ]);
+        }
+
+        $pdo->commit();
+
+        return ['exito' => true, 'despachadas' => count($porDespachar)];
+
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log('Error despachando entregas: ' . $e->getMessage());
+        return ['exito' => false, 'mensaje' => 'No se pudo despachar. Inténtalo de nuevo.', 'sin_personal' => []];
     }
 }
 

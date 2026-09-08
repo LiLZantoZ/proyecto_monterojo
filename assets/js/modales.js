@@ -21,8 +21,13 @@
         if (primero) { primero.focus(); }
     }
 
+    // Un modal marcado con data-obligatorio no se cierra por las vías "de escape" —el fondo, la
+    // tecla Escape—: espera una respuesta concreta. Se usa en la confirmación de importar un
+    // Consolidado repetido, donde hay un archivo guardado en el servidor y una de las dos
+    // respuestas tiene que llegar, o queda ahí colgado.
     function cerrar(modal) {
-        if (modal) { modal.classList.remove('active'); }
+        if (!modal || modal.hasAttribute('data-obligatorio')) { return; }
+        modal.classList.remove('active');
     }
 
     document.addEventListener('click', function (e) {

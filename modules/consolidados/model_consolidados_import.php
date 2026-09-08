@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/model_consolidados.php';   // cargaVigente(), usada por cargaConLaMismaHuella()
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as FechaExcel;
@@ -115,9 +116,92 @@ function mapearColumnas(array $encabezado, array $esperadas) {
 }
 
 /**
- * Importa el archivo Consolidado. Reemplaza por completo lo que había: el archivo del día es la
- * foto entera del pedido, no un agregado, así que mezclarlo con el anterior dejaría alistando
- * pedidos que ya salieron.
+ * Huella del CONTENIDO de un archivo Consolidado: un SHA-256 que identifica lo que trae, no el
+ * archivo.
+ *
+ * Se calcula sobre los valores que realmente se importan, no sobre los bytes del .xlsx. Dos
+ * exportaciones del mismo pedido tienen bytes distintos —cambia la fecha interna, el orden de las
+ * hojas, la versión de Excel— pero la misma información, y para quien la sube son el mismo
+ * archivo. Comparar bytes no detectaría nada.
+ *
+ * Las filas se ORDENAN antes de encadenarlas, así que un export con las líneas en otro orden
+ * también da la misma huella. Es lo que se espera de "la misma información".
+ *
+ * Devuelve el hash, o null si el archivo no se pudo leer o no tiene las columnas necesarias.
+ */
+function huellaDelConsolidado($rutaArchivo) {
+    $filas = leerPrimeraHoja($rutaArchivo);
+    if (count($filas) < 2) {
+        return null;
+    }
+
+    $mapa = mapearColumnas(array_shift($filas), columnasConsolidado());
+    if (array_diff(['cedi', 'orden_compra', 'plu', 'punto_venta', 'unidades'], array_keys($mapa))) {
+        return null;
+    }
+
+    $lineas = [];
+    foreach ($filas as $fila) {
+        $valores = [];
+        // Se recorre columnasConsolidado() y no el $mapa para que el orden de los campos dentro
+        // de cada línea sea siempre el mismo, sin importar en qué orden vengan en el Excel.
+        foreach (array_unique(array_values(columnasConsolidado())) as $campo) {
+            $indice = $mapa[$campo] ?? null;
+            $valores[] = $indice === null ? '' : trim((string) ($fila[$indice] ?? ''));
+        }
+
+        $linea = implode("\x1f", $valores);      // separador de unidad: no aparece en los datos
+        if (trim($linea, "\x1f") === '') {
+            continue;                            // fila vacía del final del archivo
+        }
+        $lineas[] = $linea;
+    }
+
+    if (!$lineas) {
+        return null;
+    }
+
+    sort($lineas);
+    return hash('sha256', implode("\x1e", $lineas));
+}
+
+/**
+ * La carga VIGENTE, si tiene esta misma huella. Sirve para avisar antes de reimportar algo que ya
+ * está cargado.
+ *
+ * Compara solo contra la vigente y no contra el historial completo de cargas a propósito: las
+ * cargas viejas ya no se borran (ver importarConsolidado — se conservan para el Historial de
+ * Pedidos), así que buscar en toda la tabla encontraría coincidencias con archivos de hace
+ * semanas que ya fueron reemplazados hace rato. El aviso "esto ya está cargado" solo tiene sentido
+ * para lo que está activo AHORA; reimportar el archivo de un día viejo no es un error, es una
+ * decisión válida (por ejemplo, para corregir algo que se reemplazó de más).
+ */
+function cargaConLaMismaHuella($pdo, $huella) {
+    if (empty($huella)) {
+        return null;
+    }
+
+    $vigente = cargaVigente($pdo);
+    if (!$vigente) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
+         FROM consolidado_cargas c
+         LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
+         WHERE c.id_carga = :id_carga AND c.huella = :huella"
+    );
+    $stmt->execute([':id_carga' => $vigente['id_carga'], ':huella' => $huella]);
+
+    return $stmt->fetch() ?: null;
+}
+
+/**
+ * Importa el archivo Consolidado. Reemplaza lo PENDIENTE que había —el archivo del día es la foto
+ * entera de lo que falta, no un agregado, así que mezclarlo con el anterior dejaría alistando
+ * pedidos que ya salieron— pero conserva para siempre lo que ya se despachó: eso es el Historial
+ * de Pedidos, y no tiene por qué desaparecer solo porque llegó el archivo de mañana.
  *
  * Devuelve ['exito' => bool, 'mensaje' => string, 'filas' => int, 'id_carga' => int|null].
  */
@@ -127,6 +211,11 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
     if (count($filas) < 2) {
         return ['exito' => false, 'mensaje' => 'El archivo no tiene filas de datos.', 'filas' => 0, 'id_carga' => null];
     }
+
+    // Se recalcula desde el archivo en vez de recibirla como parámetro: así importarConsolidado()
+    // guarda SIEMPRE la huella de lo que acaba de importar, la llame quien la llame. Cuesta una
+    // segunda lectura de un archivo de 60 KB.
+    $huella = huellaDelConsolidado($rutaArchivo);
 
     $mapa = mapearColumnas(array_shift($filas), columnasConsolidado());
 
@@ -162,14 +251,21 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
 
     $pdo->beginTransaction();
     try {
-        // Se borran las cargas anteriores; consolidado_lineas cae con ellas por la clave foránea
-        // ON DELETE CASCADE, así que no hay que acordarse de borrarla aparte.
-        $pdo->exec("DELETE FROM consolidado_cargas");
+        // Se borran las líneas PENDIENTES de cargas anteriores —el archivo nuevo es la foto
+        // completa de lo que falta, así que lo viejo sin despachar ya no aplica—, pero las que ya
+        // se DESPACHARON se conservan para siempre. Son el Historial de Pedidos, y antes de este
+        // cambio desaparecían en cuanto alguien subía el archivo del día siguiente: un historial
+        // que se borra solo con la próxima carga no es un historial.
+        //
+        // consolidado_cargas tampoco se borra: queda como el registro de qué se importó y cuándo,
+        // que es justo lo que necesita el Historial para poder decir en qué carga salió cada
+        // despacho. Es una tabla de unas pocas filas por año; no pesa.
+        $pdo->exec("DELETE FROM consolidado_lineas WHERE despachado = 0");
 
         $insertarCarga = $pdo->prepare(
-            "INSERT INTO consolidado_cargas (nombre_archivo, filas, id_usuario) VALUES (?, 0, ?)"
+            "INSERT INTO consolidado_cargas (nombre_archivo, filas, huella, id_usuario) VALUES (?, 0, ?, ?)"
         );
-        $insertarCarga->execute([mb_substr($nombreArchivo, 0, 255), $idUsuario]);
+        $insertarCarga->execute([mb_substr($nombreArchivo, 0, 255), $huella, $idUsuario]);
         $idCarga = (int) $pdo->lastInsertId();
 
         $insertar = $pdo->prepare(

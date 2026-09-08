@@ -37,6 +37,11 @@ foreach ($porCedi as $cedi => $filas) {
 
 // La URL para volver acá conservando los filtros; la usan los enlaces de PDF.
 $filtrosEnUrl = http_build_query(array_filter($filtros));
+
+// Importación a la espera de que se conteste "¿ya estaba cargado, lo subo igual?".
+// El controlador la deja en la sesión junto con el archivo, y acá solo se muestra la pregunta.
+$pendiente = $_SESSION['importacion_pendiente'] ?? null;
+$hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -291,6 +296,71 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
         </form>
     </div>
 </div>
+
+<?php if ($hayQueConfirmar): ?>
+<!-- AVISO: EL ARCHIVO YA ESTABA CARGADO
+     Se abre solo (la clase `active` viene puesta desde PHP) y NO se puede cerrar con la X ni con
+     Escape ni tocando el fondo: hay un archivo esperando en el servidor y una de las dos
+     respuestas tiene que llegar, o queda ahí colgado. Por eso tampoco lleva `data-cerrar`. -->
+<div class="modal-fondo active" id="modal-duplicado" data-obligatorio>
+    <div class="modal-caja">
+        <div class="modal-cabecera">
+            <h2><i class="fa-solid fa-triangle-exclamation"></i> Este archivo ya fue subido</h2>
+        </div>
+
+        <div class="modal-cuerpo">
+            <p class="confirmar-pregunta">
+                <strong><?php echo htmlspecialchars($pendiente['nombre']); ?></strong>
+                tiene exactamente la misma información que el Consolidado que ya está cargado.
+            </p>
+
+            <div class="pastillas" style="margin-bottom: 16px;">
+                <span class="pastilla">
+                    Cargado como <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_archivo']); ?></strong>
+                </span>
+                <span class="pastilla">
+                    El <strong><?php echo date('d/m/Y \a \l\a\s H:i', strtotime($pendiente['carga_previa']['fecha_carga'])); ?></strong>
+                </span>
+                <?php if (!empty($pendiente['carga_previa']['nombre_usuario'])): ?>
+                    <span class="pastilla">
+                        Por <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_usuario']); ?></strong>
+                    </span>
+                <?php endif; ?>
+                <span class="pastilla">
+                    <strong><?php echo number_format((int) $pendiente['carga_previa']['filas'], 0, ',', '.'); ?></strong> líneas
+                </span>
+            </div>
+
+            <div class="aviso aviso-atencion" style="margin-bottom: 0;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div>
+                    Volver a importarlo <strong>reemplaza las líneas actuales</strong>, y con ellas se
+                    pierden las <strong>asignaciones de personal</strong> que ya se hubieran hecho sobre
+                    este pedido. Como el archivo es el mismo, los datos van a quedar igual — lo único
+                    que se pierde es ese trabajo.
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-pie">
+            <!-- Dos formularios y no uno con dos submit: cada botón manda su propia respuesta, y
+                 así ninguno depende de un `value` que un cambio posterior podría dejar vacío. -->
+            <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php" method="POST">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="resolver_duplicado">
+                <input type="hidden" name="respuesta" value="no">
+                <button type="submit" class="btn">No</button>
+            </form>
+            <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php" method="POST">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="resolver_duplicado">
+                <input type="hidden" name="respuesta" value="si">
+                <button type="submit" class="btn btn-acento">Sí, subirlo igual</button>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>

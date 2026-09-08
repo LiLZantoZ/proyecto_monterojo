@@ -182,6 +182,14 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                             <table class="tabla tabla-pedidos tabla-accion-fija">
                                 <thead>
                                     <tr>
+                                        <!-- Tilda o destilda todos los pedidos de ESTE CEDI. Uno por
+                                             grupo y no uno global: se trabaja un CEDI a la vez, y un
+                                             "todos" general seleccionaría 97 pedidos de tres zonas. -->
+                                        <th style="width: 34px;" class="centro">
+                                            <input type="checkbox" class="chk-todos"
+                                                   title="Seleccionar todos los pedidos de este CEDI"
+                                                   aria-label="Seleccionar todos los pedidos de este CEDI">
+                                        </th>
                                         <th style="width: 34px;"><span class="sr-solo">Detalle</span></th>
                                         <th>Punto de venta</th>
                                         <th>O/C</th>
@@ -199,6 +207,17 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                         <?php $clave = $entrega['clave']; ?>
                                         <tr class="fila-pedido<?php echo $t['sin_maestro'] > 0 ? ' fila-sin-maestro' : ''; ?>"
                                             data-entrega="<?php echo htmlspecialchars($clave); ?>">
+                                            <td class="centro">
+                                                <!-- Los datos de la entrega van acá y no solo en el botón
+                                                     de asignar: la barra de acciones lee las casillas
+                                                     tildadas y necesita identificar cada pedido sin
+                                                     depender de qué otros botones tenga la fila. -->
+                                                <input type="checkbox" class="chk-pedido"
+                                                       aria-label="Seleccionar <?php echo htmlspecialchars($entrega['punto_venta']); ?>"
+                                                       data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
+                                                       data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
+                                                       data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
+                                            </td>
                                             <td class="centro">
                                                 <!-- Abre la fila de detalle de ESTE pedido. Es un botón y no un
                                                      clic en toda la fila: la fila lleva un campo de texto y un
@@ -282,6 +301,20 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                                        href="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php?accion=pdf&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
                                                         <i class="fa-solid fa-print"></i> Imprimir
                                                     </a>
+
+                                                    <!-- No lleva su propio data-id-personal: el JS comprueba la
+                                                         asignación leyendo el botón "Asignar personal" de ESTA
+                                                         misma fila, que es la única fuente de verdad en pantalla.
+                                                         Una copia acá quedaría desactualizada si se reasigna sin
+                                                         recargar la página. -->
+                                                    <button type="button" class="btn btn-chico btn-despachar"
+                                                            title="Marca este pedido como despachado: desaparece de Picking y de Consolidados."
+                                                            data-entrega="<?php echo htmlspecialchars($clave); ?>"
+                                                            data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
+                                                            data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
+                                                            data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>">
+                                                        <i class="fa-solid fa-truck-fast"></i> Despachar
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -291,7 +324,7 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                                              tener que meter una tabla dentro de una celda de la fila de
                                              arriba y que las dos peleen por el ancho de las columnas. -->
                                         <tr class="fila-detalle" hidden data-entrega="<?php echo htmlspecialchars($clave); ?>">
-                                            <td colspan="10">
+                                            <td colspan="11">
                                                 <table class="tabla tabla-productos">
                                                     <thead>
                                                         <tr>
@@ -389,6 +422,47 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
     </div>
 </div>
 
+<!-- BARRA DE ACCIONES MASIVAS
+     Aparece pegada abajo cuando hay al menos un pedido tildado. Flotante y no encima de la tabla
+     porque las 97 entregas obligan a scrollear: si estuviera arriba, al llegar al pedido veinte
+     habría que volver hasta el principio para pulsar el botón. -->
+<div class="barra-seleccion" id="barra-seleccion" hidden>
+    <div class="barra-seleccion-info">
+        <strong id="barra-conteo">0</strong> pedido(s) seleccionado(s)
+        <button type="button" class="barra-limpiar" id="btn-limpiar-seleccion">Quitar selección</button>
+    </div>
+
+    <div class="barra-seleccion-acciones">
+        <?php if (tienePermiso('modulo_personal')): ?>
+            <button type="button" class="btn btn-chico" id="btn-asignar-masivo">
+                <i class="fa-solid fa-user-plus"></i> Asignar personal
+            </button>
+        <?php endif; ?>
+
+        <button type="button" class="btn btn-chico" id="btn-rotulos-masivo">
+            <i class="fa-solid fa-tags"></i> Rótulos
+        </button>
+
+        <!-- La descarga va por un formulario y no por fetch: así el navegador la trata como una
+             descarga normal, con su barra de progreso y su carpeta de destino. Los campos ocultos
+             con los pedidos tildados los rellena scripts_picking.js justo antes de enviarlo. -->
+        <form action="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php"
+              method="POST" id="form-pdf-masivo">
+            <?php campoCSRF(); ?>
+            <input type="hidden" name="accion" value="pdf_masivo">
+            <div id="campos-pdf-masivo"></div>
+            <button type="submit" class="btn btn-chico btn-primario">
+                <i class="fa-solid fa-print"></i> Imprimir hojas
+            </button>
+        </form>
+
+        <button type="button" class="btn btn-chico btn-despachar-masivo" id="btn-despachar-masivo">
+            <i class="fa-solid fa-truck-fast"></i> Despachar seleccionados
+        </button>
+
+    </div>
+</div>
+
 <?php include __DIR__ . '/../layouts/modal_rotulo.php'; ?>
 
 <!-- MODAL: ASIGNAR PERSONAL A UNA ENTREGA -->
@@ -444,6 +518,21 @@ $puntosDisponibles = $carga ? puntosDeVenta($pdo, $carga['id_carga'], $filtros['
                 <button type="button" class="btn btn-primario" id="btn-guardar-asignacion">Guardar</button>
             <?php endif; ?>
         </div>
+    </div>
+</div>
+
+<!-- MODAL: DESPACHAR (confirmación, o el aviso de que falta personal)
+     Un solo modal para las dos situaciones: el título, el cuerpo y los botones del pie los arma
+     scripts_picking.js según haga falta, porque cuál de las dos toca depende de datos que solo
+     se conocen en el momento del clic (qué pedido, si tiene personal asignado). -->
+<div class="modal-fondo" id="modal-despachar">
+    <div class="modal-caja">
+        <div class="modal-cabecera">
+            <h2 id="despachar-titulo">Despachar</h2>
+            <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
+        </div>
+        <div class="modal-cuerpo" id="despachar-cuerpo"></div>
+        <div class="modal-pie" id="despachar-pie"></div>
     </div>
 </div>
 
