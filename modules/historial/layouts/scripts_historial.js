@@ -215,7 +215,6 @@
     var detalleTitulo = document.getElementById('rotulo-titulo-detalle');
     var avisoSaldos = document.getElementById('rotulo-aviso-saldos');
     var avisoSaldosTexto = document.getElementById('rotulo-aviso-saldos-texto');
-    var areaImpresion = document.getElementById('area-impresion-rotulos');
     var avisoImpresion      = document.getElementById('rotulo-aviso-impresion');
     var avisoImpresionTexto = document.getElementById('rotulo-aviso-impresion-texto');
     var botonEtiquetadora   = document.getElementById('btn-imprimir-etiquetadora');
@@ -520,27 +519,4 @@
         });
     }
 
-    document.getElementById('btn-imprimir-rotulos')?.addEventListener('click', function () {
-        while (previa.firstChild) {
-            areaImpresion.appendChild(previa.firstChild);
-        }
-        areaImpresion.hidden = false;
-        document.body.classList.add('imprimiendo-rotulos');
-
-        function restaurar() {
-            while (areaImpresion.firstChild) {
-                previa.appendChild(areaImpresion.firstChild);
-            }
-            areaImpresion.hidden = true;
-            document.body.classList.remove('imprimiendo-rotulos');
-            window.removeEventListener('afterprint', restaurar);
-        }
-
-        window.addEventListener('afterprint', restaurar);
-        window.print();
-
-        setTimeout(function () {
-            if (document.body.classList.contains('imprimiendo-rotulos')) { restaurar(); }
-        }, 1500);
-    });
 })();

@@ -139,12 +139,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_m
 // -------------------------------------------------------------------------------------------
 // LOS RÓTULOS DEL MODAL, EN PDF
 //
-// Es la alternativa al botón "Imprimir", que manda los rótulos a la impresora a través del
-// diálogo del navegador. Ese camino depende de que en CADA equipo estén bien puestos el tamaño
-// de papel, los márgenes, la escala y los encabezados; si alguno queda mal, la etiqueta sale
-// corrida, chica o en blanco (pasó en la impresora de etiquetas el 2026-09-08). El PDF, en
-// cambio, ya trae la página de 100x40mm adentro del archivo: se abre y se manda a imprimir a
-// tamaño real, sin nada que configurar.
+// El respaldo de la etiquetadora: sirve para guardar los rótulos, mandarlos por fuera del
+// sistema, o sacarlos en una impresora común cuando la TSC no está disponible. El archivo ya
+// trae la página de 100x40mm adentro, así que se abre y se imprime a tamaño real.
+//
+// (Hasta el 2026-09-09 el modal tenía además un botón que imprimía por el diálogo del
+// navegador. Se sacó: dependía de que en CADA equipo estuvieran bien el tamaño de papel, los
+// márgenes, la escala y los encabezados, y con cualquiera mal la etiqueta salía corrida o en
+// blanco. Ahora la impresión de verdad va por TSPL, ver helper_rotulos_tspl.php.)
 //
 // La lista de rótulos viene armada desde la pantalla, no se recalcula acá: el rótulo del modal
 // es EDITABLE y además, cuando se abre para un pedido entero, cada caja lleva su propio

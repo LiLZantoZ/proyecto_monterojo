@@ -126,31 +126,6 @@
     // IMPRIMIR: mismo mecanismo que Picking y Historial (mover los rótulos al área de
     // impresión que vive fuera de .modulo, imprimir, y traerlos de vuelta).
     // -----------------------------------------------------------------------
-    var areaImpresion = document.getElementById('area-impresion-rotulos');
-
-    document.getElementById('btn-imprimir-rotulos')?.addEventListener('click', function () {
-        while (previa.firstChild) {
-            areaImpresion.appendChild(previa.firstChild);
-        }
-        areaImpresion.hidden = false;
-        document.body.classList.add('imprimiendo-rotulos');
-
-        function restaurar() {
-            while (areaImpresion.firstChild) {
-                previa.appendChild(areaImpresion.firstChild);
-            }
-            areaImpresion.hidden = true;
-            document.body.classList.remove('imprimiendo-rotulos');
-            window.removeEventListener('afterprint', restaurar);
-        }
-
-        window.addEventListener('afterprint', restaurar);
-        window.print();
-
-        setTimeout(function () {
-            if (document.body.classList.contains('imprimiendo-rotulos')) { restaurar(); }
-        }, 1500);
-    });
 
     // -----------------------------------------------------------------------
     // IMPRIMIR EN LA ETIQUETADORA

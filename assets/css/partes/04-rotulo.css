@@ -240,65 +240,12 @@
    recuadro del modal y hay que arrastrar para ver el borde derecho —que es justo lo que no se
    quiere de una VISTA PREVIA, aunque en la hoja impresa esos 100mm sí importen tal cual.
    Acá se encoge al ancho real disponible (contenido del modal, con su padding descontado) para
-   que se vea el rótulo COMPLETO de un vistazo; el texto interno reacomoda sus líneas solo, y no
-   afecta @media print: eso sigue imprimiendo a tamaño real sin pasar por este breakpoint. */
+   que se vea el rótulo COMPLETO de un vistazo; el texto interno reacomoda sus líneas solo. Esto
+   es SOLO la vista previa en pantalla: lo que se imprime de verdad lo dibuja la etiquetadora a
+   partir de comandos TSPL y no pasa por esta hoja de estilos (ver helper_rotulos_tspl.php). */
 @media screen and (max-width: 480px) {
     .rotulo {
         width: calc(100vw - 80px);
         flex-shrink: 1;
-    }
-}
-
-/* --- Impresión --- */
-
-@media print {
-    /* Se oculta TODO y después se vuelve a mostrar solo el área de impresión. Es al revés de lo
-       que parece natural (ocultar "lo que sobra"), pero es la única forma que no se rompe cuando
-       la pantalla gana un elemento nuevo que nadie se acordó de agregar a la lista de ocultos. */
-    body.imprimiendo-rotulos > * {
-        display: none !important;
-    }
-
-    body.imprimiendo-rotulos > #area-impresion-rotulos {
-        display: block !important;
-    }
-
-    body.imprimiendo-rotulos {
-        background: #ffffff;
-    }
-
-    #area-impresion-rotulos .rotulo {
-        /* Uno por hoja: pegar dos rótulos cortados a la mitad no le sirve a nadie. El último no
-           lleva salto, para no imprimir una página en blanco al final. */
-        page-break-after: always;
-        break-after: page;
-        margin: 0;
-
-        /* UN MILÍMETRO MENOS QUE LA PÁGINA, A PROPÓSITO (98mm x 39mm dentro de una página de
-           100mm x 40mm).
-           Con el rótulo midiendo exactamente lo mismo que la página no queda NADA de tolerancia:
-           cualquier redondeo del navegador al convertir milímetros a puntos de impresora empuja
-           el rótulo a una segunda página, y entonces la etiqueta que sale de la máquina queda EN
-           BLANCO mientras el contenido se imprime en la siguiente. Pasó exactamente eso en la
-           impresora de etiquetas (2026-09-08), y es el mismo problema que ya había aparecido al
-           generar el PDF con dompdf.
-           Además, las impresoras térmicas casi siempre tienen un borde físico que el cabezal no
-           alcanza; ese milímetro también cubre eso para que no se corte el marco negro. */
-        width: 98mm;
-        height: 39mm;
-    }
-
-    #area-impresion-rotulos .rotulo:last-child {
-        page-break-after: auto;
-        break-after: auto;
-    }
-
-    /* El tamaño de página es el tamaño real de la etiqueta —100mm x 40mm—, no una hoja carta con
-       márgenes: en una impresora de etiquetas el "papel" ES la etiqueta. Margen 0 porque el
-       rótulo ya trae su propio padding de 2mm por dentro (ver .rotulo); un margen de página
-       encima de eso dejaría menos de 40mm reales de etiqueta aprovechable. */
-    @page {
-        size: 100mm 40mm;
-        margin: 0;
     }
 }

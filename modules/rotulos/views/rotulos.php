@@ -97,15 +97,9 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                 <button type="button" class="btn" id="btn-limpiar-rotulos">
                     <i class="fa-solid fa-broom"></i> Limpiar
                 </button>
-                <!-- Imprimir por el navegador queda como salida de emergencia: es el camino que
-                     depende del diálogo de impresión (escala, márgenes, tamaño de papel) y el que
-                     sacaba las etiquetas corridas o en blanco. Sirve para una impresora común. -->
-                <button type="button" class="btn" id="btn-imprimir-rotulos">
-                    <i class="fa-solid fa-print"></i> Imprimir por el navegador
-                </button>
-
-                <!-- El camino bueno: el sistema le habla directo a la etiquetadora en su propio
-                     idioma (TSPL). Ver modules/historial/helper_rotulos_tspl.php. -->
+                <!-- El sistema le habla directo a la etiquetadora en su propio idioma (TSPL): la
+                     etiqueta sale sola, sin diálogo de impresión. Ver
+                     modules/historial/helper_rotulos_tspl.php. -->
                 <button type="button" class="btn btn-primario" id="btn-imprimir-etiquetadora">
                     <i class="fa-solid fa-tags"></i> Imprimir en la etiquetadora
                 </button>
@@ -134,11 +128,6 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
         </div>
     </div>
 </div>
-
-<!-- Adonde se mueven los rótulos para imprimir. Tiene que ser hijo DIRECTO de <body>: al imprimir
-     se oculta todo lo demás, y un elemento con un ancestro en display:none no se puede volver a
-     mostrar desde el descendiente. Ver el @media print de assets/css/partes/04-rotulo.css. -->
-<div id="area-impresion-rotulos" hidden></div>
 
 <script>
     const BASE_URL   = '<?php echo BASE_URL; ?>';
