@@ -860,6 +860,15 @@ tr.fila-sin-maestro:hover {
     color: var(--vino-oscuro);
 }
 
+/* Para confirmar que algo SALIÓ, no para explicar un estado: lo usa el modal de rótulos cuando la
+   etiquetadora acepta el trabajo. Verde porque es la única señal que tiene quien imprime de que
+   el sistema hizo su parte —lo demás ya depende de que haya rollo y ribbon en la máquina. */
+.aviso-exito {
+    background: #eaf4ea;
+    border-left-color: var(--exito);
+    color: #1b5e20;
+}
+
 /* =========================================
    PERSONAL Y ASIGNACIÓN
    ========================================= */

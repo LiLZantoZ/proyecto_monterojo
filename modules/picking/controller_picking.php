@@ -7,6 +7,7 @@
 //   · codigo_barras      (GET,  SVG)   — el código de barras de un rótulo
 //   · pdf                (GET,  PDF)   — la hoja de alistamiento de una entrega
 //   · pdf_masivo         (POST, PDF)   — la hoja de varias entregas en un solo archivo
+//   · rotulos_pdf        (POST, PDF)   — los rótulos que se están viendo en el modal, en PDF
 //
 // Las de JSON responden así porque las llama un fetch() desde la propia pantalla: recargar la
 // página entera cada vez que alguien escribe un número o tilda una casilla haría perder el
@@ -135,6 +136,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_m
     // descargarPickingPdf() termina la ejecución.
 }
 
+// -------------------------------------------------------------------------------------------
+// LOS RÓTULOS DEL MODAL, EN PDF
+//
+// Es la alternativa al botón "Imprimir", que manda los rótulos a la impresora a través del
+// diálogo del navegador. Ese camino depende de que en CADA equipo estén bien puestos el tamaño
+// de papel, los márgenes, la escala y los encabezados; si alguno queda mal, la etiqueta sale
+// corrida, chica o en blanco (pasó en la impresora de etiquetas el 2026-09-08). El PDF, en
+// cambio, ya trae la página de 100x40mm adentro del archivo: se abre y se manda a imprimir a
+// tamaño real, sin nada que configurar.
+//
+// La lista de rótulos viene armada desde la pantalla, no se recalcula acá: el rótulo del modal
+// es EDITABLE y además, cuando se abre para un pedido entero, cada caja lleva su propio
+// producto. Ver descargarRotulosPdfDeLista() en el helper para el detalle de por qué.
+//
+// Se reutiliza el helper del Historial en vez de duplicarlo: es el mismo rótulo, el mismo
+// tamaño y el mismo código de barras — dos copias serían dos rótulos que con el tiempo dejan de
+// parecerse.
+// -------------------------------------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'rotulos_pdf') {
+    validarCSRF();
+
+    $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
+
+    $rotulos = json_decode($_POST['rotulos'] ?? '', true);
+
+    if (!is_array($rotulos) || !$rotulos) {
+        header("Location: {$vistaPicking}?error=invalid_id");
+        exit();
+    }
+
+    require_once __DIR__ . '/../historial/helper_rotulos_pdf.php';
+    descargarRotulosPdfDeLista($rotulos, 'Rotulos_' . date('Ymd_His') . '.pdf');
+    // descargarRotulosPdfDeLista() termina la ejecución.
+}
+
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -151,7 +187,7 @@ validarCSRF();
 
 $accion = $cuerpo['accion'] ?? '';
 
-if (!in_array($accion, ['guardar_pedido_sap', 'asignar_personal', 'despachar_pedidos'], true)) {
+if (!in_array($accion, ['guardar_pedido_sap', 'asignar_personal', 'despachar_pedidos', 'imprimir_rotulos'], true)) {
     http_response_code(400);
     echo json_encode(['exito' => false, 'error' => 'Acción desconocida.']);
     exit();
@@ -159,6 +195,22 @@ if (!in_array($accion, ['guardar_pedido_sap', 'asignar_personal', 'despachar_ped
 
 // Ya no se exige "una carga vigente" acá: cada entrega que llega en el cuerpo trae su propia
 // carga (ver más abajo), porque ahora puede haber pendientes de varias a la vez.
+
+// -------------------------------------------------------------------------------------------
+// IMPRIMIR LOS RÓTULOS DIRECTO EN LA ETIQUETADORA
+//
+// Recibe la MISMA lista que el botón "Descargar PDF": lo que hay dibujado en el modal en ese
+// momento, ya con las correcciones que haya hecho el picker. Ver helper_rotulos_tspl.php para
+// por qué esto no pasa por el PDF ni por el diálogo de impresión del navegador.
+//
+// Va por JSON y no por formulario a propósito: imprimir no debería sacar a nadie de la pantalla
+// en la que está trabajando, y así el resultado —salió, o la impresora está apagada— se puede
+// mostrar en el mismo modal.
+// -------------------------------------------------------------------------------------------
+if ($accion === 'imprimir_rotulos') {
+    require_once __DIR__ . '/../historial/helper_rotulos_tspl.php';
+    responderImpresionDeRotulos($cuerpo);   // termina la ejecución
+}
 
 // -------------------------------------------------------------------------------------------
 // ASIGNAR PERSONAL A UNA O VARIAS ENTREGAS

@@ -72,13 +72,33 @@
                 <div id="rotulo-aviso-saldos-texto"></div>
             </div>
 
+            <!-- Cómo salió el envío a la etiquetadora. Va acá adentro y no en un cartel
+                 flotante porque quien imprime está mirando la vista previa: el resultado
+                 tiene que aparecer al lado de lo que mandó a imprimir. -->
+            <div class="aviso" id="rotulo-aviso-impresion" hidden>
+                <i class="fa-solid fa-circle-info"></i>
+                <div id="rotulo-aviso-impresion-texto"></div>
+            </div>
+
             <div class="rotulos-previa" id="rotulos-previa"></div>
         </div>
 
         <div class="modal-pie">
             <button type="button" class="btn" data-cerrar>Cerrar</button>
-            <button type="button" class="btn btn-primario" id="btn-imprimir-rotulos">
-                <i class="fa-solid fa-print"></i> Imprimir
+
+            <!-- Imprimir por el navegador queda como salida de emergencia, no como el camino
+                 normal: es el que depende del diálogo de impresión (escala, márgenes, tamaño de
+                 papel) y el que sacaba las etiquetas corridas o en blanco. Sirve si la
+                 etiquetadora no está y hay que sacar el rótulo en una impresora común. -->
+            <button type="button" class="btn" id="btn-imprimir-rotulos">
+                <i class="fa-solid fa-print"></i> Imprimir por el navegador
+            </button>
+
+            <!-- El camino bueno: el sistema le habla directo a la etiquetadora en su propio
+                 idioma (TSPL), sin PDF y sin diálogo del navegador en el medio. Ver
+                 modules/historial/helper_rotulos_tspl.php. -->
+            <button type="button" class="btn btn-primario" id="btn-imprimir-etiquetadora">
+                <i class="fa-solid fa-tags"></i> Imprimir en la etiquetadora
             </button>
         </div>
 

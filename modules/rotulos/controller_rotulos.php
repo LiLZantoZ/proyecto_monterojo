@@ -1,8 +1,9 @@
 <?php
 // modules/rotulos/controller_rotulos.php
 // Dos acciones:
-//   · codigo_barras (GET,  SVG) — el código de barras de un rótulo, igual que en Picking/Historial
-//   · pdf           (POST, PDF) — descarga los rótulos armados a mano en la pantalla
+//   · codigo_barras    (GET,  SVG)  — el código de barras de un rótulo, igual que en Picking/Historial
+//   · pdf              (POST, PDF)  — descarga los rótulos armados a mano en la pantalla
+//   · imprimir_rotulos (POST, JSON) — los manda directo a la etiquetadora, sin PDF de por medio
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
@@ -17,6 +18,32 @@ if (!tienePermiso('modulo_rotulos')) {
     exit();
 }
 
+// -------------------------------------------------------------------------------------------
+// IMPRIMIR LOS RÓTULOS DIRECTO EN LA ETIQUETADORA
+//
+// Va por JSON y no por el formulario del PDF a propósito: imprimir no debería recargar la
+// pantalla y perder lo que la persona acaba de escribir a mano, que es justamente el trabajo de
+// este módulo. Ver modules/historial/helper_rotulos_tspl.php.
+// -------------------------------------------------------------------------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && strpos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false) {
+
+    header('Content-Type: application/json; charset=utf-8');
+
+    // El cuerpo viene como JSON, así que $_POST está vacío y hay que leer php://input.
+    $cuerpo = json_decode(file_get_contents('php://input'), true) ?: [];
+    $_POST['csrf_token'] = $cuerpo['csrf_token'] ?? '';
+    validarCSRF();
+
+    if (($cuerpo['accion'] ?? '') !== 'imprimir_rotulos') {
+        http_response_code(400);
+        echo json_encode(['exito' => false, 'error' => 'Acción desconocida.']);
+        exit();
+    }
+
+    require_once __DIR__ . '/../historial/helper_rotulos_tspl.php';
+    responderImpresionDeRotulos($cuerpo);   // termina la ejecución
+}
 // -------------------------------------------------------------------------------------------
 // CÓDIGO DE BARRAS DE UN RÓTULO
 // Igual que en controller_picking.php / controller_historial.php: sin CSRF porque es una

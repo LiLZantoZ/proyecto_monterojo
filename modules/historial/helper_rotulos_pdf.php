@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/helper_rotulos_lista.php';
 
 use Dompdf\Dompdf;
 use Dompdf\Options;
@@ -21,13 +22,6 @@ function logoRotuloDataUri() {
     return is_file($ruta)
         ? 'data:image/png;base64,' . base64_encode(file_get_contents($ruta))
         : '';
-}
-
-// El identificador de UNA caja: orden de compra - EAN de la tienda (o el nombre, si no hay EAN) -
-// número de caja. Igual que identificadorDeCaja() en scripts_historial.js.
-function identificadorDeCajaPdf($oc, $tienda, $numero) {
-    $limpiar = fn($v) => preg_replace('/[^A-Za-z0-9]/', '', (string) $v);
-    return $limpiar($oc) . '-' . $limpiar($tienda) . '-' . $limpiar($numero);
 }
 
 function codigoBarrasDataUri($texto) {
@@ -128,7 +122,7 @@ CSS;
 function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tiendaParaCodigo = null) {
     $esc = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-    $idCaja  = identificadorDeCajaPdf($oc, $tiendaParaCodigo ?? $pv, $numero);
+    $idCaja  = identificadorDeCajaRotulo($oc, $tiendaParaCodigo ?? $pv, $numero);
     $codigo  = codigoBarrasDataUri($idCaja);
     $nombreProducto = trim((string) $producto) !== ''
         ? $esc($producto)
@@ -161,14 +155,15 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
  *
  * Las líneas sin cajas que rotular (cajas_rotulo = 0, ver agruparPorEntregaHistorial) se saltan:
  * no hay nada que pegar en una caja que no existe.
+ *
+ * Traduce las entregas a la lista plana que arma el PDF de verdad (ver más abajo).
  */
 function descargarRotulosPdf(array $entregas, $nombreArchivo) {
     if (isset($entregas['lineas'])) {
         $entregas = [$entregas];
     }
 
-    $logo = logoRotuloDataUri();
-    $paginas = [];
+    $rotulos = [];
 
     foreach ($entregas as $entrega) {
         $totalPedido = (int) $entrega['totales']['cajas_rotulo'];
@@ -187,18 +182,57 @@ function descargarRotulosPdf(array $entregas, $nombreArchivo) {
             $desde    = (int) $linea['caja_desde'];
 
             for ($i = 0; $i < $cajas; $i++) {
-                $paginas[] = htmlRotuloPdf(
-                    $logo,
-                    $entrega['punto_venta'],
-                    $entrega['orden_compra'],
-                    $entrega['cedi'],
-                    $desde + $i,
-                    $totalPedido,
-                    $producto,
-                    $tienda
-                );
+                $rotulos[] = [
+                    'pv'       => $entrega['punto_venta'],
+                    'oc'       => $entrega['orden_compra'],
+                    'cedi'     => $entrega['cedi'],
+                    'ean_pv'   => $tienda,
+                    'numero'   => $desde + $i,
+                    'total'    => $totalPedido,
+                    'producto' => $producto,
+                ];
             }
         }
+    }
+
+    descargarRotulosPdfDeLista($rotulos, $nombreArchivo);
+    // descargarRotulosPdfDeLista() termina la ejecución.
+}
+
+/**
+ * Genera el PDF a partir de una LISTA YA RESUELTA de rótulos: cada elemento es una caja concreta
+ * y trae todo lo que va impreso en ella (pv, oc, cedi, ean_pv, numero, total, producto).
+ *
+ * Existe para que Picking pueda pedir el PDF de lo que tiene en pantalla en ese momento. Ahí el
+ * rótulo es EDITABLE —se puede cambiar la cantidad, desde qué caja arranca, el nombre de la
+ * tienda o el producto antes de imprimir— y además, cuando se abre para un pedido entero, cada
+ * caja lleva un producto distinto. Recalcular todo eso de nuevo en el servidor a partir del
+ * pedido daría un PDF que NO es el que la persona está viendo, que es exactamente lo que no se
+ * quiere de un botón que dice "descargar esto". Mandando la lista ya armada, el PDF y la vista
+ * previa no pueden discrepar.
+ *
+ * Por eso mismo NO se valida contra la base: son datos que el usuario puede haber editado a mano
+ * a propósito. Lo único que se hace es recortar los largos y acotar los números, para que un POST
+ * armado por fuera no pueda pedir diez mil páginas ni meter texto sin límite.
+ */
+function descargarRotulosPdfDeLista(array $rotulos, $nombreArchivo) {
+    // El recorte de largos, los topes y el descarte de rótulos sin punto de venta salen del helper
+    // compartido, el mismo que usa la impresión directa en la etiquetadora (ver
+    // helper_rotulos_lista.php): el PDF y el papel que sale de la TSC tienen que decir lo mismo.
+    $logo = logoRotuloDataUri();
+    $paginas = [];
+
+    foreach (normalizarListaDeRotulos($rotulos) as $r) {
+        $paginas[] = htmlRotuloPdf(
+            $logo,
+            $r['pv'],
+            $r['oc'],
+            $r['cedi'],
+            $r['numero'],
+            $r['total'],
+            $r['producto'],
+            $r['ean_pv'] !== '' ? $r['ean_pv'] : null
+        );
     }
 
     if (!$paginas) {

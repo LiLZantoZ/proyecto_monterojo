@@ -157,7 +157,19 @@ validarCSRF();
 
 $accion = $cuerpo['accion'] ?? '';
 
-if ($accion !== 'restaurar') {
+// -------------------------------------------------------------------------------------------
+// IMPRIMIR LOS RÓTULOS DIRECTO EN LA ETIQUETADORA
+//
+// Misma lista y misma respuesta que en Picking: el rótulo de un pedido despachado se reimprime
+// igual que el de uno pendiente. Ver helper_rotulos_tspl.php para por qué esto no pasa por el
+// PDF ni por el diálogo de impresión del navegador.
+// -------------------------------------------------------------------------------------------
+if ($accion === 'imprimir_rotulos') {
+    require_once __DIR__ . '/helper_rotulos_tspl.php';
+    responderImpresionDeRotulos($cuerpo);   // termina la ejecución
+}
+
+if (!in_array($accion, ['restaurar'], true)) {
     http_response_code(400);
     echo json_encode(['exito' => false, 'error' => 'Acción desconocida.']);
     exit();

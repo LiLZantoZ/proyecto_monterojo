@@ -117,6 +117,31 @@ define('URL_LOGIN', BASE_URL . '/modules/login/auth.php');
 // Cierre de sesión automático por inactividad
 define('TIEMPO_INACTIVIDAD_SEGUNDOS', 600); // 10 minutos
 
+// ── Etiquetadora de rótulos ──────────────────────────────────────────────────────────────────
+// La impresora de etiquetas (una TSC TE200) NO recibe una página: recibe comandos TSPL que ella
+// misma dibuja. Todo lo de acá abajo son los parámetros de ESE trabajo de impresión; están juntos
+// y con nombre para que cambiar de impresora, de rollo o de sentido no sea tocar código.
+// Ver modules/historial/helper_rotulos_tspl.php para cómo se arma el trabajo.
+
+// El nombre EXACTO con el que la impresora aparece en Windows (Configuración > Impresoras).
+// Si no coincide, el sistema avisa en pantalla y lista las que sí encontró.
+define('IMPRESORA_ROTULOS', getenv('IMPRESORA_ROTULOS') ?: 'TSC TE200');
+
+// Sentido en el que sale la etiqueta. Esto es lo que arregla el "sale al revés": si el texto sale
+// cabeza abajo, cambiar 1 por 0 (o al revés) y volver a imprimir. No hace falta tocar nada más.
+define('ROTULO_TSPL_DIRECCION', 1);
+
+// Separación entre una etiqueta y la siguiente en el rollo, en milímetros. El valor típico de un
+// rollo troquelado es 2mm; si la impresora saca etiquetas de más o corta a destiempo, este es el
+// número a revisar (y conviene recalibrar el sensor desde TSC Console).
+define('ROTULO_TSPL_GAP_MM', 2);
+
+// Qué tan oscuro imprime (0 a 15) y a qué velocidad (pulgadas por segundo). Más densidad = más
+// negro pero barras más gordas; si el lector no engancha el código de barras, bajar la velocidad
+// antes que subir la densidad.
+define('ROTULO_TSPL_DENSIDAD', 8);
+define('ROTULO_TSPL_VELOCIDAD', 4);
+
 try {
     $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
 

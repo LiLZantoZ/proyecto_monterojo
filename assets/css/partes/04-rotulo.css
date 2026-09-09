@@ -273,6 +273,19 @@
         page-break-after: always;
         break-after: page;
         margin: 0;
+
+        /* UN MILÍMETRO MENOS QUE LA PÁGINA, A PROPÓSITO (98mm x 39mm dentro de una página de
+           100mm x 40mm).
+           Con el rótulo midiendo exactamente lo mismo que la página no queda NADA de tolerancia:
+           cualquier redondeo del navegador al convertir milímetros a puntos de impresora empuja
+           el rótulo a una segunda página, y entonces la etiqueta que sale de la máquina queda EN
+           BLANCO mientras el contenido se imprime en la siguiente. Pasó exactamente eso en la
+           impresora de etiquetas (2026-09-08), y es el mismo problema que ya había aparecido al
+           generar el PDF con dompdf.
+           Además, las impresoras térmicas casi siempre tienen un borde físico que el cabezal no
+           alcanza; ese milímetro también cubre eso para que no se corte el marco negro. */
+        width: 98mm;
+        height: 39mm;
     }
 
     #area-impresion-rotulos .rotulo:last-child {

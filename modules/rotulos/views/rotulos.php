@@ -84,14 +84,30 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                 Cambiar cualquier campo vuelve a dibujar todos los rótulos de abajo.
             </p>
 
+            <!-- Cómo salió el envío a la etiquetadora. Va pegado a la vista previa porque es
+                 el resultado de imprimir lo que se está viendo justo abajo. -->
+            <div class="aviso" id="rotulo-aviso-impresion" hidden>
+                <i class="fa-solid fa-circle-info"></i>
+                <div id="rotulo-aviso-impresion-texto"></div>
+            </div>
+
             <div class="rotulos-previa" id="rotulos-previa"></div>
 
             <div class="modulo-acciones" style="margin-top: 18px; justify-content: flex-start;">
                 <button type="button" class="btn" id="btn-limpiar-rotulos">
                     <i class="fa-solid fa-broom"></i> Limpiar
                 </button>
-                <button type="button" class="btn btn-primario" id="btn-imprimir-rotulos">
-                    <i class="fa-solid fa-print"></i> Imprimir
+                <!-- Imprimir por el navegador queda como salida de emergencia: es el camino que
+                     depende del diálogo de impresión (escala, márgenes, tamaño de papel) y el que
+                     sacaba las etiquetas corridas o en blanco. Sirve para una impresora común. -->
+                <button type="button" class="btn" id="btn-imprimir-rotulos">
+                    <i class="fa-solid fa-print"></i> Imprimir por el navegador
+                </button>
+
+                <!-- El camino bueno: el sistema le habla directo a la etiquetadora en su propio
+                     idioma (TSPL). Ver modules/historial/helper_rotulos_tspl.php. -->
+                <button type="button" class="btn btn-primario" id="btn-imprimir-etiquetadora">
+                    <i class="fa-solid fa-tags"></i> Imprimir en la etiquetadora
                 </button>
 
                 <!-- El PDF va por un formulario normal y no por fetch: así el navegador lo trata
@@ -126,6 +142,7 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
 
 <script>
     const BASE_URL   = '<?php echo BASE_URL; ?>';
+    const CSRF_TOKEN = '<?php echo htmlspecialchars(generarTokenCSRF(), ENT_QUOTES, 'UTF-8'); ?>';
 </script>
 <script src="<?php echo BASE_URL; ?>/modules/rotulos/layouts/scripts_rotulos.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/rotulos/layouts/scripts_rotulos.js'); ?>"></script>
 

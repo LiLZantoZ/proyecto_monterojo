@@ -216,6 +216,15 @@
     var avisoSaldos = document.getElementById('rotulo-aviso-saldos');
     var avisoSaldosTexto = document.getElementById('rotulo-aviso-saldos-texto');
     var areaImpresion = document.getElementById('area-impresion-rotulos');
+    var avisoImpresion      = document.getElementById('rotulo-aviso-impresion');
+    var avisoImpresionTexto = document.getElementById('rotulo-aviso-impresion-texto');
+    var botonEtiquetadora   = document.getElementById('btn-imprimir-etiquetadora');
+
+    // La lista de rótulos que hay dibujada en la vista previa en este momento. Es lo que se manda
+    // a imprimir: el rótulo acá es EDITABLE y, al abrirlo para un pedido entero, cada caja lleva
+    // su propio producto, así que recalcularlo en el servidor daría un rótulo distinto del que la
+    // persona está mirando.
+    var rotulosActuales = [];
 
     function identificadorDeCaja(datos, numero) {
         var tienda = datos.eanPv && datos.eanPv !== ''
@@ -308,9 +317,16 @@
         };
 
         var html = '';
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
         for (var i = 0; i < cantidad; i++) {
             var numero = desde + i;
-            html += htmlRotulo(datos, numero, total, productoDeLaCaja(numero));
+            var producto = productoDeLaCaja(numero);
+            rotulosActuales.push({
+                pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
+                numero: numero, total: total, producto: producto
+            });
+            html += htmlRotulo(datos, numero, total, producto);
         }
         previa.innerHTML = html;
     }
@@ -387,6 +403,8 @@
         var html = '';
         var totalRotulos = 0;
         var sinCajas = 0;
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
 
         marcadas.forEach(function (chk) {
             var boton = chk.closest('.fila-pedido').querySelector('.btn-rotulo');
@@ -416,6 +434,10 @@
                     if (restante <= segmentosPedido[s].n) { producto = segmentosPedido[s].producto; break; }
                     restante -= segmentosPedido[s].n;
                 }
+                rotulosActuales.push({
+                    pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
+                    numero: i, total: total, producto: producto
+                });
                 html += htmlRotulo(datos, i, total, producto);
                 totalRotulos++;
             }
@@ -440,6 +462,63 @@
 
         modal.classList.add('active');
     });
+
+    // ---------------------------------------------------------------------------------------
+    // IMPRIMIR EN LA ETIQUETADORA
+    //
+    // Manda la lista ya dibujada y el servidor la traduce a TSPL, el idioma de la TSC (ver
+    // modules/historial/helper_rotulos_tspl.php). No abre el diálogo de impresión del navegador,
+    // que es de donde salían las etiquetas corridas y en blanco.
+    // ---------------------------------------------------------------------------------------
+    function mostrarResultadoImpresion(texto, salioBien) {
+        if (!avisoImpresion) { return; }
+        avisoImpresionTexto.textContent = texto;
+        avisoImpresion.className = 'aviso ' + (salioBien ? 'aviso-exito' : 'aviso-atencion');
+        avisoImpresion.querySelector('i').className = salioBien
+            ? 'fa-solid fa-circle-check'
+            : 'fa-solid fa-triangle-exclamation';
+        avisoImpresion.hidden = false;
+    }
+
+    if (botonEtiquetadora) {
+        botonEtiquetadora.addEventListener('click', function () {
+            if (!rotulosActuales.length) { return; }
+
+            // Sin esto, dos clics mandan el lote dos veces — y acá eso son etiquetas de papel
+            // gastadas, no una fila repetida que se pueda borrar.
+            botonEtiquetadora.disabled = true;
+            var textoOriginal = botonEtiquetadora.innerHTML;
+            botonEtiquetadora.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+            if (avisoImpresion) { avisoImpresion.hidden = true; }
+
+            fetch(BASE_URL + '/modules/historial/controller_historial.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accion:     'imprimir_rotulos',
+                    csrf_token: CSRF_TOKEN,
+                    rotulos:    rotulosActuales
+                })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (datos) {
+                mostrarResultadoImpresion(
+                    datos.mensaje || datos.error || 'No se pudo imprimir.',
+                    !!datos.exito
+                );
+            })
+            .catch(function () {
+                mostrarResultadoImpresion(
+                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    false
+                );
+            })
+            .finally(function () {
+                botonEtiquetadora.disabled = false;
+                botonEtiquetadora.innerHTML = textoOriginal;
+            });
+        });
+    }
 
     document.getElementById('btn-imprimir-rotulos')?.addEventListener('click', function () {
         while (previa.firstChild) {

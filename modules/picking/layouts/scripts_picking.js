@@ -532,6 +532,12 @@
         return valor;
     }
 
+    // Los rótulos que hay AHORA en la vista previa, uno por caja, con todo lo que va impreso en
+    // cada uno. Lo llenan las dos funciones que dibujan (esta y la del botón masivo), y lo lee el
+    // formulario de "Descargar PDF": así el PDF es exactamente lo que se está viendo, incluidos
+    // los cambios que se hayan hecho a mano en los campos de arriba.
+    var rotulosActuales = [];
+
     function dibujarRotulos() {
         var cantidad = entero(campos.cantidad, 1, 1, 99);
         var desde    = entero(campos.desde, 1, 1, 999);
@@ -548,9 +554,16 @@
         };
 
         var html = '';
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
         for (var i = 0; i < cantidad; i++) {
             var numero = desde + i;
-            html += htmlRotulo(datos, numero, total, productoDeLaCaja(numero));
+            var producto = productoDeLaCaja(numero);
+            rotulosActuales.push({
+                pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
+                numero: numero, total: total, producto: producto
+            });
+            html += htmlRotulo(datos, numero, total, producto);
         }
         previa.innerHTML = html;
     }
@@ -627,6 +640,8 @@
         var html = '';
         var totalRotulos = 0;
         var sinCajas = 0;
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
 
         marcadas.forEach(function (chk) {
             var boton = chk.closest('.fila-pedido').querySelector('.btn-rotulo');
@@ -656,6 +671,15 @@
                     if (restante <= segmentosPedido[s].n) { producto = segmentosPedido[s].producto; break; }
                     restante -= segmentosPedido[s].n;
                 }
+                rotulosActuales.push({
+                    pv:      datos.pv,
+                    oc:      datos.oc,
+                    cedi:    datos.cedi,
+                    ean_pv:  datos.eanPv,
+                    numero:  i,
+                    total:   total,
+                    producto: producto
+                });
                 html += htmlRotulo(datos, i, total, producto);
                 totalRotulos++;
             }
@@ -680,6 +704,81 @@
         }
 
         modal.classList.add('active');
+    });
+
+    // ---------------------------------------------------------------------------------------
+    // IMPRIMIR EN LA ETIQUETADORA
+    //
+    // Manda la misma lista que ya está dibujada en la vista previa y el servidor la traduce a
+    // TSPL, el idioma de la TSC (ver modules/historial/helper_rotulos_tspl.php). No abre el
+    // diálogo de impresión: la etiqueta sale sola.
+    // ---------------------------------------------------------------------------------------
+    var avisoImpresion      = document.getElementById('rotulo-aviso-impresion');
+    var avisoImpresionTexto = document.getElementById('rotulo-aviso-impresion-texto');
+    var botonEtiquetadora   = document.getElementById('btn-imprimir-etiquetadora');
+
+    function mostrarResultadoImpresion(texto, salioBien) {
+        if (!avisoImpresion) { return; }
+        avisoImpresionTexto.textContent = texto;
+        avisoImpresion.className = 'aviso ' + (salioBien ? 'aviso-exito' : 'aviso-atencion');
+        avisoImpresion.querySelector('i').className = salioBien
+            ? 'fa-solid fa-circle-check'
+            : 'fa-solid fa-triangle-exclamation';
+        avisoImpresion.hidden = false;
+    }
+
+    if (botonEtiquetadora) {
+        botonEtiquetadora.addEventListener('click', function () {
+            if (!rotulosActuales.length) { return; }
+
+            // Sin esto, dos clics mandan el lote dos veces — y acá eso son etiquetas de papel
+            // gastadas, no una fila repetida que se pueda borrar.
+            botonEtiquetadora.disabled = true;
+            var textoOriginal = botonEtiquetadora.innerHTML;
+            botonEtiquetadora.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+            if (avisoImpresion) { avisoImpresion.hidden = true; }
+
+            fetch(BASE_URL + '/modules/picking/controller_picking.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accion:     'imprimir_rotulos',
+                    csrf_token: CSRF_TOKEN,
+                    rotulos:    rotulosActuales
+                })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (datos) {
+                mostrarResultadoImpresion(
+                    datos.mensaje || datos.error || 'No se pudo imprimir.',
+                    !!datos.exito
+                );
+            })
+            .catch(function () {
+                mostrarResultadoImpresion(
+                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    false
+                );
+            })
+            .finally(function () {
+                botonEtiquetadora.disabled = false;
+                botonEtiquetadora.innerHTML = textoOriginal;
+            });
+        });
+    }
+
+    // El PDF sale de la MISMA lista que se acaba de dibujar arriba, no de un recálculo en el
+    // servidor. Es a propósito: acá los rótulos son editables (el picker cambia el punto de venta,
+    // la cantidad de cajas o el nombre del producto), y al rotular un pedido entero cada caja lleva
+    // un producto distinto. Recalcularlo del lado del servidor devolvería lo que dice el archivo
+    // original, que es justamente lo que el picker acaba de corregir. Mandando la lista, el PDF
+    // sale idéntico a la vista previa.
+    document.getElementById('form-rotulos-pdf')?.addEventListener('submit', function (evento) {
+        if (!rotulosActuales.length) {
+            evento.preventDefault();
+            return;
+        }
+        document.getElementById('rotulos-pdf-datos').value = JSON.stringify(rotulosActuales);
     });
 
     document.getElementById('btn-imprimir-rotulos')?.addEventListener('click', function () {

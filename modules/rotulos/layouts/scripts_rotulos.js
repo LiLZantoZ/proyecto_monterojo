@@ -52,6 +52,11 @@
             + '</div>';
     }
 
+    // La lista de rótulos que hay dibujada en la vista previa en este momento: es lo que se
+    // manda a la etiquetadora, para que lo que sale por la impresora sea exactamente lo que
+    // se está viendo en pantalla.
+    var rotulosActuales = [];
+
     var previa = document.getElementById('rotulos-previa');
 
     var campos = {
@@ -88,7 +93,13 @@
         };
 
         var html = '';
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
         for (var i = 0; i < cantidad; i++) {
+            rotulosActuales.push({
+                pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
+                numero: desde + i, total: total, producto: campos.producto.value
+            });
             html += htmlRotulo(datos, desde + i, total, campos.producto.value);
         }
         previa.innerHTML = html;
@@ -140,6 +151,67 @@
             if (document.body.classList.contains('imprimiendo-rotulos')) { restaurar(); }
         }, 1500);
     });
+
+    // -----------------------------------------------------------------------
+    // IMPRIMIR EN LA ETIQUETADORA
+    //
+    // Manda la lista que está dibujada abajo y el servidor la traduce a TSPL, el idioma de la
+    // TSC (ver modules/historial/helper_rotulos_tspl.php). Va por fetch y no por formulario para
+    // no recargar la pantalla: acá los campos se llenan a mano y recargar los borraría.
+    // -----------------------------------------------------------------------
+    var avisoImpresion      = document.getElementById('rotulo-aviso-impresion');
+    var avisoImpresionTexto = document.getElementById('rotulo-aviso-impresion-texto');
+    var botonEtiquetadora   = document.getElementById('btn-imprimir-etiquetadora');
+
+    function mostrarResultadoImpresion(texto, salioBien) {
+        if (!avisoImpresion) { return; }
+        avisoImpresionTexto.textContent = texto;
+        avisoImpresion.className = 'aviso ' + (salioBien ? 'aviso-exito' : 'aviso-atencion');
+        avisoImpresion.querySelector('i').className = salioBien
+            ? 'fa-solid fa-circle-check'
+            : 'fa-solid fa-triangle-exclamation';
+        avisoImpresion.hidden = false;
+    }
+
+    if (botonEtiquetadora) {
+        botonEtiquetadora.addEventListener('click', function () {
+            if (!rotulosActuales.length) { return; }
+
+            // Sin esto, dos clics mandan el lote dos veces — y acá eso son etiquetas de papel
+            // gastadas, no una fila repetida que se pueda borrar.
+            botonEtiquetadora.disabled = true;
+            var textoOriginal = botonEtiquetadora.innerHTML;
+            botonEtiquetadora.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+            if (avisoImpresion) { avisoImpresion.hidden = true; }
+
+            fetch(BASE_URL + '/modules/rotulos/controller_rotulos.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accion:     'imprimir_rotulos',
+                    csrf_token: CSRF_TOKEN,
+                    rotulos:    rotulosActuales
+                })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (datos) {
+                mostrarResultadoImpresion(
+                    datos.mensaje || datos.error || 'No se pudo imprimir.',
+                    !!datos.exito
+                );
+            })
+            .catch(function () {
+                mostrarResultadoImpresion(
+                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    false
+                );
+            })
+            .finally(function () {
+                botonEtiquetadora.disabled = false;
+                botonEtiquetadora.innerHTML = textoOriginal;
+            });
+        });
+    }
 
     // -----------------------------------------------------------------------
     // DESCARGAR PDF: se llenan los campos ocultos del formulario justo antes de mandarlo, con

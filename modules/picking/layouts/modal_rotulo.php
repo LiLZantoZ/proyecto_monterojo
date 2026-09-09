@@ -74,13 +74,51 @@
                 <div id="rotulo-aviso-saldos-texto"></div>
             </div>
 
+            <!-- Cómo salió el envío a la etiquetadora. Va acá adentro y no en un cartel flotante
+                 porque quien imprime está mirando la vista previa: el resultado tiene que
+                 aparecer al lado de lo que mandó a imprimir. -->
+            <div class="aviso" id="rotulo-aviso-impresion" hidden>
+                <i class="fa-solid fa-circle-info"></i>
+                <div id="rotulo-aviso-impresion-texto"></div>
+            </div>
+
             <div class="rotulos-previa" id="rotulos-previa"></div>
         </div>
 
         <div class="modal-pie">
             <button type="button" class="btn" data-cerrar>Cerrar</button>
-            <button type="button" class="btn btn-primario" id="btn-imprimir-rotulos">
-                <i class="fa-solid fa-print"></i> Imprimir
+
+            <!-- La descarga va por un formulario y no por fetch: así el navegador la trata como
+                 una descarga normal. El campo oculto lo llena scripts_picking.js justo antes de
+                 enviarlo, con la MISMA lista de rótulos que acaba de dibujar en la vista previa.
+
+                 Existe además del botón "Imprimir" porque ese depende del diálogo del navegador
+                 (tamaño de papel, márgenes, escala, encabezados), y con una impresora de
+                 etiquetas cualquiera de esos mal puesto saca la etiqueta corrida o en blanco. El
+                 PDF ya trae la página de 100x40mm adentro: se abre y se imprime a tamaño real. -->
+            <form action="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php"
+                  method="POST" id="form-rotulos-pdf">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="rotulos_pdf">
+                <input type="hidden" name="rotulos" id="rotulos-pdf-datos">
+                <button type="submit" class="btn">
+                    <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+                </button>
+            </form>
+
+            <!-- Imprimir por el navegador queda como salida de emergencia, no como el camino
+                 normal: es el que depende del diálogo de impresión (escala, márgenes, tamaño de
+                 papel) y el que sacaba las etiquetas corridas o en blanco. Sirve si la
+                 etiquetadora no está y hay que sacar el rótulo en una impresora común. -->
+            <button type="button" class="btn" id="btn-imprimir-rotulos">
+                <i class="fa-solid fa-print"></i> Imprimir por el navegador
+            </button>
+
+            <!-- El camino bueno: el sistema le habla directo a la etiquetadora en su propio
+                 idioma (TSPL), sin PDF y sin diálogo del navegador en el medio. Ver
+                 modules/historial/helper_rotulos_tspl.php. -->
+            <button type="button" class="btn btn-primario" id="btn-imprimir-etiquetadora">
+                <i class="fa-solid fa-tags"></i> Imprimir en la etiquetadora
             </button>
         </div>
 
