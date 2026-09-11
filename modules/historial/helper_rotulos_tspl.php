@@ -2,7 +2,7 @@
 // modules/historial/helper_rotulos_tspl.php
 // Imprime los rótulos DIRECTO en la etiquetadora, sin PDF y sin diálogo del navegador.
 //
-// Por qué existe además del PDF: la TSC TE200 no es una impresora de hojas. Cuando se le manda una
+// Por qué existe además del PDF: una etiquetadora no es una impresora de hojas. Cuando se le manda una
 // página —sea el PDF o el "Imprimir" del navegador— hay tres capas que pueden arruinar la etiqueta
 // antes de que llegue al papel: el diálogo del navegador (escala, márgenes, encabezados), el
 // driver de Windows (tamaño de material, orientación) y el renderizado en sí. Cualquiera de las
@@ -10,7 +10,7 @@
 // tres capas distintas el error nunca se arregla en un solo lugar. Eso fue exactamente lo que pasó
 // con esta impresora: etiquetas al revés primero, etiquetas en blanco después.
 //
-// TSPL es el idioma propio de la impresora: se le manda "SIZE 100 mm, 40 mm", "TEXT ...",
+// TSPL es el idioma propio de la impresora: se le manda "SIZE 100 mm, 100 mm", "TEXT ...",
 // "BARCODE ...", "PRINT 1,1" y ella dibuja la etiqueta con su firmware. No hay nada en el medio
 // que pueda reescalar ni reacomodar, la medida es exacta por definición, y el código de barras
 // sale a los 203 dpi nativos del cabezal en vez de ser un PNG estirado.
@@ -22,23 +22,55 @@
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/helper_rotulos_lista.php';
 
-// La TE200 es de 203 dpi = 8 puntos por milímetro. Toda la maqueta de abajo está en PUNTOS, que es
-// la única unidad en la que TSPL posiciona texto y códigos de barras.
+// 203 dpi = 8 puntos por milímetro. Toda la maqueta de abajo está en PUNTOS, que es la única
+// unidad en la que TSPL posiciona texto, líneas y códigos de barras.
+//
+// Esto ata el diseño a una impresora de 203 dpi (la TE200 y la TA210 lo son). Si algún día se
+// pasa a una de 300, NO alcanza con cambiar este número: hay que revisar TSPL_FUENTES, porque
+// las fuentes internas de la impresora miden lo mismo en PUNTOS pero menos en milímetros, así
+// que todos los textos saldrían más chicos aunque las posiciones quedaran bien.
 const TSPL_PUNTOS_POR_MM = 8;
-const TSPL_ANCHO_MM = 100;
-const TSPL_ALTO_MM  = 40;
-const TSPL_ANCHO  = TSPL_ANCHO_MM * TSPL_PUNTOS_POR_MM;   // 800
-const TSPL_ALTO   = TSPL_ALTO_MM  * TSPL_PUNTOS_POR_MM;   // 320
-const TSPL_MARGEN = 18;                                    // aire entre el recuadro y el texto
+
+// El sticker físico. Solo se usa para el comando SIZE y para centrar el dibujo: es la medida que
+// la impresora necesita para avanzar bien el rollo.
+const TSPL_ANCHO = ROTULO_ANCHO_MM * TSPL_PUNTOS_POR_MM;
+const TSPL_ALTO  = ROTULO_ALTO_MM  * TSPL_PUNTOS_POR_MM;
+
+// El área que se dibuja de verdad, centrada dentro del sticker (ver config/config.php). Toda la
+// maqueta de abajo vive acá adentro; TSPL_X0/TSPL_Y0 son su esquina superior izquierda, y por eso
+// ninguna coordenada arranca en cero.
+const TSPL_DIB_ANCHO = ROTULO_DIBUJO_ANCHO_MM * TSPL_PUNTOS_POR_MM;
+const TSPL_DIB_ALTO  = ROTULO_DIBUJO_ALTO_MM  * TSPL_PUNTOS_POR_MM;
+const TSPL_X0 = (TSPL_ANCHO - TSPL_DIB_ANCHO) >> 1;
+const TSPL_Y0 = (TSPL_ALTO  - TSPL_DIB_ALTO)  >> 1;
+
+// Aire entre el marco dibujado y el contenido, hacia adentro del área de dibujo.
+const TSPL_MARGEN = 5 * TSPL_PUNTOS_POR_MM;
 
 // Fuentes internas de la impresora, con el ancho y alto de celda de cada una en puntos. Se usan
 // las de la impresora y no una imagen porque el firmware las dibuja al instante y salen nítidas;
 // el precio es que hay que elegir el tamaño a mano según cuánto texto entra (ver textoQueEntre).
 const TSPL_FUENTES = [
+    '1' => ['ancho' =>  8, 'alto' => 12],
     '2' => ['ancho' => 12, 'alto' => 20],
     '3' => ['ancho' => 16, 'alto' => 24],
     '4' => ['ancho' => 24, 'alto' => 32],
+    '5' => ['ancho' => 32, 'alto' => 48],
 ];
+
+// El logo es un círculo negro con el texto en blanco: a 1 bit queda idéntico, sin medios tonos que
+// se pierdan. Se dibuja a 14mm, la misma medida que tenía en el rótulo original.
+const TSPL_LOGO_MM = 14;
+
+// Alto del código de barras. 14mm era la medida del rótulo original; el estirado vertical no
+// afecta la lectura —lo que codifica un Code 128 son los ANCHOS— pero un código alto es mucho más
+// fácil de enganchar con la pistola sin tener que apuntar fino.
+const TSPL_CODIGO_MM = 14;
+
+// En BITMAP, un bit en 0 imprime punto (negro) y un bit en 1 lo deja en blanco. Si alguna vez el
+// logo saliera en negativo —círculo blanco sobre fondo negro— es este valor el que hay que dar
+// vuelta, y no hay que tocar nada más.
+const TSPL_BITMAP_CERO_ES_NEGRO = true;
 
 /**
  * Deja un texto listo para meterlo entre comillas en un comando TSPL.
@@ -61,8 +93,8 @@ function textoTspl($texto) {
  * recorta si no entra ni con la más chica. Devuelve [fuente, texto].
  *
  * Hace falta porque las fuentes internas de la impresora son de ancho FIJO: no hay ajuste
- * automático como en CSS. Un punto de venta como "EXITO WOW CALLE 80 BOGOTA" tiene que bajar de
- * tamaño solo, o se sale de la etiqueta sin que nadie se entere hasta ver el papel impreso.
+ * automático como en CSS. Un punto de venta como "4212 - SUPER INTER EXPRESS Av SEXTA" tiene que
+ * bajar de tamaño solo, o se sale de la etiqueta sin que nadie se entere hasta ver el papel.
  */
 function textoQueEntre($texto, $anchoDisponible, array $candidatas) {
     $texto = trim((string) $texto);
@@ -92,57 +124,191 @@ function anchoCodigo128($texto, $modulo) {
 }
 
 /**
+ * El logo convertido a mapa de bits de 1 bit, listo para el comando BITMAP.
+ * Devuelve [bytesPorFila, alto, datosBinarios] o null si no se pudo.
+ *
+ * Se calcula UNA sola vez por request (el static): un lote de 300 etiquetas usa el mismo logo 300
+ * veces, y rehacerlo cada vez sería redimensionar el PNG 300 veces para nada.
+ *
+ * Si GD no está disponible se devuelve null y el rótulo sale sin logo, solo con el texto de la
+ * marca. Es a propósito: que falte una imagen no puede dejar a nadie sin poder despachar.
+ */
+function bitmapLogoTspl($lado) {
+    static $cache = [];
+    if (array_key_exists($lado, $cache)) {
+        return $cache[$lado];
+    }
+
+    $ruta = ROOT_PATH . '/assets/img/monterojo.png';
+    if (!function_exists('imagecreatefrompng') || !is_file($ruta)) {
+        return $cache[$lado] = null;
+    }
+
+    $origen = @imagecreatefrompng($ruta);
+    if (!$origen) {
+        return $cache[$lado] = null;
+    }
+
+    // Fondo blanco explícito: el PNG tiene el fondo transparente, y sin esto las zonas
+    // transparentes quedarían negras al aplastarlas a 1 bit —o sea, un cuadrado negro.
+    $destino = imagecreatetruecolor($lado, $lado);
+    imagefilledrectangle($destino, 0, 0, $lado, $lado, imagecolorallocate($destino, 255, 255, 255));
+    imagealphablending($destino, true);
+    imagecopyresampled($destino, $origen, 0, 0, 0, 0, $lado, $lado, imagesx($origen), imagesy($origen));
+    imagedestroy($origen);
+
+    // Cada fila de la imagen se empaqueta en bytes, 8 píxeles por byte, el bit más significativo a
+    // la izquierda. Es el formato que espera BITMAP, y por eso el ancho se declara en BYTES.
+    $bytesPorFila = intdiv($lado + 7, 8);
+    $datos = '';
+
+    for ($y = 0; $y < $lado; $y++) {
+        for ($b = 0; $b < $bytesPorFila; $b++) {
+            $byte = 0;
+            for ($bit = 0; $bit < 8; $bit++) {
+                $x = $b * 8 + $bit;
+
+                // Fuera de la imagen (el relleno del último byte) se considera blanco, para no
+                // imprimir una franja negra al costado del logo.
+                $esClaro = true;
+                if ($x < $lado) {
+                    $c = imagecolorat($destino, $x, $y);
+                    $luz = (($c >> 16) & 255) * 0.299 + (($c >> 8) & 255) * 0.587 + ($c & 255) * 0.114;
+                    $esClaro = $luz >= 128;
+                }
+
+                $valor = TSPL_BITMAP_CERO_ES_NEGRO ? ($esClaro ? 1 : 0) : ($esClaro ? 0 : 1);
+                $byte |= $valor << (7 - $bit);
+            }
+            $datos .= chr($byte);
+        }
+    }
+
+    imagedestroy($destino);
+    return $cache[$lado] = [$bytesPorFila, $lado, $datos];
+}
+
+/**
  * Los comandos TSPL de UNA etiqueta.
  *
- * La maqueta es la misma que la del PDF y la de la pantalla (ver cssRotulosPdf en
- * helper_rotulos_pdf.php y assets/css/partes/04-rotulo.css): marca y contador de cajas arriba
- * compartiendo renglón, punto de venta grande, orden de compra y CEDI en un renglón, producto, y
- * el código de barras abajo. Se mantiene igual a propósito: el mismo rótulo tiene que verse igual
- * salga por donde salga.
+ * La maqueta es el diseño original del rótulo (el que estuvo hasta el 2026-09-08, cuando hubo que
+ * comprimirlo para que entrara en un rollo de 4cm de alto), devuelto tal cual ahora que el rollo es
+ * de 10x10cm: logo y marca arriba con su línea divisoria, cada dato con su etiqueta y en su propio
+ * renglón, el contador de cajas abajo solo y grande, y el código de barras al pie.
+ *
+ * La posición vertical se lleva con un cursor ($y) que va bajando, en vez de con coordenadas
+ * escritas a mano. Con coordenadas fijas, mover un campo obliga a recalcular a mano todos los de
+ * abajo —y ese fue justamente el tipo de error que costó varias etiquetas la vez pasada.
  */
 function tsplDeUnRotulo(array $r) {
-    $anchoUtil = TSPL_ANCHO - 2 * TSPL_MARGEN;
-    $lineas = [];
+    $izq       = TSPL_X0 + TSPL_MARGEN;
+    $anchoUtil = TSPL_DIB_ANCHO - 2 * TSPL_MARGEN;
+    $lineas    = [];
 
-    // El recuadro que encierra el rótulo, dibujado 4 puntos adentro del borde físico: pegado al
-    // filo, la tolerancia mecánica del avance del rollo se lo come de a ratos y el marco sale
-    // cortado de un lado sí y otro no.
-    $lineas[] = 'BOX 4,4,' . (TSPL_ANCHO - 5) . ',' . (TSPL_ALTO - 5) . ',3';
+    // El marco, dibujado 6 puntos adentro del borde físico: pegado al filo, la tolerancia mecánica
+    // del avance del rollo se lo come de a ratos y el marco sale cortado de un lado sí y otro no.
+    $lineas[] = 'BOX ' . TSPL_X0 . ',' . TSPL_Y0 . ','
+              . (TSPL_X0 + TSPL_DIB_ANCHO - 1) . ',' . (TSPL_Y0 + TSPL_DIB_ALTO - 1) . ',8';
 
-    // Encabezado: la marca a la izquierda y el contador de cajas a la derecha. TSPL no sabe alinear
-    // a la derecha, así que la x se calcula restando el ancho del texto al ancho de la etiqueta.
-    $conteo  = 'CAJ ' . $r['numero'] . ' DE ' . $r['total'];
-    $xConteo = TSPL_ANCHO - TSPL_MARGEN - mb_strlen($conteo) * TSPL_FUENTES['3']['ancho'];
-    $lineas[] = 'TEXT ' . TSPL_MARGEN . ',16,"2",0,1,1,"MONTEROJO GOURMET"';
-    $lineas[] = 'TEXT ' . max(TSPL_MARGEN, $xConteo) . ',14,"3",0,1,1,"' . textoTspl($conteo) . '"';
+    // ---------- Marca: logo + nombre, con línea divisoria debajo ----------
+    $y    = TSPL_Y0 + TSPL_MARGEN;
+    $lado = TSPL_LOGO_MM * TSPL_PUNTOS_POR_MM;
+    $logo = bitmapLogoTspl($lado);
+    $xMarca = $izq;
 
-    // Punto de venta: el dato más importante del rótulo —es lo que mira quien recibe la caja— así
-    // que se lleva la fuente más grande que su propio largo le permita.
-    [$fuentePv, $textoPv] = textoQueEntre($r['pv'], $anchoUtil, ['4', '3', '2']);
-    $lineas[] = 'TEXT ' . TSPL_MARGEN . ',54,"' . $fuentePv . '",0,1,1,"' . textoTspl($textoPv) . '"';
+    if ($logo !== null) {
+        [$bytesPorFila, $alto, $datos] = $logo;
+        // El binario va pegado a la coma final, sin salto de línea: BITMAP lee exactamente
+        // bytesPorFila * alto bytes a partir de ahí.
+        $lineas[] = 'BITMAP ' . $izq . ',' . $y . ',' . $bytesPorFila . ',' . $alto . ',0,' . $datos;
+        $xMarca = $izq + $lado + 3 * TSPL_PUNTOS_POR_MM;
+    }
 
-    $meta = 'O/C ' . ($r['oc'] !== '' ? $r['oc'] : '-') . '  ·  CEDI ' . $r['cedi'];
-    [$fuenteMeta, $textoMeta] = textoQueEntre($meta, $anchoUtil, ['2']);
-    $lineas[] = 'TEXT ' . TSPL_MARGEN . ',98,"' . $fuenteMeta . '",0,1,1,"' . textoTspl($textoMeta) . '"';
+    // El nombre se centra verticalmente contra el logo, que es más alto que la línea de texto.
+    $lineas[] = 'TEXT ' . $xMarca . ',' . ($y + intdiv($lado - TSPL_FUENTES['4']['alto'], 2))
+              . ',"4",0,1,1,"MONTEROJO GOURMET"';
 
-    // El producto puede venir vacío cuando el rótulo se genera a mano desde "Generar rótulos": en
-    // ese caso va una raya para completarlo con lapicero, igual que en el PDF.
-    $producto = $r['producto'] !== '' ? $r['producto'] : '________________________';
-    [$fuenteProd, $textoProd] = textoQueEntre($producto, $anchoUtil, ['3', '2']);
-    $lineas[] = 'TEXT ' . TSPL_MARGEN . ',126,"' . $fuenteProd . '",0,1,1,"' . textoTspl($textoProd) . '"';
+    $y += $lado + 2 * TSPL_PUNTOS_POR_MM;
+    $lineas[] = 'BAR ' . $izq . ',' . $y . ',' . $anchoUtil . ',5';
+    $y += 5 + 2 * TSPL_PUNTOS_POR_MM;
 
-    // El código de barras. El módulo —el ancho de la barra más fina— baja a 1 solo si con 2 no
-    // entra: 2 puntos son 0,25mm, que es el mínimo que piden los lectores de las cadenas; con 1 el
-    // código es más exigente de leer, pero es preferible a que salga cortado y no lea nada.
+    // ---------- Los campos, cada uno con su etiqueta arriba ----------
+    // El punto de venta va en la fuente más grande: es lo que mira quien recibe la caja. Los demás
+    // comparten tamaño para que el rótulo se lea como una ficha y no como cinco cosas sueltas.
+    $campos = [
+        ['PUNTO DE VENTA',  $r['pv'],                          ['5', '4', '3']],
+        ['ORDEN DE COMPRA', $r['oc'] !== '' ? $r['oc'] : '-',   ['4', '3']],
+        ['CAJAS TOTAL',     (string) $r['total'],               ['4']],
+        ['PRODUCTO',        $r['producto'] !== '' ? $r['producto'] : '________________', ['4', '3']],
+        ['CEDI',            $r['cedi'] !== '' ? $r['cedi'] : '-', ['4', '3']],
+    ];
+
+    // La fuente de cada valor se resuelve ANTES de empezar a dibujar, porque de ella depende
+    // cuánto miden los campos y, por lo tanto, cuánto aire sobra para repartir entre ellos.
+    foreach ($campos as $i => [$etiqueta, $valor, $candidatas]) {
+        [$fuente, $texto] = textoQueEntre($valor, $anchoUtil, $candidatas);
+        $campos[$i][] = $fuente;
+        $campos[$i][] = $texto;
+    }
+
+    // El bloque de abajo —línea, contador y código de barras— se ANCLA al pie en vez de dibujarse
+    // a continuación de los campos. Con el flujo al revés, un punto de venta largo que se lleva un
+    // renglón de más empujaba el código de barras fuera de la etiqueta y salía aplastado a 5mm o
+    // directamente cortado; anclándolo, el código siempre tiene su altura completa y lo que se
+    // ajusta es el aire entre campos, que es lo que no le importa a nadie.
+    $altoConteo  = TSPL_FUENTES['4']['alto'] * 2;
+    $altoCodigo  = TSPL_CODIGO_MM * TSPL_PUNTOS_POR_MM;
+    $altoAbajo   = 5 + 2 * TSPL_PUNTOS_POR_MM          // línea divisoria + su aire
+                 + $altoConteo + 2 * TSPL_PUNTOS_POR_MM
+                 + $altoCodigo + TSPL_FUENTES['3']['alto'];   // el código y su texto legible
+    $pieArranca  = TSPL_Y0 + TSPL_DIB_ALTO - TSPL_MARGEN - $altoAbajo;
+
+    // Alto "natural" de los campos, sin aire entre uno y otro.
+    $altoCampos = 0;
+    foreach ($campos as [, , , $fuente]) {
+        $altoCampos += TSPL_FUENTES['2']['alto'] + 2 + TSPL_FUENTES[$fuente]['alto'];
+    }
+
+    // El sobrante se reparte en partes iguales. El tope de 4 puntos evita que dos campos se toquen
+    // cuando el rótulo va muy cargado, y el de 24 que queden flotando separadísimos cuando va
+    // vacío; entre medio, el rótulo se estira o se comprime solo según el tamaño de la etiqueta.
+    $aire = intdiv($pieArranca - $y - $altoCampos, count($campos));
+    $aire = max(4, min(3 * TSPL_PUNTOS_POR_MM, $aire));
+
+    foreach ($campos as [$etiqueta, , , $fuente, $texto]) {
+        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"2",0,1,1,"' . textoTspl($etiqueta) . '"';
+        $y += TSPL_FUENTES['2']['alto'] + 2;
+
+        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"' . $fuente . '",0,1,1,"' . textoTspl($texto) . '"';
+        $y += TSPL_FUENTES[$fuente]['alto'] + $aire;
+    }
+
+    // ---------- El contador de cajas: abajo, solo, y lo más grande del rótulo ----------
+    // Es lo que mira el que descarga el camión para saber si llegó todo, así que se lo deja
+    // separado del resto por una línea y se lo imprime al doble de tamaño.
+    $y = $pieArranca;
+    $lineas[] = 'BAR ' . $izq . ',' . $y . ',' . $anchoUtil . ',5';
+    $y += 5 + 2 * TSPL_PUNTOS_POR_MM;
+
+    $conteo      = 'CAJ ' . $r['numero'] . ' DE ' . $r['total'];
+    $anchoConteo = mb_strlen($conteo) * TSPL_FUENTES['4']['ancho'] * 2;
+    $lineas[] = 'TEXT ' . max($izq, TSPL_X0 + intdiv(TSPL_DIB_ANCHO - $anchoConteo, 2)) . ',' . $y
+              . ',"4",0,2,2,"' . textoTspl($conteo) . '"';
+    $y += $altoConteo + 2 * TSPL_PUNTOS_POR_MM;
+
+    // ---------- Código de barras ----------
+    // El módulo —el ancho de la barra más fina— baja a 1 solo si con 2 no entra: 2 puntos son
+    // 0,25mm, que es el mínimo que piden los lectores de las cadenas; con 1 el código es más
+    // exigente de leer, pero es preferible a que salga cortado y no lea nada.
     $tienda  = $r['ean_pv'] !== '' ? $r['ean_pv'] : $r['pv'];
     $idCaja  = identificadorDeCajaRotulo($r['oc'], $tienda, $r['numero']);
     $modulo  = anchoCodigo128($idCaja, 2) <= $anchoUtil ? 2 : 1;
-    $xCodigo = max(TSPL_MARGEN, intdiv(TSPL_ANCHO - anchoCodigo128($idCaja, $modulo), 2));
+    $xCodigo = max($izq, TSPL_X0 + intdiv(TSPL_DIB_ANCHO - anchoCodigo128($idCaja, $modulo), 2));
 
     // Parámetros de BARCODE: x, y, tipo, alto, texto legible (2 = debajo y centrado), rotación,
     // ancho de la barra fina, ancho de la barra gruesa, contenido.
-    $lineas[] = 'BARCODE ' . $xCodigo . ',158,"128",76,2,0,' . $modulo . ',' . ($modulo * 2)
-              . ',"' . textoTspl($idCaja) . '"';
+    $lineas[] = 'BARCODE ' . $xCodigo . ',' . $y . ',"128",' . $altoCodigo . ',2,0,'
+              . $modulo . ',' . ($modulo * 2) . ',"' . textoTspl($idCaja) . '"';
 
     return implode("\r\n", $lineas);
 }
@@ -153,7 +319,7 @@ function tsplDeUnRotulo(array $r) {
  */
 function tsplDeRotulos(array $rotulos) {
     $cabecera = [
-        'SIZE ' . TSPL_ANCHO_MM . ' mm,' . TSPL_ALTO_MM . ' mm',
+        'SIZE ' . ROTULO_ANCHO_MM . ' mm,' . ROTULO_ALTO_MM . ' mm',
         'GAP ' . (int) ROTULO_TSPL_GAP_MM . ' mm,0',
         'DIRECTION ' . (int) ROTULO_TSPL_DIRECCION,
         'REFERENCE 0,0',
@@ -199,8 +365,8 @@ function imprimirRotulosEnEtiquetadora(array $rotulos) {
     }
 
     // El trabajo va por un archivo temporal y no por la línea de comandos: son varios miles de
-    // caracteres con comillas y saltos de línea, y el largo máximo de un comando en Windows
-    // (~8.000 caracteres) lo cortaría en la mitad de una etiqueta.
+    // caracteres con comillas, saltos de línea y el binario del logo, y el largo máximo de un
+    // comando en Windows (~8.000 caracteres) lo cortaría en la mitad de una etiqueta.
     $archivo = tempnam(sys_get_temp_dir(), 'rotulos_');
     if ($archivo === false || file_put_contents($archivo, tsplDeRotulos($rotulos)) === false) {
         return ['ok' => false, 'etiquetas' => 0, 'mensaje' => 'No se pudo preparar el trabajo de impresión.'];

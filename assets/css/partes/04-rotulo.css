@@ -24,121 +24,123 @@
    corresponde), el producto, y el código de barras a todo el ancho —más ancho que antes, de
    hecho, porque ya no hay que dejarle sitio a una columna de campos al lado. */
 
+/* El rótulo mide lo mismo que el ÁREA QUE SE DIBUJA en la etiquetadora (ver ROTULO_DIBUJO_ANCHO_MM
+   en config/config.php), no lo que mide el sticker: los 2,5mm de diferencia por lado son aire al
+   filo del papel y no se ven en la etiqueta impresa.
+
+   TODAS las medidas de acá abajo son las mismas que usa el PDF (ver cssRotulosPdf en
+   modules/historial/helper_rotulos_pdf.php), y esa coincidencia no es estética: si la vista previa
+   fuera más holgada que el papel, mostraría entrando un texto que en la etiqueta real sale
+   cortado, que es exactamente lo que no puede hacer una vista previa. */
 .rotulo {
-    width: 100mm;
-    height: 40mm;
-    /* box-sizing: border-box para que el padding y el borde queden DENTRO de los 40mm, no
-       sumados: si el rótulo terminara midiendo 40mm + padding + borde, ya no sería un rótulo de
-       4cm de alto sino uno más grande que no calza en la impresora. */
-    box-sizing: border-box;
+    width: 95mm;
+    height: 95mm;
     /* flex-shrink: 0 porque en la vista previa el rótulo es un hijo flex y, por defecto, un hijo
        flex se encoge para caber. Encogido, la previa muestra un rótulo más chico que el que va a
        salir impreso —y con las barras más finas de lo que serán—, que es justo lo que no se
        quiere poder creer de una vista previa. */
     flex-shrink: 0;
-    padding: 2mm;
+    padding: 4mm;
     background: #ffffff;
     color: #000000;
     border: 0.8mm solid #000000;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    /* Nada se sale de los 40mm reales, ni un nombre de tienda inusualmente largo: mejor un dato
-       cortado a la vista (sigue completo en el texto bajo el código de barras) que un rótulo que
-       imprime más alto de lo que la impresora espera y arruina el rollo entero. */
-    overflow: hidden;
     /* Se fija la tipografía en vez de heredarla: la hoja de la aplicación puede cambiar y el
        rótulo tiene que seguir imprimiéndose igual. */
     font-family: Arial, Helvetica, sans-serif;
 }
 
-/* El encabezado: la marca y el contador de cajas comparten renglón —es el único que se podía
-   ahorrar sin perder información, porque ninguno de los dos necesita una línea para él solo. */
+/* --- Marca: logo + nombre, con línea divisoria --- */
+
 .rotulo-marca {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 2mm;
-    margin-bottom: 1mm;
+    align-items: center;
+    gap: 3mm;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
+    border-bottom: 0.6mm solid #000000;
+    flex-shrink: 0;
+}
+
+.rotulo-marca img {
+    width: 12mm;
+    height: 12mm;
 }
 
 .rotulo-marca span {
-    font-size: 2.6mm;
+    font-size: 4mm;
     font-weight: bold;
-    letter-spacing: 0.3mm;
+    letter-spacing: 0.5mm;
     text-transform: uppercase;
 }
 
-/* El punto de venta: el dato que más importa para saber a qué caja corresponde el rótulo, así
-   que es el más grande de los tres campos de texto. Hasta DOS renglones —la mayoría de los
-   nombres de tienda entran en uno solo a este ancho, pero el que no, no puede empujar el resto
-   del rótulo fuera de los 40mm—, con el resto recortado si ni así entra. */
+/* --- Los campos, cada uno con su etiqueta arriba --- */
+
+.rotulo-campos {
+    flex: 1;
+    min-height: 0;
+}
+
+.rotulo-campo {
+    margin-bottom: 1.4mm;
+}
+
+.rotulo-etiqueta {
+    display: block;
+    font-size: 2.4mm;
+    line-height: 1.1;
+    letter-spacing: 0.3mm;
+    text-transform: uppercase;
+    color: #444444;
+}
+
+/* El cuerpo de letra NO se fija acá: lo calcula el JavaScript según cuán largo sea cada texto y lo
+   escribe en el style del elemento (ver cuerpoValor() en los scripts_*.js, que es la copia exacta
+   de cuerpoValorPdf() en PHP). Es el equivalente de lo que hace la etiquetadora eligiendo entre
+   sus fuentes de ancho fijo: primero achica la letra y recién si no alcanza recorta.
+
+   El nowrap es la razón de todo eso: si un valor largo se partiera en dos renglones, el rótulo
+   crecería de alto y el último campo quedaría cortado por el overflow —que fue justo lo que pasó
+   con el CEDI al volver a este diseño. */
 .rotulo-valor {
     display: block;
-    font-size: 3.2mm;
     font-weight: bold;
-    line-height: 1.15;
-    max-height: 7.4mm;
-    overflow: hidden;
-    margin-bottom: 0.8mm;
-    /* Un nombre sin espacios ("SUPERINTEREXPRESSAVSEXTA") se parte en vez de desbordar. */
-    overflow-wrap: anywhere;
-}
-
-/* Orden de compra y CEDI, juntos en un solo renglón chico: los dos identifican el pedido pero
-   ninguno es lo primero que se mira al recibir la caja, así que comparten el espacio que antes
-   tenía cada uno por separado. Un solo renglón con puntos suspensivos si no entra completo —el
-   dato íntegro sigue en el sistema; acá alcanza con lo que ayuda a reconocer el pedido de un
-   vistazo. */
-.rotulo-meta {
-    display: block;
-    font-size: 2.5mm;
-    line-height: 1.3;
+    line-height: 1.05;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.8mm;
 }
 
-/* El producto: un solo renglón, más chico que el punto de venta porque es el segundo dato en
-   importancia y el que suele ser más largo ("PLÁTANOS VERDES LIMA LIMÓN MR100G PX24"). */
-.rotulo-valor-producto {
-    display: block;
-    font-size: 2.8mm;
-    line-height: 1.3;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* La numeración de la caja: ya no abajo del todo en su propio renglón —no hay sitio—, sino
-   arriba, junto a la marca, que es donde sigue siendo lo primero que se lee del rótulo. */
+/* La numeración: es lo que mira el que descarga el camión para saber si llegó todo, así que va
+   abajo, sola, y es lo más grande de la hoja. */
 .rotulo-conteo {
-    font-size: 4.2mm;
+    padding-top: 1.5mm;
+    border-top: 0.6mm solid #000000;
+    text-align: center;
+    font-size: 7.5mm;
+    line-height: 1.05;
     font-weight: bold;
-    letter-spacing: 0.2mm;
-    white-space: nowrap;
+    letter-spacing: 0.4mm;
+    flex-shrink: 0;
 }
 
 /* --- Código de barras --- */
 
-/* Va al final del rótulo (margin-top: auto lo empuja contra el borde inferior) y a todo el
-   ancho disponible: con el logo y las etiquetas afuera, ya no hay una columna de texto al lado
-   que le dispute el espacio, así que el código queda más ancho que en el rótulo grande —mejor
-   para el lector, no peor, a pesar de que el rótulo entero sea más chico. */
 .rotulo-codigo {
-    margin-top: auto;
+    margin-top: 1.5mm;
     text-align: center;
+    flex-shrink: 0;
 }
 
-/* Alto fijo en mm y no en porcentaje: un código de barras se mide en milímetros, no en píxeles.
-   El estirado vertical no afecta la lectura — lo que codifica un Code 128 son los anchos, y esos
-   se escalan todos por igual. 10mm y no los 14mm del rótulo grande: es lo que queda del alto
-   disponible después de todo lo de arriba, y sigue por encima del mínimo que lee un lector de
-   mano a corta distancia. */
+/* Altura fija en mm y no en porcentaje: un código de barras se mide en milímetros, no en píxeles.
+   El estirado vertical no afecta la lectura —lo que codifica un Code 128 son los anchos, y esos se
+   escalan todos por igual— pero un código alto es mucho más fácil de enganchar con la pistola sin
+   tener que apuntar fino. */
 .rotulo-codigo img {
     display: block;
     width: 100%;
-    height: 10mm;
+    height: 12mm;
     margin: 0 auto;
 }
 
@@ -147,15 +149,14 @@
    tipografía proporcional un 1 y una l se confunden. */
 .rotulo-codigo-texto {
     display: block;
-    margin-top: 0.4mm;
+    margin-top: 0.6mm;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 2mm;
-    letter-spacing: 0.1mm;
+    font-size: 2.8mm;
+    line-height: 1.1;
+    letter-spacing: 0.2mm;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
-
 /* --- Panel de edición (solo en pantalla) --- */
 
 /* Los campos que se pueden ajustar antes de imprimir. En grilla y no en una fila: son cinco y
@@ -233,19 +234,4 @@
     justify-content: center;
     overflow-x: auto;
     padding-bottom: 4px;
-}
-
-/* En una pantalla angosta (celular) el scroll horizontal de arriba deja de alcanzar: el modal
-   mismo ya ocupa casi todo el ancho disponible, así que los 100mm fijos del rótulo se salen del
-   recuadro del modal y hay que arrastrar para ver el borde derecho —que es justo lo que no se
-   quiere de una VISTA PREVIA, aunque en la hoja impresa esos 100mm sí importen tal cual.
-   Acá se encoge al ancho real disponible (contenido del modal, con su padding descontado) para
-   que se vea el rótulo COMPLETO de un vistazo; el texto interno reacomoda sus líneas solo. Esto
-   es SOLO la vista previa en pantalla: lo que se imprime de verdad lo dibuja la etiquetadora a
-   partir de comandos TSPL y no pasa por esta hoja de estilos (ver helper_rotulos_tspl.php). */
-@media screen and (max-width: 480px) {
-    .rotulo {
-        width: calc(100vw - 80px);
-        flex-shrink: 1;
-    }
 }

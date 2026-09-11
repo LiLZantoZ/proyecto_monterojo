@@ -38,87 +38,97 @@ function codigoBarrasDataUri($texto) {
 }
 
 function cssRotulosPdf() {
+    // La página es el sticker COMPLETO y el margen de página deja el mismo aire al filo que la
+    // etiquetadora: (100 - 95) / 2 = 2,5mm por lado. Se hace con @page y no con un margin en el
+    // rótulo porque dompdf colapsa los márgenes de forma impredecible al cambiar de página.
+    $pagAncho = ROTULO_ANCHO_MM;
+    $pagAlto  = ROTULO_ALTO_MM;
+    $margen   = ($pagAncho - ROTULO_DIBUJO_ANCHO_MM) / 2;
+
+    // Ancho y alto en "content-box" a mano, y NO con box-sizing:border-box, aunque border-box es
+    // lo que se usa en pantalla (ver 04-rotulo.css) y ahí SÍ funciona perfecto. dompdf no lo
+    // respeta de forma confiable para el alto: probado en este mismo archivo, un <div> vacío con
+    // box-sizing:border-box en una página de su mismo alto igual se pasaba a una segunda página
+    // —como si el padding y el borde se sumaran ENCIMA en vez de repartirse adentro—. La única
+    // combinación que da exactamente 1 página es calcular el contenido a mano y dejar que padding
+    // y borde se sumen por fuera, que es como dompdf los aplica de verdad.
+    $cont = ROTULO_DIBUJO_ANCHO_MM - 2 * 4 - 2 * 0.8;   // menos el padding y el borde de cada lado
+
+    // Todos los valores van en una sola línea (nowrap). Es deliberado: si el texto se parte, el
+    // rótulo crece de alto, se pasa de la página y dompdf lo manda a una SEGUNDA hoja —que en una
+    // impresora de etiquetas significa una etiqueta en blanco—. Por eso el cuerpo de letra se
+    // elige según el largo del texto (ver htmlRotuloPdf), igual que hace la etiquetadora con sus
+    // fuentes de ancho fijo: primero se achica la letra, y recién si no alcanza se recorta.
     return <<<CSS
-/* 100mm x 40mm exactos: el tamaño real de la etiqueta (decidido con el usuario el 2026-09-08),
-   no una hoja con márgenes. Margen 0 en la página porque el rótulo ya trae su propio padding de
-   2mm por dentro. Mismo diseño compacto que la vista en pantalla (ver assets/css/partes/04-rotulo.css
-   para la explicación completa de qué se sacrificó para que entre en 4cm de alto): sin logo,
-   sin etiquetas de campo, orden de compra y CEDI comparten renglón, y el contador de cajas subió
-   a compartir el encabezado con la marca en vez de tener su propio renglón abajo. */
-@page { size: 100mm 40mm; margin: 0; }
+@page { size: {$pagAncho}mm {$pagAlto}mm; margin: {$margen}mm; }
 body  { margin: 0; font-family: Helvetica, Arial, sans-serif; color: #000; }
 
-/* Ancho y alto en "content-box" a mano —94.4mm y 34.4mm— y NO 100mm/40mm con
-   box-sizing:border-box, aunque border-box es lo que se usa en pantalla (ver 04-rotulo.css) y
-   ahí SÍ funciona perfecto. dompdf no lo respeta de forma confiable para el alto: probado en
-   este mismo archivo, un <div> vacío de height:40mm + box-sizing:border-box en una página de
-   40mm de alto igual se pasaba a una segunda página —como si el padding y el borde se sumaran
-   ENCIMA de los 40mm en vez de repartirse adentro—, y encogiendo la altura declarada hasta 38mm
-   el problema seguía. La única combinación que dio exactamente 1 página fue calcular el ancho y
-   el alto de CONTENIDO a mano (100mm y 40mm menos el padding y el borde de cada lado) y dejar
-   que padding + borde se sumen por fuera, que es como dompdf los aplica de verdad.
-   94.4mm = 100mm - 2mm de padding a cada lado - 0.8mm de borde a cada lado.
-   34.4mm = 40mm  - 2mm de padding a cada lado - 0.8mm de borde a cada lado. */
 .rotulo {
-    width: 94.4mm;
-    height: 34.4mm;
-    padding: 2mm;
+    width: {$cont}mm;
+    height: {$cont}mm;
+    padding: 4mm;
     border: 0.8mm solid #000;
     overflow: hidden;
 }
 
 .rotulo-marca {
-    display: table;
-    width: 100%;
-    margin-bottom: 1mm;
+    border-bottom: 0.6mm solid #000;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
 }
+.rotulo-marca img { width: 12mm; height: 12mm; vertical-align: middle; }
 .rotulo-marca span {
-    font-size: 2.6mm; font-weight: bold; letter-spacing: 0.3mm; text-transform: uppercase;
-}
-.rotulo-marca .rotulo-conteo {
-    display: table-cell;
-    text-align: right;
-    font-size: 4.2mm; font-weight: bold; letter-spacing: 0.2mm;
-    white-space: nowrap;
-}
-.rotulo-marca .rotulo-marca-texto {
-    display: table-cell;
+    display: inline-block; vertical-align: middle; margin-left: 3mm;
+    font-size: 4mm; font-weight: bold; letter-spacing: 0.5mm; text-transform: uppercase;
 }
 
+.rotulo-campo { margin-bottom: 1.4mm; }
+.rotulo-etiqueta {
+    display: block; font-size: 2.4mm; line-height: 1.1; letter-spacing: 0.3mm;
+    text-transform: uppercase; color: #444;
+}
 .rotulo-valor {
-    display: block; font-size: 3.2mm; font-weight: bold; line-height: 1.15;
-    max-height: 7.4mm; overflow: hidden; margin-bottom: 0.8mm;
-}
-.rotulo-meta {
-    display: block; font-size: 2.5mm; line-height: 1.3;
-    white-space: nowrap; overflow: hidden; margin-bottom: 0.8mm;
-}
-.rotulo-valor-producto {
-    display: block; font-size: 2.8mm; line-height: 1.3;
+    display: block; font-weight: bold; line-height: 1.05;
     white-space: nowrap; overflow: hidden;
 }
 
-.rotulo-codigo { margin-top: 2mm; text-align: center; }
+.rotulo-conteo {
+    border-top: 0.6mm solid #000; padding-top: 1.5mm;
+    text-align: center; font-size: 7.5mm; line-height: 1.05;
+    font-weight: bold; letter-spacing: 0.4mm;
+}
+
+.rotulo-codigo { margin-top: 1.5mm; text-align: center; }
 /* Ancho FIJO en mm y no en 100%: dompdf calcula el porcentaje sobre el tamaño NATURAL de la
-   imagen en algunos casos, y un Code 128 de 20+ caracteres genera un PNG de cientos de píxeles
-   de ancho —bastante más que el rótulo—, así que el "100%" terminaba desbordando la página en
-   vez de encogerlo. El ancho fijo obliga el tamaño sin importar cuán ancho salga el PNG.
-   94.4mm: como .rotulo-codigo no tiene padding propio, su ancho de contenido es el mismo que el
-   de .rotulo —94.4mm, ver la nota ahí arriba—, así que el código lo usa entero. */
-.rotulo-codigo img { display: block; width: 94.4mm; height: 10mm; margin: 0 auto; }
+   imagen en algunos casos, y un Code 128 de 20+ caracteres genera un PNG de cientos de píxeles de
+   ancho —bastante más que el rótulo—, así que el "100%" terminaba desbordando la página. */
+.rotulo-codigo img { display: block; width: {$cont}mm; height: 12mm; margin: 0 auto; }
 .rotulo-codigo-texto {
-    display: block; margin-top: 0.4mm; font-family: 'Courier New', Courier, monospace;
-    font-size: 2mm; letter-spacing: 0.1mm; white-space: nowrap; overflow: hidden;
+    display: block; margin-top: 0.6mm; font-family: 'Courier New', Courier, monospace;
+    font-size: 2.8mm; line-height: 1.1; letter-spacing: 0.2mm;
+    white-space: nowrap; overflow: hidden;
 }
 CSS;
 }
 
-// $tiendaParaCodigo es lo que entra al código de barras en vez del punto de venta —el EAN de la
-// tienda, cuando hay uno— y por defecto es el propio $pv: así un llamador que no lo pase (o pase
-// null) se comporta igual que antes de agregar este parámetro.
-//
-// $logo ya no se usa (el rótulo de 100x40mm no tiene lugar para la imagen, ver cssRotulosPdf) —
-// se deja el parámetro para no romper a quien ya llama a esta función pasándolo.
+/**
+ * El cuerpo de letra de un valor, en milímetros, según cuán largo sea el texto.
+ *
+ * Es el equivalente de textoQueEntre() de la etiquetadora (ver helper_rotulos_tspl.php): allá se
+ * elige entre las fuentes de ancho fijo de la impresora, y acá entre tres tamaños. Sin esto, un
+ * punto de venta largo se partiría en dos renglones, el rótulo crecería de alto y se iría a una
+ * segunda página —o sea, una etiqueta en blanco.
+ *
+ * $escala permite usar la misma progresión para valores que arrancan más chicos, como el producto.
+ */
+function cuerpoValorPdf($texto, $escala = 1.0) {
+    $largo = mb_strlen(trim((string) $texto));
+
+    if ($largo <= 22) { return round(5.5 * $escala, 2); }
+    if ($largo <= 30) { return round(4.5 * $escala, 2); }
+    if ($largo <= 40) { return round(3.6 * $escala, 2); }
+    return round(3.0 * $escala, 2);
+}
 function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tiendaParaCodigo = null) {
     $esc = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
@@ -126,18 +136,35 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
     $codigo  = codigoBarrasDataUri($idCaja);
     $nombreProducto = trim((string) $producto) !== ''
         ? $esc($producto)
-        : '<span style="color:#888">_______________</span>';
+        : '<span style="color:#888">________________</span>';
+
+    // El mismo orden y las mismas etiquetas que imprime la etiquetadora (ver tsplDeUnRotulo en
+    // helper_rotulos_tspl.php). Si acá se agrega o se mueve un campo, allá también: el PDF es el
+    // respaldo del papel, y dos rótulos que no dicen lo mismo son peor que no tener respaldo.
+    $campos = [
+        ['Punto de venta',  $esc($pv),                       cuerpoValorPdf($pv)],
+        ['Orden de compra', $esc($oc !== '' ? $oc : '-'),     cuerpoValorPdf($oc, 0.75)],
+        ['Cajas total',     (int) $total,                     cuerpoValorPdf((string) $total, 0.75)],
+        ['Producto',        $nombreProducto,                  cuerpoValorPdf($producto, 0.70)],
+        ['CEDI',            $esc($cedi !== '' ? $cedi : '-'), cuerpoValorPdf($cedi, 0.75)],
+    ];
 
     $html = '<div class="rotulo">';
 
-    $html .= '<div class="rotulo-marca">'
-           . '<span class="rotulo-marca-texto">Monterojo Gourmet</span>'
-           . '<span class="rotulo-conteo">CAJ ' . (int) $numero . ' DE ' . (int) $total . '</span>'
-           . '</div>';
+    $html .= '<div class="rotulo-marca">';
+    if ($logo !== '') {
+        $html .= '<img src="' . $logo . '">';
+    }
+    $html .= '<span>Monterojo Gourmet</span></div>';
 
-    $html .= '<span class="rotulo-valor">' . $esc($pv) . '</span>';
-    $html .= '<span class="rotulo-meta">O/C ' . $esc($oc) . ' · CEDI ' . $esc($cedi) . '</span>';
-    $html .= '<span class="rotulo-valor-producto">' . $nombreProducto . '</span>';
+    foreach ($campos as [$etiqueta, $valor, $cuerpo]) {
+        $html .= '<div class="rotulo-campo">'
+               . '<span class="rotulo-etiqueta">' . $etiqueta . '</span>'
+               . '<span class="rotulo-valor" style="font-size: ' . $cuerpo . 'mm">' . $valor . '</span>'
+               . '</div>';
+    }
+
+    $html .= '<div class="rotulo-conteo">CAJ ' . (int) $numero . ' DE ' . (int) $total . '</div>';
 
     $html .= '<div class="rotulo-codigo">'
            . '<img src="' . $codigo . '">'
@@ -148,7 +175,6 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
 
     return $html;
 }
-
 /**
  * Genera el PDF con los rótulos de UNA o VARIAS entregas —una caja por rótulo, un rótulo por
  * página— y lo manda al navegador como descarga. No devuelve: termina la ejecución.
@@ -254,7 +280,10 @@ function descargarRotulosPdfDeLista(array $rotulos, $nombreArchivo) {
 
     $dompdf = new Dompdf($opciones);
     $dompdf->loadHtml($html, 'UTF-8');
-    $dompdf->setPaper([0, 0, 283.465, 113.386], 'portrait');   // 100mm x 40mm, en puntos
+    // Los milímetros se pasan a puntos PostScript (72 por pulgada, 25.4mm por pulgada), que es
+    // la única unidad en la que dompdf acepta un tamaño de página a medida.
+    $aPuntos = fn($mm) => $mm * 72 / 25.4;
+    $dompdf->setPaper([0, 0, $aPuntos(ROTULO_ANCHO_MM), $aPuntos(ROTULO_ALTO_MM)], 'portrait');
     $dompdf->render();
 
     if (ob_get_length()) {

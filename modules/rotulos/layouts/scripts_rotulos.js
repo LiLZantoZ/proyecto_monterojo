@@ -21,30 +21,63 @@
             .join('-');
     }
 
+    // El cuerpo de letra de un valor, en milímetros, según cuán largo sea el texto.
+    //
+    // Es la copia EXACTA de cuerpoValorPdf() en modules/historial/helper_rotulos_pdf.php, y el
+    // equivalente de textoQueEntre() en la etiquetadora (helper_rotulos_tspl.php): los tres
+    // achican la letra antes que partir el texto en dos renglones. Si se partiera, el rótulo
+    // crecería de alto y el último campo quedaría cortado.
+    //
+    // escala permite usar la misma progresión para valores que arrancan más chicos, como el
+    // producto. Si se cambia algún número acá, hay que cambiarlo también en el PHP.
+    function cuerpoValor(texto, escala) {
+        var largo = String(texto == null ? '' : texto).trim().length;
+        var base  = largo <= 22 ? 5.5
+                  : largo <= 30 ? 4.5
+                  : largo <= 40 ? 3.6
+                  : 3.0;
+        return (base * (escala || 1)).toFixed(2);
+    }
     function htmlRotulo(datos, numero, total, producto) {
         var nombreProducto = producto && producto.trim() !== ''
             ? esc(producto)
-            : '<span style="color:#888">_______________</span>';
+            : '<span style="color:#888">________________</span>';
 
         var idCaja = identificadorDeCaja(datos, numero);
         var urlCodigo = BASE_URL + '/modules/rotulos/controller_rotulos.php?accion=codigo_barras&texto='
                       + encodeURIComponent(idCaja);
 
-        // 100mm x 40mm exactos, el mismo diseño compacto en los tres lugares que arman esto (acá,
-        // en scripts_picking.js y en scripts_historial.js) y en el PDF (helper_rotulos_pdf.php,
-        // en el módulo Historial): sin logo —no entra en 4cm de alto—, sin etiqueta suelta para
-        // cada campo, orden de compra y CEDI comparten renglón, y el contador de cajas sube a
-        // compartir el encabezado con la marca. Ver el porqué completo en
-        // assets/css/partes/04-rotulo.css.
-        return ''
+        // El mismo diseño y el mismo orden de campos que imprime la etiquetadora (ver
+        // tsplDeUnRotulo en modules/historial/helper_rotulos_tspl.php) y que sale en el PDF
+        // (helper_rotulos_pdf.php). Son CUATRO lugares que dibujan el mismo rótulo —acá, en
+        // scripts_picking.js y en scripts_historial.js, y el PDF—: si se agrega o se mueve un campo, se mueve en los cuatro, o la
+        // vista previa deja de ser una vista previa.
+        var campos = [
+            ['Punto de venta',  esc(datos.pv),          cuerpoValor(datos.pv)],
+            ['Orden de compra', esc(datos.oc || '-'),   cuerpoValor(datos.oc, 0.75)],
+            ['Cajas total',     total,                  cuerpoValor(String(total), 0.75)],
+            ['Producto',        nombreProducto,         cuerpoValor(producto, 0.70)],
+            ['CEDI',            esc(datos.cedi || '-'), cuerpoValor(datos.cedi, 0.75)]
+        ];
+
+        var html = ''
             + '<div class="rotulo">'
             +   '<div class="rotulo-marca">'
+            +     '<img src="' + LOGO_URL + '" alt="">'
             +     '<span>Monterojo Gourmet</span>'
-            +     '<span class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</span>'
             +   '</div>'
-            +   '<span class="rotulo-valor">' + esc(datos.pv) + '</span>'
-            +   '<span class="rotulo-meta">O/C ' + esc(datos.oc) + ' · CEDI ' + esc(datos.cedi) + '</span>'
-            +   '<span class="rotulo-valor-producto">' + nombreProducto + '</span>'
+            +   '<div class="rotulo-campos">';
+
+        campos.forEach(function (campo) {
+            html += '<div class="rotulo-campo">'
+                  +   '<span class="rotulo-etiqueta">' + campo[0] + '</span>'
+                  +   '<span class="rotulo-valor" style="font-size: ' + campo[2] + 'mm">' + campo[1] + '</span>'
+                  + '</div>';
+        });
+
+        return html
+            +   '</div>'
+            +   '<div class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</div>'
             +   '<div class="rotulo-codigo">'
             +     '<img src="' + urlCodigo + '" alt="Código de barras ' + esc(idCaja) + '">'
             +     '<span class="rotulo-codigo-texto">' + esc(idCaja) + '</span>'

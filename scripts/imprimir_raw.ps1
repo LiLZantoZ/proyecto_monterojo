@@ -1,7 +1,7 @@
 # scripts/imprimir_raw.ps1
 # Manda un archivo TAL CUAL a una impresora, sin que el driver lo interprete ni lo dibuje.
 #
-# Por que hace falta: la TSC TE200 no espera una pagina, espera comandos TSPL ("SIZE 100 mm, 40 mm",
+# Por que hace falta: la etiquetadora no espera una pagina, espera comandos TSPL ("SIZE 100 mm, 100 mm",
 # "BARCODE ...", "PRINT 1,1"). Si el trabajo se manda por la via normal de Windows, el driver los
 # trata como TEXTO y termina imprimiendo las letras del comando en la etiqueta. La unica forma de
 # que lleguen como comandos es abrir el trabajo con el tipo de datos "RAW", que es lo que hace este
@@ -9,7 +9,7 @@
 #
 # Se usa desde PHP (ver modules/historial/helper_rotulos_tspl.php):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\imprimir_raw.ps1 `
-#              -Impresora "TSC TE200" -Archivo "C:\ruta\rotulos.prn"
+#              -Impresora "TSC TA210" -Archivo "C:\ruta\rotulos.prn"
 #
 # Escribe "OK <bytes>" y sale con codigo 0 si el trabajo entro a la cola; cualquier otra cosa en
 # stderr con codigo 1. El PHP se fija en el codigo de salida.

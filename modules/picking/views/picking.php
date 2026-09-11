@@ -562,6 +562,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
 
 <script>
     const BASE_URL   = '<?php echo BASE_URL; ?>';
+    const LOGO_URL   = '<?php echo BASE_URL; ?>/assets/img/monterojo.png';
     const CSRF_TOKEN = '<?php echo htmlspecialchars(generarTokenCSRF(), ENT_QUOTES, 'UTF-8'); ?>';
 </script>
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>

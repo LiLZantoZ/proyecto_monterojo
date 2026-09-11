@@ -118,14 +118,39 @@ define('URL_LOGIN', BASE_URL . '/modules/login/auth.php');
 define('TIEMPO_INACTIVIDAD_SEGUNDOS', 600); // 10 minutos
 
 // ── Etiquetadora de rótulos ──────────────────────────────────────────────────────────────────
-// La impresora de etiquetas (una TSC TE200) NO recibe una página: recibe comandos TSPL que ella
+// La impresora de etiquetas NO recibe una página: recibe comandos TSPL que ella
 // misma dibuja. Todo lo de acá abajo son los parámetros de ESE trabajo de impresión; están juntos
 // y con nombre para que cambiar de impresora, de rollo o de sentido no sea tocar código.
 // Ver modules/historial/helper_rotulos_tspl.php para cómo se arma el trabajo.
 
+// El tamaño FÍSICO de la etiqueta que hay puesta en la impresora, en milímetros. Es de lo único
+// que dependen la maqueta del rótulo, la página del PDF y la vista previa en pantalla: las tres
+// se calculan a partir de estos dos números, así que cambiar de rollo es cambiarlos acá y nada
+// más. (El 2026-09-08 el rollo era de 100x40; el 2026-09-11 se pasó a 100x100, que es el que
+// permitió volver al diseño con logo y con cada campo en su renglón.)
+define('ROTULO_ANCHO_MM', 100);
+define('ROTULO_ALTO_MM', 100);
+
+// El área que se DIBUJA, centrada dentro del sticker. Es más chica a propósito: con el rótulo
+// ocupando los 100mm exactos, el marco quedaba pegado al filo del papel y la primera impresión
+// salió con el recuadro casi tocando las esquinas. Dibujando 95x95 quedan 2,5mm de aire por lado,
+// que además absorben el pequeño corrimiento lateral que tiene el avance del rollo.
+//
+// OJO: esto NO reemplaza a ROTULO_ANCHO_MM / ROTULO_ALTO_MM. Esos dos siguen siendo la medida
+// FÍSICA del sticker y son los que la impresora usa para saber cuánto papel avanzar entre una
+// etiqueta y la siguiente; si se los tocara para "achicar el rótulo", el rollo se iría corriendo
+// un poco en cada etiqueta hasta desalinearse del todo.
+define('ROTULO_DIBUJO_ANCHO_MM', 95);
+define('ROTULO_DIBUJO_ALTO_MM', 95);
+
 // El nombre EXACTO con el que la impresora aparece en Windows (Configuración > Impresoras).
-// Si no coincide, el sistema avisa en pantalla y lista las que sí encontró.
-define('IMPRESORA_ROTULOS', getenv('IMPRESORA_ROTULOS') ?: 'TSC TE200');
+// Si no coincide, el sistema lo avisa en pantalla en vez de fallar en silencio.
+//
+// Tiene que ser una impresora que hable TSPL y sea de 203 dpi, que es la resolución sobre la que
+// está calculada toda la maqueta del rótulo (8 puntos por milímetro, ver TSPL_PUNTOS_POR_MM en
+// modules/historial/helper_rotulos_tspl.php). Con una de 300 dpi la etiqueta saldría a dos tercios
+// del tamaño, encogida contra la esquina superior izquierda.
+define('IMPRESORA_ROTULOS', getenv('IMPRESORA_ROTULOS') ?: 'TSC TA210');
 
 // Sentido en el que sale la etiqueta. Esto es lo que arregla el "sale al revés": si el texto sale
 // cabeza abajo, cambiar 1 por 0 (o al revés) y volver a imprimir. No hace falta tocar nada más.
