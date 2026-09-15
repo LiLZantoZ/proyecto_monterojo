@@ -15,6 +15,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../consolidados/model_consolidados.php';   // desglosarCajas()
+require_once __DIR__ . '/../historial/helper_rotulos_lista.php';       // numeroYNombreDePunto()
 
 /**
  * Una fila por (carga, CEDI, orden de compra, punto de venta, PLU).
@@ -60,9 +61,11 @@ function filasPicking($pdo, array $filtros = []) {
     // mostrar de qué archivo y de qué fecha vino cada entrega, ahora que puede haber varias cargas
     // pendientes al mismo tiempo.
     $sql = "SELECT l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
+                   l.sku_item, l.descripcion_item,
                    SUM(l.unidades) AS unidades,
                    MAX(l.pedido_sap) AS pedido_sap,
                    MAX(l.ean_punto_venta) AS ean_punto_venta,
+                   MAX(l.direccion_punto_venta) AS direccion_punto_venta,
                    MAX(l.id_personal) AS id_personal,
                    MAX(p.nombre) AS personal_nombre,
                    MAX(cc.fecha_carga) AS fecha_carga,
@@ -71,7 +74,8 @@ function filasPicking($pdo, array $filtros = []) {
             LEFT JOIN personal p ON p.id_personal = l.id_personal
             LEFT JOIN consolidado_cargas cc ON cc.id_carga = l.id_carga
             WHERE " . implode(' AND ', $where) . "
-            GROUP BY l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item";
+            GROUP BY l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
+                     l.sku_item, l.descripcion_item";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -147,6 +151,9 @@ function agruparPorEntrega(array $filas) {
                 'cedi'            => $f['cedi'],
                 'orden_compra'    => $f['orden_compra'],
                 'punto_venta'     => $f['punto_venta'],
+                // El número de la tienda, que va impreso destacado en el rótulo. Ver
+                // numeroYNombreDePunto() en modules/historial/helper_rotulos_lista.php.
+                'numero_pv'       => numeroYNombreDePunto($f['punto_venta'], $f['ean_punto_venta'], $f['direccion_punto_venta'] ?? null)['numero'],
                 'ean_punto_venta' => $f['ean_punto_venta'],
                 'pedido_sap'      => $f['pedido_sap'],
                 'id_personal'     => $f['id_personal'],

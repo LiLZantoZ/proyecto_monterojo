@@ -86,7 +86,7 @@ $hero = imagenDeMarca('bienvenida.jpg');
                 <div class="estado-sistema">
                     <?php if (tienePermiso('modulo_consolidados')): ?>
                         <a class="estado-dato estado-dato-alerta"
-                           href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php"
+                           href="<?php echo BASE_URL; ?>/consolidados"
                            style="grid-column: 1 / -1;">
                             <span class="estado-dato-valor">Sin pendientes</span>
                             <span class="estado-dato-etiqueta">
@@ -115,7 +115,7 @@ $hero = imagenDeMarca('bienvenida.jpg');
 
                     <?php if ($estado['sin_maestro'] > 0 && tienePermiso('modulo_maestro')): ?>
                         <a class="estado-dato estado-dato-alerta"
-                           href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php?ver=faltantes">
+                           href="<?php echo BASE_URL; ?>/maestro?ver=faltantes">
                             <span class="estado-dato-valor"><?php echo $estado['sin_maestro']; ?></span>
                             <span class="estado-dato-etiqueta">
                                 PLU sin unidades por caja. Hasta cargarlos, esas líneas no suman cajas.

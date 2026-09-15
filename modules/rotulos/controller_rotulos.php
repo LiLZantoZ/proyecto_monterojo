@@ -9,7 +9,7 @@ require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
 require_once __DIR__ . '/../../config/permisos.php';
 
-$vistaRotulos = BASE_URL . '/modules/rotulos/views/rotulos.php';
+$vistaRotulos = BASE_URL . '/rotulos';
 
 if (!tienePermiso('modulo_rotulos')) {
     // codigo_barras lo pide un <img>, así que una redirección no serviría de nada —el navegador
@@ -82,50 +82,25 @@ if (($_GET['accion'] ?? '') === 'codigo_barras') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf') {
     validarCSRF();
 
-    $limitar = function ($valor, $porDefecto, $minimo, $maximo) {
-        $valor = (int) $valor;
-        if ($valor < $minimo) { $valor = $porDefecto; }
-        if ($valor > $maximo) { $valor = $maximo; }
-        return $valor;
-    };
+    // La lista llega armada desde la pantalla, igual que en Picking, y no se recalcula acá. Antes
+    // este módulo mandaba los campos sueltos y el servidor rearmaba los rótulos por su cuenta: dos
+    // cálculos del mismo rótulo, y el PDF podía no coincidir con la vista previa. Ahora es la
+    // misma lista que se ve en pantalla y que se manda a la etiquetadora.
+    $rotulos = json_decode($_POST['rotulos'] ?? '', true);
 
-    $cantidad = $limitar($_POST['cantidad'] ?? 1, 1, 1, 99);
-    $desde    = $limitar($_POST['desde'] ?? 1, 1, 1, 999);
-    $total    = $limitar($_POST['total'] ?? 1, 1, 1, 999);
-    $total    = max($total, $desde + $cantidad - 1);
+    require_once __DIR__ . '/../historial/helper_rotulos_lista.php';
+    $rotulos = is_array($rotulos) ? normalizarListaDeRotulos($rotulos) : [];
 
-    $pv       = trim(mb_substr((string) ($_POST['pv'] ?? ''), 0, 180));
-    $oc       = trim(mb_substr((string) ($_POST['oc'] ?? ''), 0, 40));
-    $cedi     = trim(mb_substr((string) ($_POST['cedi'] ?? ''), 0, 120));
-    $producto = trim(mb_substr((string) ($_POST['producto'] ?? ''), 0, 255));
-    $eanPv    = trim(mb_substr((string) ($_POST['ean_pv'] ?? ''), 0, 40));
-
-    if ($pv === '') {
-        // Sin punto de venta el identificador de la caja quedaría vacío en esa parte, y el
-        // rótulo no serviría para identificar nada. Es el único campo que de verdad hace falta.
+    if (!$rotulos) {
+        // Sin punto de venta el rótulo no identifica ninguna caja: normalizarListaDeRotulos() lo
+        // descarta. Es el único campo que de verdad hace falta.
         header("Location: {$vistaRotulos}?error=falta_punto_venta");
         exit();
     }
 
-    $entrega = [
-        'cedi'            => $cedi,
-        'orden_compra'    => $oc,
-        'punto_venta'     => $pv,
-        'ean_punto_venta' => $eanPv !== '' ? $eanPv : null,
-        'totales'         => ['cajas_rotulo' => $total],
-        'lineas'          => [[
-            'descripcion'  => $producto !== '' ? $producto : null,
-            'sku'          => null,
-            'plu'          => null,
-            'cajas_rotulo' => $cantidad,
-            'caja_desde'   => $desde,
-            'cajas_pedido' => $total,
-        ]],
-    ];
-
     require_once __DIR__ . '/../historial/helper_rotulos_pdf.php';
-    descargarRotulosPdf($entrega, 'Rotulo_manual_' . date('Ymd_His') . '.pdf');
-    // descargarRotulosPdf() termina la ejecución.
+    descargarRotulosPdfDeLista($rotulos, 'Rotulo_manual_' . date('Ymd_His') . '.pdf');
+    // descargarRotulosPdfDeLista() termina la ejecución.
 }
 
 header("Location: {$vistaRotulos}");

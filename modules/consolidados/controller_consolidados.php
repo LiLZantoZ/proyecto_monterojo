@@ -8,8 +8,8 @@ require_once __DIR__ . '/../../config/permisos.php';
 require_once __DIR__ . '/../../config/mensajes.php';
 require_once __DIR__ . '/model_consolidados.php';
 
-$vistaConsolidados = BASE_URL . '/modules/consolidados/views/consolidados.php';
-$vistaMaestro      = BASE_URL . '/modules/consolidados/views/maestro.php';
+$vistaConsolidados = BASE_URL . '/consolidados';
+$vistaMaestro      = BASE_URL . '/maestro';
 
 $accion = $_GET['accion'] ?? $_POST['accion'] ?? '';
 
@@ -210,8 +210,106 @@ switch ($accion) {
         exit();
 
     // -----------------------------------------------------------------------------------------
+    // DESCARGAS DE LOS CEDI SELECCIONADOS (barra de abajo de Consolidados)
+    //
+    // Por POST y no por GET como las de un solo CEDI: la lista de nombres elegidos puede ser larga
+    // para una URL. 'formato' lo pone el botón que se pulsó:
+    //   · interno   → consolidado interno, una hoja por CEDI;
+    //   · externo   → consolidado externo, una hoja por CEDI;
+    //   · productos → todos los productos de esos CEDI sumados en UNA tabla.
+    // -----------------------------------------------------------------------------------------
+    case 'pdf_seleccion':
+        requierePermiso('modulo_consolidados', $vistaConsolidados);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        // Solo textos: un cedi[][] armado a mano llegaría como arreglo y no es un nombre.
+        $cedis = array_values(array_unique(array_filter(
+            array_map(fn($c) => is_string($c) ? trim($c) : '', (array) ($_POST['cedi'] ?? [])),
+            fn($c) => $c !== ''
+        )));
+        $formato = $_POST['formato'] ?? '';
+
+        if (!$cedis || !in_array($formato, ['interno', 'externo', 'productos'], true)) {
+            guardarMensajeFlashTexto('error', 'Seleccioná al menos un CEDI para descargar.');
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        $filtros = ['cedis' => $cedis, 'linea' => is_string($_POST['linea'] ?? null) ? trim($_POST['linea']) : ''];
+        $meta    = cargaVigente($pdo) ?? [];
+        $varios  = count($cedis) . '_CEDI_' . date('Ymd') . '.pdf';
+
+        if ($formato === 'productos') {
+            $datos = productosDelConsolidado($pdo, $filtros);
+            if (empty($datos['filas'])) {
+                header("Location: {$vistaConsolidados}?error=sin_datos");
+                exit();
+            }
+            require_once __DIR__ . '/helper_consolidado_productos_pdf.php';
+            $nombre = count($cedis) === 1
+                ? 'Productos_' . nombreArchivoCedi($cedis[0])
+                : 'Productos_consolidado_' . $varios;
+            descargarProductosConsolidadoPdf($datos, $meta, $nombre);
+        }
+
+        if ($formato === 'externo') {
+            $porCedi = consolidadoExternoPorCedi($pdo, $filtros);
+            if (empty($porCedi)) {
+                header("Location: {$vistaConsolidados}?error=sin_datos");
+                exit();
+            }
+            require_once __DIR__ . '/helper_consolidado_externo_pdf.php';
+            $nombre = count($cedis) === 1 ? nombreArchivoCediExterno($cedis[0]) : 'Consolidado_externo_' . $varios;
+            descargarConsolidadoExternoPdf($porCedi, $meta, $nombre);
+        }
+
+        $porCedi = consolidadoPorCedi($pdo, $filtros);
+        if (empty($porCedi)) {
+            header("Location: {$vistaConsolidados}?error=sin_datos");
+            exit();
+        }
+        require_once __DIR__ . '/helper_consolidado_pdf.php';
+        $nombre = count($cedis) === 1 ? nombreArchivoCedi($cedis[0]) : 'Consolidado_' . $varios;
+        descargarConsolidadoPdf($porCedi, $meta, $nombre);
+        // Las tres funciones de descarga terminan la ejecución.
+
+    // -----------------------------------------------------------------------------------------
     // PDF DEL CONSOLIDADO
     // Sin ?cedi= sale el archivo completo, con una hoja por CEDI.
+    // -----------------------------------------------------------------------------------------
+    // EL CONSOLIDADO EXTERNO EN PDF
+    //
+    // El mismo pedido que el interno pero abierto por punto de venta: el interno es el papel
+    // del elevador (cuánto bajar de bodega) y el externo es el que se entrega o se le muestra
+    // a la cadena (cuánto va a cada tienda). Ver consolidadoExternoPorCedi().
+    // -----------------------------------------------------------------------------------------
+    case 'pdf_externo':
+        requierePermiso('modulo_consolidados', $vistaConsolidados);
+
+        $filtros = [
+            'cedi'  => trim($_GET['cedi'] ?? ''),
+            'linea' => trim($_GET['linea'] ?? ''),
+        ];
+
+        $porCedi = consolidadoExternoPorCedi($pdo, $filtros);
+        if (empty($porCedi)) {
+            header("Location: {$vistaConsolidados}?error=sin_datos");
+            exit();
+        }
+
+        require_once __DIR__ . '/helper_consolidado_externo_pdf.php';
+
+        $nombre = $filtros['cedi'] !== ''
+            ? nombreArchivoCediExterno($filtros['cedi'])
+            : 'Consolidado_externo_todos_los_CEDI_' . date('Ymd') . '.pdf';
+
+        descargarConsolidadoExternoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
+        // descargarConsolidadoExternoPdf() termina la ejecución.
+
     // -----------------------------------------------------------------------------------------
     case 'pdf':
         requierePermiso('modulo_consolidados', $vistaConsolidados);

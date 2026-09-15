@@ -62,12 +62,12 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                 <h2>Picking</h2>
                 <div class="modulo-acciones">
                     <?php if (tienePermiso('modulo_consolidados')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/consolidados">
                             <i class="fa-solid fa-boxes-stacked"></i> Ir a Consolidados
                         </a>
                     <?php endif; ?>
                     <?php if (tienePermiso('modulo_personal')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/personal/views/personal.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/personal">
                             <i class="fa-solid fa-users-gear"></i> Gestionar personal
                         </a>
                     <?php endif; ?>
@@ -131,7 +131,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
 
                     <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                     <?php if (array_filter($filtros)): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/picking/views/picking.php">Limpiar</a>
+                        <a class="btn" href="<?php echo BASE_URL; ?>/picking">Limpiar</a>
                     <?php endif; ?>
                 </form>
             <?php endif; ?>
@@ -296,6 +296,9 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                                                         $segmentos[] = [
                                                             'n'        => (int) $l['cajas_rotulo'],
                                                             'producto' => $l['descripcion'] ?? ($l['sku'] ?? $l['plu']),
+                                                            // SKU y EAN viajan al QR: el SKU va impreso junto al producto y el EAN se ve al escanear.
+                                                            'sku'      => (string) ($l['sku'] ?? ''),
+                                                            'ean'      => (string) ($l['ean_item'] ?? ''),
                                                         ];
                                                     }
                                                     $totalRotulos = (int) $t['cajas_rotulo'];
@@ -309,7 +312,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                                                                 : 'Este pedido no tiene unidades que rotular. Se puede abrir el rótulo igual y ajustarlo a mano.'; ?>"
                                                             data-entrega="<?php echo htmlspecialchars($clave); ?>"
                                                             data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>"
-                                                            data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
+                                                            data-numero-pv="<?php echo htmlspecialchars($entrega['numero_pv']); ?>" data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
                                                             data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                             data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                             data-desde="1"
@@ -321,7 +324,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                                                     </button>
 
                                                     <a class="btn btn-chico"
-                                                       href="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php?accion=pdf&carga=<?php echo (int) $entrega['id_carga']; ?>&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
+                                                       href="<?php echo BASE_URL; ?>/picking/acciones?accion=pdf&carga=<?php echo (int) $entrega['id_carga']; ?>&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
                                                         <i class="fa-solid fa-print"></i> Imprimir
                                                     </a>
 
@@ -415,14 +418,14 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                                                                                 : 'Esta línea no tiene unidades que rotular. Se puede abrir el rótulo igual y ajustarlo a mano.'; ?>"
                                                                             data-entrega="<?php echo htmlspecialchars($clave); ?>"
                                                                             data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>"
-                                                                            data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
+                                                                            data-numero-pv="<?php echo htmlspecialchars($entrega['numero_pv']); ?>" data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
                                                                             data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                                             data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                                             data-desde="<?php echo $desde; ?>"
                                                                             data-cajas="<?php echo $cajasRotulo; ?>"
                                                                             data-total="<?php echo (int) $f['cajas_pedido']; ?>"
                                                                             data-saldos="<?php echo (int) $f['saldos']; ?>"
-                                                                            data-producto="<?php echo htmlspecialchars($producto); ?>"
+                                                                            data-producto="<?php echo htmlspecialchars($producto); ?>" data-sku="<?php echo htmlspecialchars((string) ($f['sku'] ?? '')); ?>" data-ean="<?php echo htmlspecialchars((string) ($f['ean_item'] ?? '')); ?>"
                                                                             data-descripcion="<?php echo htmlspecialchars($producto); ?>">
                                                                         <i class="fa-solid fa-tag"></i>
                                                                         Rótulo<?php echo $cajasRotulo > 0 ? ' (' . $cajasRotulo . ')' : ''; ?>
@@ -470,7 +473,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
         <!-- La descarga va por un formulario y no por fetch: así el navegador la trata como una
              descarga normal, con su barra de progreso y su carpeta de destino. Los campos ocultos
              con los pedidos tildados los rellena scripts_picking.js justo antes de enviarlo. -->
-        <form action="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php"
+        <form action="<?php echo BASE_URL; ?>/picking/acciones"
               method="POST" id="form-pdf-masivo">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="pdf_masivo">
@@ -506,7 +509,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                     <div>
                         <strong>Todavía no hay personal cargado.</strong>
                         <?php if (tienePermiso('modulo_personal')): ?>
-                            Agregalo en <a href="<?php echo BASE_URL; ?>/modules/personal/views/personal.php">Gestionar personal</a>
+                            Agregalo en <a href="<?php echo BASE_URL; ?>/personal">Gestionar personal</a>
                             y después vas a poder asignar entregas.
                         <?php endif; ?>
                     </div>
@@ -567,6 +570,7 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
 </script>
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/rotulo.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/rotulo.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/modules/picking/layouts/scripts_picking.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/picking/layouts/scripts_picking.js'); ?>"></script>
 
 </body>

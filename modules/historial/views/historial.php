@@ -49,17 +49,17 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 <div class="modulo-acciones">
                     <?php if ($resumen['pedidos'] > 0): ?>
                         <a class="btn"
-                           href="<?php echo BASE_URL; ?>/modules/historial/controller_historial.php?accion=pdf_reporte&<?php echo $filtrosEnUrl; ?>">
+                           href="<?php echo BASE_URL; ?>/historial/acciones?accion=pdf_reporte&<?php echo $filtrosEnUrl; ?>">
                             <i class="fa-solid fa-file-pdf"></i> PDF de todos los pedidos
                         </a>
                         <a class="btn"
-                           href="<?php echo BASE_URL; ?>/modules/historial/controller_historial.php?accion=rotulos_pdf&<?php echo $filtrosEnUrl; ?>"
+                           href="<?php echo BASE_URL; ?>/historial/acciones?accion=rotulos_pdf&<?php echo $filtrosEnUrl; ?>"
                            title="Descarga en un solo PDF los rótulos de todos los pedidos que se ven acá (uno por caja).">
                             <i class="fa-solid fa-tags"></i> Rótulos de todos los pedidos
                         </a>
                     <?php endif; ?>
                     <?php if (tienePermiso('modulo_picking')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/picking/views/picking.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/picking">
                             <i class="fa-solid fa-cart-flatbed"></i> Ir a Picking
                         </a>
                     <?php endif; ?>
@@ -85,7 +85,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
 
                 <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                 <?php if (array_filter($filtros)): ?>
-                    <a class="btn" href="<?php echo BASE_URL; ?>/modules/historial/views/historial.php">Limpiar</a>
+                    <a class="btn" href="<?php echo BASE_URL; ?>/historial">Limpiar</a>
                 <?php endif; ?>
             </form>
 
@@ -181,6 +181,9 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                                         $segmentos[] = [
                                                             'n'        => (int) $l['cajas_rotulo'],
                                                             'producto' => $l['descripcion'] ?? ($l['sku'] ?? $l['plu']),
+                                                            // SKU y EAN viajan al QR: el SKU va impreso junto al producto y el EAN se ve al escanear.
+                                                            'sku'      => (string) ($l['sku'] ?? ''),
+                                                            'ean'      => (string) ($l['ean_item'] ?? ''),
                                                         ];
                                                     }
                                                     $totalRotulos = (int) $t['cajas_rotulo'];
@@ -191,7 +194,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                                                 : 'Este pedido no tiene unidades que rotular. Se puede abrir el rótulo igual y ajustarlo a mano.'; ?>"
                                                             data-entrega="<?php echo htmlspecialchars($clave); ?>"
                                                             data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>"
-                                                            data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
+                                                            data-numero-pv="<?php echo htmlspecialchars($entrega['numero_pv']); ?>" data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
                                                             data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                             data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                             data-desde="1"
@@ -203,7 +206,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                                     </button>
 
                                                     <a class="btn btn-chico"
-                                                       href="<?php echo BASE_URL; ?>/modules/historial/controller_historial.php?accion=pdf&carga=<?php echo (int) $entrega['id_carga']; ?>&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
+                                                       href="<?php echo BASE_URL; ?>/historial/acciones?accion=pdf&carga=<?php echo (int) $entrega['id_carga']; ?>&cedi=<?php echo urlencode($entrega['cedi']); ?>&oc=<?php echo urlencode($entrega['orden_compra']); ?>&pv=<?php echo urlencode($entrega['punto_venta']); ?>">
                                                         <i class="fa-solid fa-print"></i> Imprimir
                                                     </a>
 
@@ -276,14 +279,14 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                                                                 : 'Esta línea no tiene unidades que rotular. Se puede abrir el rótulo igual y ajustarlo a mano.'; ?>"
                                                                             data-entrega="<?php echo htmlspecialchars($clave); ?>"
                                                                             data-pv="<?php echo htmlspecialchars($entrega['punto_venta']); ?>"
-                                                                            data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
+                                                                            data-numero-pv="<?php echo htmlspecialchars($entrega['numero_pv']); ?>" data-ean-pv="<?php echo htmlspecialchars($entrega['ean_punto_venta'] ?? ''); ?>"
                                                                             data-oc="<?php echo htmlspecialchars($entrega['orden_compra']); ?>"
                                                                             data-cedi="<?php echo htmlspecialchars($entrega['cedi']); ?>"
                                                                             data-desde="<?php echo $desde; ?>"
                                                                             data-cajas="<?php echo $cajasRotulo; ?>"
                                                                             data-total="<?php echo (int) $f['cajas_pedido']; ?>"
                                                                             data-saldos="<?php echo (int) $f['saldos']; ?>"
-                                                                            data-producto="<?php echo htmlspecialchars($producto); ?>"
+                                                                            data-producto="<?php echo htmlspecialchars($producto); ?>" data-sku="<?php echo htmlspecialchars((string) ($f['sku'] ?? '')); ?>" data-ean="<?php echo htmlspecialchars((string) ($f['ean_item'] ?? '')); ?>"
                                                                             data-descripcion="<?php echo htmlspecialchars($producto); ?>">
                                                                         <i class="fa-solid fa-tag"></i>
                                                                         Rótulo<?php echo $cajasRotulo > 0 ? ' (' . $cajasRotulo . ')' : ''; ?>
@@ -337,7 +340,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
             <i class="fa-solid fa-tags"></i> Rótulos
         </button>
 
-        <form action="<?php echo BASE_URL; ?>/modules/historial/controller_historial.php"
+        <form action="<?php echo BASE_URL; ?>/historial/acciones"
               method="POST" id="form-pdf-masivo">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="pdf_masivo">
@@ -371,6 +374,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
 </script>
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>
+<script src="<?php echo BASE_URL; ?>/assets/js/rotulo.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/rotulo.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/modules/historial/layouts/scripts_historial.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/historial/layouts/scripts_historial.js'); ?>"></script>
 
 </body>

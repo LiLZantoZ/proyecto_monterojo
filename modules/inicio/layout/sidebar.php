@@ -57,41 +57,55 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
              --------------------------------------------------------------------------------- -->
 
         <?php if (tienePermiso('modulo_consolidados')): ?>
-            <a href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php" class="nav-link">
+            <a href="<?php echo BASE_URL; ?>/consolidados" class="nav-link">
                 <i class="fa-solid fa-boxes-stacked"></i>
                 <span>Consolidados</span>
             </a>
         <?php endif; ?>
 
         <?php if (tienePermiso('modulo_picking')): ?>
-            <a href="<?php echo BASE_URL; ?>/modules/picking/views/picking.php" class="nav-link">
+            <a href="<?php echo BASE_URL; ?>/picking" class="nav-link">
                 <i class="fa-solid fa-cart-flatbed"></i>
                 <span>Picking</span>
             </a>
         <?php endif; ?>
 
         <?php if (tienePermiso('modulo_maestro')): ?>
-            <a href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php" class="nav-link">
+            <a href="<?php echo BASE_URL; ?>/maestro" class="nav-link">
                 <i class="fa-solid fa-list-check"></i>
                 <span>Maestro de productos</span>
             </a>
         <?php endif; ?>
 
+        <?php if (tienePermiso('modulo_cajas_punto_venta')): ?>
+            <a href="<?php echo BASE_URL; ?>/cajas-punto-venta" class="nav-link">
+                <i class="fa-solid fa-truck-ramp-box"></i>
+                <span>Cajas por punto de venta (Exito)</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_ordenes_compra')): ?>
+            <a href="<?php echo BASE_URL; ?>/ordenes-compra" class="nav-link">
+                <i class="fa-solid fa-file-invoice-dollar"></i>
+                <span>Órdenes de compra (Éxito)</span>
+            </a>
+        <?php endif; ?>
+
         <?php if (tienePermiso('modulo_historial')): ?>
-            <a href="<?php echo BASE_URL; ?>/modules/historial/views/historial.php" class="nav-link">
+            <a href="<?php echo BASE_URL; ?>/historial" class="nav-link">
                 <i class="fa-solid fa-clock-rotate-left"></i>
                 <span>Historial de Pedidos</span>
             </a>
         <?php endif; ?>
 
         <?php if (tienePermiso('modulo_rotulos')): ?>
-            <a href="<?php echo BASE_URL; ?>/modules/rotulos/views/rotulos.php" class="nav-link">
+            <a href="<?php echo BASE_URL; ?>/rotulos" class="nav-link">
                 <i class="fa-solid fa-tags"></i>
                 <span>Generar rótulos</span>
             </a>
         <?php endif; ?>
 
-        <a href="<?php echo BASE_URL; ?>/modules/login/controller/logout.php" class="nav-link nav-link-logout">
+        <a href="<?php echo BASE_URL; ?>/salir" class="nav-link nav-link-logout">
             <i class="fa-solid fa-right-from-bracket"></i>
             <span>Cerrar sesión</span>
         </a>
@@ -100,7 +114,7 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
     <!-- Lleva a "Mi perfil": es la única forma de editar el nombre, la foto o la contraseña
          propios. Un <a> y no un botón con JS porque es una navegación normal a otra pantalla,
          no una acción que cambie algo acá mismo. -->
-    <a class="sidebar-footer" href="<?php echo BASE_URL; ?>/modules/perfil/views/perfil.php"
+    <a class="sidebar-footer" href="<?php echo BASE_URL; ?>/perfil"
        title="Editar mi perfil">
         <img src="<?php echo htmlspecialchars($imagenRuta); ?>"
              alt="Avatar de <?php echo htmlspecialchars($nombreUsuario); ?>"
@@ -114,6 +128,12 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
         <i class="fa-solid fa-pen sidebar-footer-editar" aria-hidden="true"></i>
     </a>
 </aside>
+
+<!-- Las listas de sugerencias con el estilo del sistema, en vez de la del navegador. Va acá porque
+     el menú lo incluyen todas las pantallas privadas: así cualquier campo con <datalist>, presente o
+     futuro, queda cubierto sin tocar su vista. "defer" porque el menú está arriba de la página y los
+     campos todavía no existen cuando se lee esta línea. Ver assets/js/autocompletar.js. -->
+<script src="<?php echo BASE_URL; ?>/assets/js/autocompletar.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/autocompletar.js'); ?>" defer></script>
 
 <script>
     // Marca en qué pantalla está parado el usuario. Se resuelve acá y no escribiendo class="active"
@@ -163,7 +183,7 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
     // tiempo en el servidor en cada request. Este temporizador solo evita que la pantalla quede
     // abierta a la vista de cualquiera hasta que alguien la toque.
     (function () {
-        var URL_LOGOUT = '<?php echo BASE_URL; ?>/modules/login/controller/logout.php?motivo=inactividad';
+        var URL_LOGOUT = '<?php echo BASE_URL; ?>/salir?motivo=inactividad';
         var LIMITE_MS  = <?php echo TIEMPO_INACTIVIDAD_SEGUNDOS * 1000; ?>;
         var temporizador;
 

@@ -1,0 +1,217 @@
+/* assets/css/partes/06-listas-desplegables.css
+   Las listas que se despliegan: la de los <select> y la de sugerencias de los campos con
+   autocompletado (assets/js/autocompletar.js). Las dos se ven IGUAL a propósito: son el mismo gesto
+   —elegir de una lista—, y una blanca con la marca del sistema al lado de otra negra del navegador
+   hacía parecer que eran de dos programas distintos.
+
+   POR QUÉ HACE FALTA
+   La lista abierta de un <select> y la de un <datalist> las dibuja el navegador con su propio
+   estilo —en Windows con tema oscuro, un recuadro negro— y hasta hace poco no había CSS que las
+   alcanzara. Para los <select> ahora sí: appearance: base-select (Chrome/Edge 135 en adelante).
+   Para las sugerencias sigue sin haberlo, y por eso esa lista la arma autocompletar.js.
+
+   En un navegador sin base-select, los <select> se siguen viendo como antes: no se rompe nada. */
+
+/* =================================================================================================
+   LA LISTA (compartida por el select y por el autocompletado)
+   ================================================================================================= */
+
+.filtro select::picker(select),
+.campo select::picker(select),
+.autocompletar-lista {
+    background: var(--blanco);
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    box-shadow: var(--sombra-media);
+    padding: 6px;
+    max-height: 290px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #d6cfc6 transparent;
+}
+
+.filtro select option,
+.campo select option,
+.autocompletar-opcion {
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 0.86rem;
+    color: var(--texto);
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+/* La opción bajo el mouse o la que se recorre con las flechas. */
+.filtro select option:hover,
+.filtro select option:focus-visible,
+.campo select option:hover,
+.campo select option:focus-visible,
+.autocompletar-opcion:hover,
+.autocompletar-opcion.activa {
+    background: var(--vino-claro);
+    color: var(--vino-oscuro);
+    outline: none;
+}
+
+/* La que ya está elegida. */
+.filtro select option:checked,
+.campo select option:checked {
+    font-weight: 600;
+    color: var(--vino);
+}
+
+/* =================================================================================================
+   EL <select>
+   ================================================================================================= */
+
+@supports (appearance: base-select) {
+    .filtro select,
+    .campo select,
+    .filtro select::picker(select),
+    .campo select::picker(select) {
+        appearance: base-select;
+    }
+
+    .filtro select,
+    .campo select {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .filtro select:hover,
+    .campo select:hover {
+        border-color: #cfc6ba;
+    }
+
+    .filtro select:open,
+    .campo select:open {
+        border-color: var(--vino);
+        box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+    }
+
+    /* La flecha: el MISMO chevron que el autocompletado (el del navegador es un triángulo), y gira
+       al abrir igual que aquel. Font Awesome ya está cargado en todas las pantallas privadas: lo trae
+       el menú lateral. */
+    .filtro select::picker-icon,
+    .campo select::picker-icon {
+        content: "\f078";
+        font-family: "Font Awesome 6 Free";
+        font-weight: 900;
+        font-size: 0.72rem;
+        color: var(--texto-suave);
+        transition: rotate 0.18s ease;
+    }
+
+    .filtro select:open::picker-icon,
+    .campo select:open::picker-icon {
+        rotate: 180deg;
+        color: var(--vino);
+    }
+
+    /* La lista se separa un poco del campo en vez de salir pegada. */
+    .filtro select::picker(select),
+    .campo select::picker(select) {
+        margin-block: 6px;
+    }
+
+    /* Flex SOLO en las opciones del select, para poner la marca de la elegida a la derecha. En las
+       del autocompletado no: ahí el texto va partido en pedazos (lo resaltado va en un <mark>) y en
+       un contenedor flex cada pedazo se vuelve un bloque aparte, con espacio entre medio. */
+    .filtro select option,
+    .campo select option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .filtro select option::checkmark,
+    .campo select option::checkmark {
+        order: 1;
+        margin-left: auto;
+        color: var(--vino);
+        font-weight: 700;
+    }
+}
+
+/* =================================================================================================
+   EL AUTOCOMPLETADO (assets/js/autocompletar.js)
+   ================================================================================================= */
+
+.autocompletar {
+    position: relative;
+}
+
+/* Espacio a la derecha para la flecha: sin esto, un número largo queda escrito debajo de ella. */
+.autocompletar > input {
+    width: 100%;
+    padding-right: 34px;
+    box-sizing: border-box;
+}
+
+.autocompletar-boton {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    color: var(--texto-suave);
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.autocompletar-boton i {
+    font-size: 0.78rem;
+    transition: rotate 0.18s ease;
+}
+
+.autocompletar.abierto .autocompletar-boton i {
+    rotate: 180deg;
+    color: var(--vino);
+}
+
+.autocompletar.abierto > input {
+    border-color: var(--vino);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+
+.autocompletar-lista {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 60;
+    min-width: 100%;
+    margin: 0;
+    list-style: none;
+    box-sizing: border-box;
+}
+
+/* Lo que coincide con lo que se escribió: se resalta para ver por qué aparece cada opción. */
+.autocompletar-opcion mark {
+    background: transparent;
+    color: var(--vino);
+    font-weight: 700;
+}
+
+.autocompletar-vacio {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+    color: var(--texto-suave);
+    font-style: italic;
+    cursor: default;
+}
+
+.autocompletar-contador {
+    padding: 6px 12px 4px;
+    font-size: 0.72rem;
+    color: var(--texto-suave);
+    border-top: 1px solid var(--borde);
+    margin-top: 4px;
+    cursor: default;
+}

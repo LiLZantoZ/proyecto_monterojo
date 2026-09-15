@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../consolidados/model_consolidados.php';   // mapaMaestro(), decorarConMaestro()
+require_once __DIR__ . '/helper_rotulos_lista.php';                 // numeroYNombreDePunto()
 
 /**
  * Una fila por (carga, CEDI, orden de compra, punto de venta, PLU) ya despachada.
@@ -21,7 +22,8 @@ require_once __DIR__ . '/../consolidados/model_consolidados.php';   // mapaMaest
  */
 function filasHistorial($pdo, array $filtros = []) {
     $sql = "SELECT l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
-                   l.ean_punto_venta, l.unidades, l.pedido_sap, l.fecha_despacho,
+                   l.sku_item, l.descripcion_item,
+                   l.ean_punto_venta, l.direccion_punto_venta, l.unidades, l.pedido_sap, l.fecha_despacho,
                    l.id_personal, p.nombre AS personal_nombre,
                    l.despachado_por, u.nombre_usuario AS usuario_nombre
             FROM consolidado_lineas l
@@ -79,6 +81,9 @@ function agruparPorEntregaHistorial(array $filas) {
                 'cedi'            => $f['cedi'],
                 'orden_compra'    => $f['orden_compra'],
                 'punto_venta'     => $f['punto_venta'],
+                // El número de la tienda, que va impreso destacado en el rótulo. Sale del nombre
+                // ("4218 - SUPER INTER..."), de la dirección o del EAN: ver numeroYNombreDePunto().
+                'numero_pv'       => numeroYNombreDePunto($f['punto_venta'], $f['ean_punto_venta'], $f['direccion_punto_venta'] ?? null)['numero'],
                 'ean_punto_venta' => $f['ean_punto_venta'],
                 'pedido_sap'      => $f['pedido_sap'],
                 'fecha_despacho'  => $f['fecha_despacho'],

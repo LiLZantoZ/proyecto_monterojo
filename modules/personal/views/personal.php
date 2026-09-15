@@ -33,7 +33,7 @@ $conCarga = count(array_filter($personal, fn($p) => (int) $p['entregas_asignadas
                 <h2>Personal de alistamiento</h2>
                 <div class="modulo-acciones">
                     <?php if (tienePermiso('modulo_picking')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/picking/views/picking.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/picking">
                             <i class="fa-solid fa-arrow-left"></i> Volver a Picking
                         </a>
                     <?php endif; ?>
@@ -129,7 +129,7 @@ $conCarga = count(array_filter($personal, fn($p) => (int) $p['entregas_asignadas
             <h2>Agregar persona</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/personal/controller_personal.php" method="POST">
+        <form action="<?php echo BASE_URL; ?>/personal/acciones" method="POST">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="crear">
             <div class="modal-cuerpo">
@@ -163,7 +163,7 @@ $conCarga = count(array_filter($personal, fn($p) => (int) $p['entregas_asignadas
             <h2>Editar persona</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/personal/controller_personal.php" method="POST">
+        <form action="<?php echo BASE_URL; ?>/personal/acciones" method="POST">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="editar">
             <input type="hidden" name="id_personal" id="editar-id">
@@ -207,7 +207,7 @@ $conCarga = count(array_filter($personal, fn($p) => (int) $p['entregas_asignadas
             <h2>Eliminar persona</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/personal/controller_personal.php" method="POST">
+        <form action="<?php echo BASE_URL; ?>/personal/acciones" method="POST">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="eliminar">
             <input type="hidden" name="id_personal" id="eliminar-id">

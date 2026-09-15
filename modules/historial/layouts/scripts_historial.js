@@ -133,7 +133,7 @@
     var restaurarPie    = document.getElementById('restaurar-pie');
 
     function enviarRestaurar(datos, callback) {
-        fetch(BASE_URL + '/modules/historial/controller_historial.php', {
+        fetch(BASE_URL + '/historial/acciones', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -225,106 +225,26 @@
     // persona está mirando.
     var rotulosActuales = [];
 
-    function identificadorDeCaja(datos, numero) {
-        var tienda = datos.eanPv && datos.eanPv !== ''
-            ? datos.eanPv
-            : datos.pv;
-
-        return [datos.oc, tienda, numero]
-            .map(function (parte) { return String(parte).replace(/[^A-Za-z0-9]/g, ''); })
-            .join('-');
-    }
-
-    // El cuerpo de letra de un valor, en milímetros, según cuán largo sea el texto.
-    //
-    // Es la copia EXACTA de cuerpoValorPdf() en modules/historial/helper_rotulos_pdf.php, y el
-    // equivalente de textoQueEntre() en la etiquetadora (helper_rotulos_tspl.php): los tres
-    // achican la letra antes que partir el texto en dos renglones. Si se partiera, el rótulo
-    // crecería de alto y el último campo quedaría cortado.
-    //
-    // escala permite usar la misma progresión para valores que arrancan más chicos, como el
-    // producto. Si se cambia algún número acá, hay que cambiarlo también en el PHP.
-    function cuerpoValor(texto, escala) {
-        var largo = String(texto == null ? '' : texto).trim().length;
-        var base  = largo <= 22 ? 5.5
-                  : largo <= 30 ? 4.5
-                  : largo <= 40 ? 3.6
-                  : 3.0;
-        return (base * (escala || 1)).toFixed(2);
-    }
-    function htmlRotulo(datos, numero, total, producto) {
-        var nombreProducto = producto && producto.trim() !== ''
-            ? esc(producto)
-            : '<span style="color:#888">________________</span>';
-
-        var idCaja = identificadorDeCaja(datos, numero);
-        var urlCodigo = BASE_URL + '/modules/historial/controller_historial.php?accion=codigo_barras&texto='
-                      + encodeURIComponent(idCaja);
-
-        // El mismo diseño y el mismo orden de campos que imprime la etiquetadora (ver
-        // tsplDeUnRotulo en modules/historial/helper_rotulos_tspl.php) y que sale en el PDF
-        // (helper_rotulos_pdf.php). Son CUATRO lugares que dibujan el mismo rótulo —acá, en
-        // scripts_picking.js y en scripts_rotulos.js, y el PDF—: si se agrega o se mueve un campo, se mueve en los cuatro, o la
-        // vista previa deja de ser una vista previa.
-        var campos = [
-            ['Punto de venta',  esc(datos.pv),          cuerpoValor(datos.pv)],
-            ['Orden de compra', esc(datos.oc || '-'),   cuerpoValor(datos.oc, 0.75)],
-            ['Cajas total',     total,                  cuerpoValor(String(total), 0.75)],
-            ['Producto',        nombreProducto,         cuerpoValor(producto, 0.70)],
-            ['CEDI',            esc(datos.cedi || '-'), cuerpoValor(datos.cedi, 0.75)]
-        ];
-
-        var html = ''
-            + '<div class="rotulo">'
-            +   '<div class="rotulo-marca">'
-            +     '<img src="' + LOGO_URL + '" alt="">'
-            +     '<span>Monterojo Gourmet</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campos">';
-
-        campos.forEach(function (campo) {
-            html += '<div class="rotulo-campo">'
-                  +   '<span class="rotulo-etiqueta">' + campo[0] + '</span>'
-                  +   '<span class="rotulo-valor" style="font-size: ' + campo[2] + 'mm">' + campo[1] + '</span>'
-                  + '</div>';
-        });
-
-        return html
-            +   '</div>'
-            +   '<div class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</div>'
-            +   '<div class="rotulo-codigo">'
-            +     '<img src="' + urlCodigo + '" alt="Código de barras ' + esc(idCaja) + '">'
-            +     '<span class="rotulo-codigo-texto">' + esc(idCaja) + '</span>'
-            +   '</div>'
-            + '</div>';
-    }
+    // El rótulo se dibuja con assets/js/rotulo.js, el mismo archivo para las cuatro pantallas que
+    // lo muestran. Hasta el 2026-09-14 había acá una copia propia de htmlRotulo(), y quedó con el
+    // diseño viejo cuando el rótulo cambió: el "CAJ 1 DE 3" salía encima del producto.
 
     var campos = {
         cantidad: document.getElementById('rot-cantidad'),
         desde:    document.getElementById('rot-desde'),
         total:    document.getElementById('rot-total'),
         pv:       document.getElementById('rot-pv'),
-        oc:       document.getElementById('rot-oc'),
+        numeroPv: document.getElementById('rot-numero-pv'),
         cedi:     document.getElementById('rot-cedi'),
         producto: document.getElementById('rot-producto')
     };
 
-    var identificadores = { eanPv: '' };
+    // Lo que viene del botón y no tiene campo propio en el panel. La orden de compra ya no se
+    // imprime, pero sigue viajando con la lista.
+    var identificadores = { eanPv: '', oc: '' };
 
+    // Los productos del pedido en orden, cada uno con cuántas cajas lleva, su SKU y su EAN.
     var segmentos = [];
-
-    function productoDeLaCaja(numero) {
-        var escrito = campos.producto.value.trim();
-        if (escrito !== '') { return escrito; }
-
-        var restante = numero;
-        for (var i = 0; i < segmentos.length; i++) {
-            if (restante <= segmentos[i].n) { return segmentos[i].producto; }
-            restante -= segmentos[i].n;
-        }
-
-        return segmentos.length ? segmentos[segmentos.length - 1].producto : '';
-    }
 
     function entero(campo, porDefecto, minimo, maximo) {
         var valor = parseInt(campo.value, 10);
@@ -333,7 +253,9 @@
         return valor;
     }
 
-    function dibujarRotulos() {
+    // espera: cuánto aguardar antes de pedir el QR. Al abrir el modal no se espera; mientras se
+    // escribe en el panel, sí (ver dibujar() en assets/js/rotulo.js).
+    function dibujarRotulos(espera) {
         var cantidad = entero(campos.cantidad, 1, 1, 99);
         var desde    = entero(campos.desde, 1, 1, 999);
         var total    = entero(campos.total, 1, 1, 999);
@@ -341,30 +263,39 @@
         var ultima = desde + cantidad - 1;
         if (total < ultima) { total = ultima; }
 
-        var datos = {
-            pv:    campos.pv.value,
-            oc:    campos.oc.value,
-            cedi:  campos.cedi.value,
-            eanPv: identificadores.eanPv
-        };
+        // Un producto escrito a mano reemplaza al del pedido en TODAS las cajas. El SKU y el EAN
+        // eran del producto original y ya no le corresponden, así que en ese caso no se mandan: un
+        // SKU equivocado en la etiqueta es peor que ninguno.
+        var escrito = campos.producto.value.trim();
 
-        var html = '';
         rotulosActuales = [];
         if (avisoImpresion) { avisoImpresion.hidden = true; }
+
         for (var i = 0; i < cantidad; i++) {
             var numero = desde + i;
-            var producto = productoDeLaCaja(numero);
+            var segmento = RotuloMonterojo.segmentoDeLaCaja(segmentos, numero);
+
             rotulosActuales.push({
-                pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
-                numero: numero, total: total, producto: producto
+                pv:        campos.pv.value,
+                numero_pv: campos.numeroPv.value.trim(),
+                oc:        identificadores.oc,
+                cedi:      campos.cedi.value,
+                ean_pv:    identificadores.eanPv,
+                numero:    numero,
+                total:     total,
+                producto:  escrito !== '' ? escrito : (segmento.producto || ''),
+                sku:       escrito !== '' ? '' : (segmento.sku || ''),
+                ean:       escrito !== '' ? '' : (segmento.ean || '')
             });
-            html += htmlRotulo(datos, numero, total, producto);
         }
-        previa.innerHTML = html;
+
+        RotuloMonterojo.dibujar(previa, rotulosActuales, espera);
     }
 
+    // Envuelto en una función a propósito: pasado directo, addEventListener le daría el evento
+    // como primer argumento y dibujarRotulos() lo tomaría como la espera.
     Object.keys(campos).forEach(function (nombre) {
-        campos[nombre].addEventListener('input', dibujarRotulos);
+        campos[nombre].addEventListener('input', function () { dibujarRotulos(); });
     });
 
     contenedor.addEventListener('click', function (e) {
@@ -375,6 +306,7 @@
         var totalPedido = parseInt(boton.dataset.total, 10) || 0;
 
         identificadores.eanPv = boton.dataset.eanPv || '';
+        identificadores.oc    = boton.dataset.oc || '';
 
         if (boton.dataset.segmentos) {
             try {
@@ -384,7 +316,12 @@
             }
         } else {
             segmentos = boton.dataset.producto
-                ? [{ n: Math.max(calculadas, 1), producto: boton.dataset.producto }]
+                ? [{
+                    n:        Math.max(calculadas, 1),
+                    producto: boton.dataset.producto,
+                    sku:      boton.dataset.sku || '',
+                    ean:      boton.dataset.ean || ''
+                  }]
                 : [];
         }
 
@@ -394,11 +331,11 @@
         campos.desde.value    = parseInt(boton.dataset.desde, 10) || 1;
         campos.total.value    = totalPedido > 0 ? totalPedido : 1;
         campos.pv.value       = boton.dataset.pv || '';
-        campos.oc.value       = boton.dataset.oc || '';
+        campos.numeroPv.value = boton.dataset.numeroPv || '';
         campos.cedi.value     = boton.dataset.cedi || '';
         campos.producto.value = '';
 
-        dibujarRotulos();
+        dibujarRotulos(0);
 
         detalleTitulo.textContent = '· ' + boton.dataset.pv + ' · '
             + (boton.dataset.descripcion || 'pedido completo');
@@ -432,8 +369,6 @@
         var marcadas = pedidosSeleccionados();
         if (!marcadas.length) { return; }
 
-        var html = '';
-        var totalRotulos = 0;
         var sinCajas = 0;
         rotulosActuales = [];
         if (avisoImpresion) { avisoImpresion.hidden = true; }
@@ -452,28 +387,25 @@
                 segmentosPedido = [];
             }
 
-            var datos = {
-                pv:    boton.dataset.pv,
-                oc:    boton.dataset.oc,
-                cedi:  boton.dataset.cedi,
-                eanPv: boton.dataset.eanPv
-            };
-
             for (var i = 1; i <= total; i++) {
-                var restante = i;
-                var producto = '';
-                for (var s = 0; s < segmentosPedido.length; s++) {
-                    if (restante <= segmentosPedido[s].n) { producto = segmentosPedido[s].producto; break; }
-                    restante -= segmentosPedido[s].n;
-                }
+                var segmento = RotuloMonterojo.segmentoDeLaCaja(segmentosPedido, i);
+
                 rotulosActuales.push({
-                    pv: datos.pv, oc: datos.oc, cedi: datos.cedi, ean_pv: datos.eanPv,
-                    numero: i, total: total, producto: producto
+                    pv:        boton.dataset.pv,
+                    numero_pv: boton.dataset.numeroPv || '',
+                    oc:        boton.dataset.oc,
+                    cedi:      boton.dataset.cedi,
+                    ean_pv:    boton.dataset.eanPv,
+                    numero:    i,
+                    total:     total,
+                    producto:  segmento.producto || '',
+                    sku:       segmento.sku || '',
+                    ean:       segmento.ean || ''
                 });
-                html += htmlRotulo(datos, i, total, producto);
-                totalRotulos++;
             }
         });
+
+        var totalRotulos = rotulosActuales.length;
 
         if (!totalRotulos) {
             alert('Ninguno de los pedidos seleccionados tiene cajas que rotular.');
@@ -481,7 +413,7 @@
         }
 
         mostrarPanelEdicion(false);
-        previa.innerHTML = html;
+        RotuloMonterojo.dibujar(previa, rotulosActuales, 0);
         detalleTitulo.textContent = '· ' + totalRotulos + ' rótulos de ' + marcadas.length + ' pedido(s)';
 
         if (sinCajas > 0) {
@@ -523,7 +455,7 @@
             botonEtiquetadora.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
             if (avisoImpresion) { avisoImpresion.hidden = true; }
 
-            fetch(BASE_URL + '/modules/historial/controller_historial.php', {
+            fetch(BASE_URL + '/historial/acciones', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

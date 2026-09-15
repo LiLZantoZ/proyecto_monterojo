@@ -68,14 +68,23 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 <h2>Consolidados</h2>
                 <div class="modulo-acciones">
                     <?php if (tienePermiso('modulo_maestro')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/maestro">
                             <i class="fa-solid fa-list-check"></i> Maestro de productos
                         </a>
                     <?php endif; ?>
                     <?php if (!empty($porCedi)): ?>
+                        <!-- Los dos consolidados son el MISMO pedido visto de dos formas:
+                             el interno junta todo lo del CEDI en un total por producto (el
+                             papel del elevador, para bajar de bodega una sola vez), y el
+                             externo lo abre por punto de venta (lo que se entrega o se le
+                             muestra a la cadena). Ver consolidadoExternoPorCedi(). -->
                         <a class="btn"
-                           href="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php?accion=pdf&<?php echo $filtrosEnUrl; ?>">
-                            <i class="fa-solid fa-file-pdf"></i> PDF de todos los CEDI
+                           href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&<?php echo $filtrosEnUrl; ?>">
+                            <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+                        </a>
+                        <a class="btn"
+                           href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&<?php echo $filtrosEnUrl; ?>">
+                            <i class="fa-solid fa-shop"></i> Consolidado externo
                         </a>
                     <?php endif; ?>
                     <button type="button" class="btn btn-primario" data-abrir="modal-importar">
@@ -128,7 +137,7 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                         ni las unidades por caja, así que esas filas se muestran con una raya en vez de cajas
                         y <strong>no suman en los totales</strong>.
                         <?php if (tienePermiso('modulo_maestro')): ?>
-                            Cárgalos en <a href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php">Maestro de productos</a>
+                            Cárgalos en <a href="<?php echo BASE_URL; ?>/maestro">Maestro de productos</a>
                             y las cajas aparecen solas, sin volver a importar el Consolidado.
                         <?php endif; ?>
                     </div>
@@ -173,7 +182,7 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
 
                     <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                     <?php if (array_filter($filtros)): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php">Limpiar</a>
+                        <a class="btn" href="<?php echo BASE_URL; ?>/consolidados">Limpiar</a>
                     <?php endif; ?>
                 </form>
             <?php endif; ?>
@@ -192,6 +201,13 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                 </div>
 
             <?php else: ?>
+                <!-- Tilda todos los CEDI que se están viendo (con un filtro puesto, solo los que
+                     quedaron). Lo tildado alimenta la barra de descargas de abajo. -->
+                <label class="seleccion-general">
+                    <input type="checkbox" id="chk-todos-cedi">
+                    Seleccionar todos <span>(<?php echo count($porCedi); ?> CEDI)</span>
+                </label>
+
                 <?php foreach ($porCedi as $cedi => $filas): $t = $totalesPorCedi[$cedi]; ?>
                     <!-- <details> y no un div con JavaScript: el desplegar/plegar lo hace el
                          navegador, funciona con el teclado sin que haya que programarlo, y
@@ -204,6 +220,12 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                          filtro sin abrir nada. -->
                     <details class="grupo-desplegable">
                         <summary class="grupo-cabecera">
+                            <!-- Tildarla no abre ni cierra el grupo: desplegables.js corta el clic
+                                 de los controles que viven dentro de la cabecera. -->
+                            <input type="checkbox" class="chk-cedi"
+                                   data-cedi="<?php echo htmlspecialchars($cedi); ?>"
+                                   title="Seleccionar este CEDI"
+                                   aria-label="Seleccionar <?php echo htmlspecialchars($cedi); ?>">
                             <i class="fa-solid fa-chevron-right grupo-flecha" aria-hidden="true"></i>
                             <div class="grupo-titulo">
                                 <div class="grupo-nombre"><?php echo htmlspecialchars($cedi); ?></div>
@@ -221,8 +243,12 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                                 </div>
                             </div>
                             <a class="btn btn-chico"
-                               href="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php?accion=pdf&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
-                                <i class="fa-solid fa-file-pdf"></i> PDF de este CEDI
+                               href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
+                                <i class="fa-solid fa-file-pdf"></i> Interno
+                            </a>
+                            <a class="btn btn-chico"
+                               href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
+                                <i class="fa-solid fa-shop"></i> Externo
                             </a>
                         </summary>
 
@@ -275,6 +301,40 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
     </div>
 </div>
 
+<?php if (!empty($porCedi)): ?>
+<!-- BARRA DE DESCARGAS DE LOS CEDI TILDADOS
+     La misma barra flotante de Picking, con las descargas de acá. Un solo formulario para los tres
+     botones: cada uno manda su 'formato' como valor del botón, y los CEDI tildados los rellena
+     scripts_consolidados.js en campos ocultos. Por formulario y no por fetch, para que el navegador
+     lo trate como una descarga normal. -->
+<div class="barra-seleccion" id="barra-seleccion" hidden>
+    <div class="barra-seleccion-info">
+        <strong id="barra-conteo">0</strong> CEDI seleccionado(s)
+        <button type="button" class="barra-limpiar" id="btn-limpiar-seleccion">Quitar selección</button>
+    </div>
+
+    <div class="barra-seleccion-acciones">
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST" id="form-seleccion">
+            <?php campoCSRF(); ?>
+            <input type="hidden" name="accion" value="pdf_seleccion">
+            <input type="hidden" name="linea" value="<?php echo htmlspecialchars($filtros['linea']); ?>">
+            <div id="campos-seleccion"></div>
+
+            <button type="submit" class="btn btn-chico" name="formato" value="interno">
+                <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+            </button>
+            <button type="submit" class="btn btn-chico" name="formato" value="externo">
+                <i class="fa-solid fa-shop"></i> Consolidado externo
+            </button>
+            <button type="submit" class="btn btn-chico" name="formato" value="productos"
+                    title="Todos los productos de los CEDI seleccionados, sumados en una sola tabla">
+                <i class="fa-solid fa-table-list"></i> Todos los productos
+            </button>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- MODAL: IMPORTAR EL CONSOLIDADO -->
 <div class="modal-fondo" id="modal-importar">
     <div class="modal-caja">
@@ -282,7 +342,7 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
             <h2>Importar Consolidado</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php"
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
               method="POST" enctype="multipart/form-data">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="importar_consolidado">
@@ -362,13 +422,13 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
         <div class="modal-pie">
             <!-- Dos formularios y no uno con dos submit: cada botón manda su propia respuesta, y
                  así ninguno depende de un `value` que un cambio posterior podría dejar vacío. -->
-            <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php" method="POST">
+            <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST">
                 <?php campoCSRF(); ?>
                 <input type="hidden" name="accion" value="resolver_duplicado">
                 <input type="hidden" name="respuesta" value="no">
                 <button type="submit" class="btn">No</button>
             </form>
-            <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php" method="POST">
+            <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST">
                 <?php campoCSRF(); ?>
                 <input type="hidden" name="accion" value="resolver_duplicado">
                 <input type="hidden" name="respuesta" value="si">
@@ -381,6 +441,7 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
 
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>
+<script src="<?php echo BASE_URL; ?>/modules/consolidados/layouts/scripts_consolidados.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/consolidados/layouts/scripts_consolidados.js'); ?>"></script>
 
 </body>
 </html>

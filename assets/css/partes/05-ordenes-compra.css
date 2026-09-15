@@ -1,0 +1,174 @@
+/* assets/css/partes/05-ordenes-compra.css
+   Lo propio de Órdenes de compra (Éxito). Todo lo demás —tablas, avisos, píldoras, filtros— sale de
+   03-modulos.css. */
+
+/* --- El carro --- */
+
+/* El vehículo elegido. Neutro: es un dato, no un estado bueno o malo. */
+.etiqueta-carro {
+    background: #e8f0fb;
+    border: 1px solid #b6cdef;
+    color: #1d4f91;
+    white-space: nowrap;
+}
+
+/* La orden no entra ni en el vehículo más grande: hay que partirla. Rojo, porque sí hay que actuar. */
+.etiqueta-excede {
+    background: #fdecea;
+    border: 1px solid #f5b5ae;
+    color: var(--error);
+    white-space: nowrap;
+}
+
+/* Gris y no rojo: "sin definir" no es un error, es un dato que falta cargar. */
+.etiqueta-sin-definir {
+    background: #f3f4f6;
+    border: 1px dashed #c4c8ce;
+    color: #6b7280;
+}
+
+/* --- Lo que falta --- */
+
+/* Ámbar, igual que .pastilla-alerta: un faltante no es una falla del sistema. */
+.icono-faltante {
+    color: #b45309;
+    margin-left: 4px;
+    cursor: help;
+}
+
+.faltante {
+    color: #92400e;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.pendiente {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #fef6e7;
+    border: 1px solid #f0d9a8;
+    color: #92400e;
+    font-size: 0.66rem;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    vertical-align: middle;
+}
+
+.dato-secundario {
+    font-size: 0.74rem;
+    color: var(--texto-suave);
+}
+
+/* --- El detalle de cada orden --- */
+
+.btn-detalle-oc {
+    border: none;
+    background: transparent;
+    color: var(--texto-suave);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.btn-detalle-oc:hover {
+    background: var(--crema);
+    color: var(--negro);
+}
+
+.btn-detalle-oc i {
+    transition: transform 0.15s ease;
+}
+
+.btn-detalle-oc[aria-expanded="true"] i {
+    transform: rotate(90deg);
+}
+
+tr.fila-desplegada > td {
+    background: var(--vino-claro);
+}
+
+tr.fila-detalle > td {
+    background: var(--crema);
+    padding: 10px 14px 14px;
+}
+
+table.tabla-detalle {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+
+table.tabla-detalle th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--texto-suave);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--borde);
+}
+
+table.tabla-detalle td {
+    padding: 5px 8px;
+    border-bottom: 1px solid var(--borde);
+}
+
+table.tabla-detalle .num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* --- Ajustes --- */
+
+.ajustes-oc {
+    margin-top: 22px;
+}
+
+.ajustes-oc-cuerpo {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    padding: 16px;
+}
+
+.ajuste-oc {
+    background: var(--blanco);
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 16px;
+}
+
+.ajuste-oc h3 {
+    margin: 0 0 6px;
+    font-size: 0.98rem;
+}
+
+.ajuste-oc .ayuda {
+    margin: 0 0 12px;
+    font-size: 0.8rem;
+    color: var(--texto-suave);
+}
+
+/* La flota ocupa el ancho completo: son cinco columnas con campos para editar. */
+.ajuste-vehiculos {
+    grid-column: 1 / -1;
+}
+
+.tabla-vehiculos {
+    margin-bottom: 12px;
+}
+
+.tabla-vehiculos input[type="text"] {
+    width: 90px;
+    padding: 5px 8px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    text-align: right;
+    font: inherit;
+}
+
+.tabla-vehiculos input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}

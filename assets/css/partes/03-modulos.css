@@ -418,6 +418,41 @@ table.tabla tbody tr:hover {
     }
 }
 
+/* --- Selección de CEDI enteros (Consolidados) ---
+   En Consolidados no hay una fila por pedido: cada CEDI es un grupo, así que la casilla va en su
+   cabecera y "todos" arriba de la lista. */
+.chk-cedi,
+.seleccion-general input {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    cursor: pointer;
+    accent-color: var(--vino);
+}
+
+.seleccion-general {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px 4px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: var(--texto);
+    cursor: pointer;
+    user-select: none;
+}
+
+.seleccion-general span {
+    font-weight: 400;
+    color: var(--texto-suave);
+}
+
+/* El CEDI tildado se distingue sin abrirlo: la cabecera toma el tono de la marca. */
+.grupo-seleccionado > .grupo-cabecera,
+.grupo-seleccionado > .grupo-cabecera:hover {
+    background: color-mix(in srgb, var(--vino) 38%, var(--negro));
+}
+
 .btn-detalle {
     display: inline-flex;
     align-items: center;
@@ -869,6 +904,27 @@ tr.fila-sin-maestro:hover {
     color: #1b5e20;
 }
 
+/* La fila de totales de una tabla. En negro como el encabezado y no en gris claro: es la línea
+   que se firma y la que se compara contra el papel de la cadena, así que tiene que encontrarse
+   sin buscarla, incluso en una tabla de sesenta renglones. */
+tr.fila-total td {
+    background: var(--negro, #111);
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 11px 14px;
+    border: none;
+}
+
+/* El total de TODO, cuando hay más de un grupo. Se distingue del total de cada grupo con el vino
+   de la marca: son dos totales seguidos y a la misma altura, y en el mismo color se leerían como
+   si el de abajo repitiera al de arriba. */
+tr.fila-total-general td {
+    background: var(--vino, #7a1220);
+    color: #ffffff;
+    font-size: 0.95rem;
+    letter-spacing: 0.2px;
+}
 /* =========================================
    PERSONAL Y ASIGNACIÓN
    ========================================= */

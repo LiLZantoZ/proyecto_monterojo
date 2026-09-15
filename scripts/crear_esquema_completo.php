@@ -30,7 +30,7 @@ if (php_sapi_name() !== 'cli') {
 // conecta directo a DB_NAME y hace die() si no existe, que es justamente la situación que este
 // script viene a resolver. Por eso lee las mismas variables de entorno por su cuenta, con los
 // mismos valores por defecto — si se cambian allá, hay que cambiarlas acá.
-$host   = getenv('DB_HOST') ?: 'localhost';
+$host   = getenv('DB_HOST') ?: '127.0.0.1';   // no 'localhost': ver el comentario de DB_HOST en config/config.php
 $nombre = getenv('DB_NAME') ?: 'proyecto_monterojo';
 $user   = getenv('DB_USER') ?: 'root';
 $pass   = getenv('DB_PASS') ?: '';
@@ -171,9 +171,11 @@ $tablas['intentos_login_cuenta'] = "
 // ----------------------------------------------------------------------------------------------
 $tablas['maestro_productos'] = "
     CREATE TABLE IF NOT EXISTS maestro_productos (
-        `sku` varchar(30) NOT NULL COMMENT 'Material de SAP; el código propio del producto',
-        `ean` varchar(20) DEFAULT NULL COMMENT 'Puente con el Consolidado de la cadena',
-        `plu` varchar(30) DEFAULT NULL COMMENT 'Código del producto en la cadena',
+        `sku` varchar(30) NOT NULL COMMENT 'Material de SAP. El ÚNICO identificador único de un producto',
+        `ean` varchar(20) DEFAULT NULL COMMENT 'Puente con el Consolidado. SE REPITE entre productos',
+        `plu` varchar(30) DEFAULT NULL COMMENT 'Código en la cadena. SE REPITE entre productos',
+        `sku_item` varchar(30) DEFAULT NULL COMMENT 'SKU que trae el archivo, cuando lo trae. Es lo único que identifica un producto sin ambigüedad',
+        `descripcion_item` varchar(255) DEFAULT NULL COMMENT 'Descripción del archivo. Desempata cuando dos productos comparten PLU y EAN',
         `descripcion` varchar(255) DEFAULT NULL,
         `unidades_por_caja` int(11) DEFAULT NULL COMMENT 'Sin esto no se pueden calcular cajas ni saldos',
         `presentacion` varchar(30) DEFAULT NULL COMMENT 'Como viene en el nombre: PX20, BX6x16...',
@@ -181,9 +183,46 @@ $tablas['maestro_productos'] = "
         `linea` varchar(60) DEFAULT NULL COMMENT 'Línea o negocio; permite filtrar el consolidado',
         `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
         PRIMARY KEY (`sku`),
-        UNIQUE KEY `ean` (`ean`),
-        UNIQUE KEY `plu` (`plu`),
+        -- ean y plu NO son únicos, aunque lo parezcan. Monterojo tiene productos que
+        -- comparten los dos y solo se distinguen por el SKU y la descripción: el mismo
+        -- item empacado de a 12 y de a 20 por caja lleva el mismo EAN y el mismo PLU,
+        -- pero es otro material de SAP y otras unidades por caja (9 pares confirmados el
+        -- 2026-09-11). Con UNIQUE acá, importar el maestro funde los dos productos en uno
+        -- EN SILENCIO: MySQL resuelve el ON DUPLICATE KEY contra esa clave y pisa la fila
+        -- equivocada, dejando unidades por caja de un empaque en el otro y, con eso,
+        -- cajas mal contadas en el despacho.
+        KEY `ean` (`ean`),
+        KEY `plu` (`plu`),
         KEY `linea` (`linea`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+
+// ----------------------------------------------------------------------------------------------
+// ENLACES DE LOS RÓTULOS
+//
+// Cada rótulo impreso lleva un QR que, escaneado con el celular, abre una página con los datos de
+// esa caja —incluido el EAN, que NO se imprime en la etiqueta—. Esta tabla es lo que traduce el
+// token corto del QR a esos datos.
+//
+// POR QUÉ UN TOKEN Y NO LOS DATOS ADENTRO DEL QR
+// Metiendo los datos en el propio código, el QR queda de 61x61 módulos = 23mm de lado. Con un
+// token de 12 caracteres baja a 33x33 = 12,4mm: casi la mitad, que en una etiqueta donde el QR
+// convive con el código de barras es la diferencia entre que entre o no.
+//
+// El token son 12 caracteres al azar (62^12 combinaciones): es lo que hace que el enlace sea
+// secreto. La página se abre sin iniciar sesión —quien escanea en el muelle no va a tipear una
+// contraseña— así que lo único que la protege es que nadie pueda adivinar la dirección.
+//
+// La huella es un SHA-256 del contenido del rótulo: si se reimprime la misma caja, se reusa el
+// token que ya tenía en vez de crear uno nuevo cada vez.
+// ----------------------------------------------------------------------------------------------
+$tablas['rotulos_enlace'] = "
+    CREATE TABLE IF NOT EXISTS rotulos_enlace (
+        `token` varchar(16) NOT NULL COMMENT 'Lo que viaja en el QR; 12 caracteres al azar',
+        `huella` char(64) NOT NULL COMMENT 'SHA-256 del contenido, para reusar el token al reimprimir',
+        `datos` text NOT NULL COMMENT 'El rótulo en JSON: punto de venta, CEDI, producto, SKU, EAN, caja',
+        `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`token`),
+        UNIQUE KEY `huella` (`huella`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 
 // ----------------------------------------------------------------------------------------------
@@ -384,6 +423,250 @@ if (!$tieneDespachado) {
     echo "   Columnas agregadas.\n";
 }
 
+// ----------------------------------------------------------------------------------------------
+// MIGRACIÓN (2026-09-11): ean y plu dejan de ser únicos en el maestro.
+//
+// El esquema afirmaba que un EAN y un PLU identifican un producto. No es cierto en Monterojo: el
+// mismo item empacado de a 12 y de a 20 por caja comparte EAN y PLU, y solo se distingue por el
+// SKU y la descripción. Con el UNIQUE puesto, subir el maestro fundía los dos productos sin avisar
+// —MySQL resolvía el ON DUPLICATE KEY contra esa clave y pisaba la fila de al lado—, mezclando las
+// unidades por caja de dos empaques distintos y, con eso, las cajas del despacho.
+// ----------------------------------------------------------------------------------------------
+$unicosMaestro = $pdo->query(
+    "SELECT INDEX_NAME FROM information_schema.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'maestro_productos'
+       AND INDEX_NAME IN ('ean', 'plu') AND NON_UNIQUE = 0"
+)->fetchAll(PDO::FETCH_COLUMN);
+
+if ($unicosMaestro) {
+    echo "\n== Migración: maestro_productos, ean y plu dejan de ser únicos ==\n";
+    foreach ($unicosMaestro as $indice) {
+        // Se rehace como índice normal: sigue haciendo falta para buscar por EAN o PLU rápido,
+        // lo único que cambia es que deja de exigir que no se repitan.
+        $pdo->exec("ALTER TABLE maestro_productos DROP INDEX `{$indice}`, ADD KEY `{$indice}` (`{$indice}`)");
+        echo "   {$indice}: UNIQUE -> KEY\n";
+    }
+}
+
+// ----------------------------------------------------------------------------------------------
+// MIGRACIÓN (2026-09-11): el Consolidado guarda el SKU y la descripción que trae el archivo.
+//
+// Sin esto no hay forma de saber cuál de dos productos que comparten PLU y EAN es el que la cadena
+// pidió, y Picking tendría que elegir uno al azar. Los dos archivos que se importan traen con qué:
+// el de la cadena tiene "Descripcion del item" (y el de Éxito además una columna "SKU"), y el
+// export de SAP tiene "Material" y "Texto breve de material".
+// ----------------------------------------------------------------------------------------------
+$tieneDescripcionItem = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_lineas'
+       AND COLUMN_NAME = 'descripcion_item'"
+)->fetchColumn();
+
+if (!$tieneDescripcionItem) {
+    echo "\n== Migración: consolidado_lineas.sku_item y descripcion_item ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_lineas
+         ADD COLUMN `sku_item` varchar(30) DEFAULT NULL COMMENT 'SKU que trae el archivo, cuando lo trae. Es lo único que identifica un producto sin ambigüedad',
+         ADD COLUMN `descripcion_item` varchar(255) DEFAULT NULL COMMENT 'Descripción del archivo. Desempata cuando dos productos comparten PLU y EAN',
+         ADD KEY `sku_item` (`sku_item`)"
+    );
+    // Las líneas ya importadas quedan sin estos datos: no se pueden recuperar sin el archivo
+    // original. Solo significa que esas siguen resolviéndose por PLU/EAN como hasta ahora.
+    echo "   Columnas agregadas.\n";
+}
+
+// ----------------------------------------------------------------------------------------------
+// MIGRACIÓN (2026-09-14): el precio de cada línea del Consolidado
+//
+// Lo necesita el módulo Órdenes de compra, que suma el VALOR de cada orden. El archivo de la cadena
+// trae "Precio Bruto" y "Precio Neto" y hasta ahora el importador los ignoraba. El valor de una
+// orden se calcula con el BRUTO: comparado contra la planilla que arma el usuario, el bruto dio
+// exacto en 8 de 8 órdenes y el neto solo en 5 (el neto ya viene con el descuento aplicado).
+// ----------------------------------------------------------------------------------------------
+$tienePrecio = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_lineas'
+       AND COLUMN_NAME = 'precio_bruto'"
+)->fetchColumn();
+
+if (!$tienePrecio) {
+    echo "\n== Migración: consolidado_lineas.precio_bruto y precio_neto ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_lineas
+         ADD COLUMN `precio_bruto` decimal(14,2) DEFAULT NULL COMMENT 'Precio unitario bruto que trae el archivo de la cadena. Con este se calcula el valor de la orden',
+         ADD COLUMN `precio_neto` decimal(14,2) DEFAULT NULL COMMENT 'Precio unitario neto (con descuento). Se guarda, pero el valor de la orden va por el bruto'"
+    );
+    // Las líneas ya importadas quedan sin precio: el archivo no se guarda, así que no hay de dónde
+    // sacarlo. Hay que completarlas con el archivo original o volver a importar.
+    echo "   Columnas agregadas.\n";
+}
+
+// ----------------------------------------------------------------------------------------------
+// MIGRACIÓN (2026-09-14): quién compró cada línea del Consolidado
+//
+// Hasta ahora todos los consolidados de portal eran del Éxito, y "pedido del Éxito" se deducía de
+// que sus puntos de venta traen EAN. Con Farmatodo eso dejó de alcanzar: su archivo es del mismo
+// portal, sus tiendas también traen EAN, y sin esta columna aparecerían mezcladas en Cajas por punto
+// de venta y en Órdenes de compra, que son solo del Éxito. Además, el PLU que trae Farmatodo es un
+// código suyo, y no puede terminar copiado en el maestro como si fuera el PLU del Éxito.
+//
+// Las líneas ya importadas quedan en NULL: se siguen reconociendo con la regla de antes (ver
+// condicionPedidoExito en model_consolidados.php), así que no cambia nada de lo que ya estaba.
+// ----------------------------------------------------------------------------------------------
+$tieneComprador = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_lineas'
+       AND COLUMN_NAME = 'empresa_compradora'"
+)->fetchColumn();
+
+if (!$tieneComprador) {
+    echo "\n== Migración: consolidado_lineas.empresa_compradora ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_lineas
+         ADD COLUMN `empresa_compradora` varchar(120) DEFAULT NULL COMMENT 'Razón social de quien hizo el pedido (ALMACENES EXITO S.A, Farmatodo Colombia S.A...). NULL en lo importado antes del 2026-09-14',
+         ADD KEY `empresa_compradora` (`empresa_compradora`)"
+    );
+    echo "   Columna agregada.\n";
+}
+
+// ----------------------------------------------------------------------------------------------
+// CUBICAJES (2026-09-14): cuánto volumen ocupa UNA caja de cada producto
+//
+// Es lo que convierte cajas en metros cúbicos en el módulo Órdenes de compra. La clave es el SKU y
+// no el EAN a propósito: hay productos que comparten EAN y son de distinta presentación —el 36353
+// (PX18) y el 36354 (PX24) tienen el mismo—, y buscar por EAN le daría a uno el volumen de la caja
+// del otro. Se carga desde un Excel en la misma pantalla del módulo.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS cubicajes (
+        `sku` varchar(30) NOT NULL,
+        `ean` varchar(20) DEFAULT NULL,
+        `denominacion` varchar(255) DEFAULT NULL,
+        `tipo_caja` varchar(40) DEFAULT NULL COMMENT 'Como lo nombra el archivo: PEQUEÑA, INTERMEDIA, GRANDE, ALTA, SALSA',
+        `cubicaje_m3` decimal(12,7) NOT NULL COMMENT 'Metros cúbicos que ocupa UNA caja',
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`sku`),
+        KEY `ean` (`ean`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// ----------------------------------------------------------------------------------------------
+// ALMACENES DEL ÉXITO (2026-09-14): la lista oficial Dependencia → Nombre
+//
+// Con ella cada punto de venta del Éxito se guarda como "DEPENDENCIA - NOMBRE OFICIAL", aunque el
+// Consolidado lo haya escrito sin número o con otro nombre (ver model_almacenes_exito.php). La carga
+// inicial sale de scripts/datos/almacenes_exito.csv —la lista "Dep exito.xlsx" que pasó el usuario—
+// con INSERT IGNORE: si la lista ya se actualizó desde la pantalla, el CSV no pisa esos nombres.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS almacenes_exito (
+        `dependencia` int(10) UNSIGNED NOT NULL COMMENT 'Número de punto de venta del Éxito',
+        `nombre` varchar(150) NOT NULL COMMENT 'Nombre oficial del almacén',
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`dependencia`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+$csvAlmacenes = __DIR__ . '/datos/almacenes_exito.csv';
+if (is_file($csvAlmacenes) && ($archivoCsv = fopen($csvAlmacenes, 'r'))) {
+    fgetcsv($archivoCsv, 0, ';');   // títulos
+    $sembrar = $pdo->prepare("INSERT IGNORE INTO almacenes_exito (dependencia, nombre) VALUES (?, ?)");
+    $sembrados = 0;
+    while (($filaCsv = fgetcsv($archivoCsv, 0, ';')) !== false) {
+        if (count($filaCsv) >= 2 && ctype_digit(trim($filaCsv[0])) && trim($filaCsv[1]) !== '') {
+            $sembrar->execute([(int) $filaCsv[0], trim($filaCsv[1])]);
+            $sembrados += $sembrar->rowCount();
+        }
+    }
+    fclose($archivoCsv);
+    echo "== Almacenes del Éxito: {$sembrados} agregado(s) desde el CSV ==\n";
+}
+
+// ----------------------------------------------------------------------------------------------
+// AJUSTES (2026-09-14): valores sueltos que se cambian desde la pantalla y no desde el código
+//
+// El primero es el límite de volumen que decide el carro (turbo o minimula) en Órdenes de compra.
+// Es una tabla clave → valor y no una columna en otra tabla porque no pertenece a ningún registro:
+// es una regla del negocio, y la próxima (por ejemplo, cuántos m³ entran en una estiba) va acá sin
+// migrar nada.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS ajustes (
+        `clave` varchar(60) NOT NULL,
+        `valor` varchar(255) DEFAULT NULL,
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`clave`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// ----------------------------------------------------------------------------------------------
+// VEHÍCULOS (2026-09-14): la flota con la que se elige el carro de cada orden de compra
+//
+// Reemplaza al "límite de m³" que se había dejado provisorio: el usuario pasó la tabla de su
+// plataforma de transporte con la capacidad de cada vehículo. Órdenes de compra elige, para cada
+// orden, el vehículo de MENOR capacidad en el que entran su peso y su volumen.
+//
+// Solo van los vehículos SECOS: los refrigerados no aplican (instrucción del usuario). El
+// MOTOCARRO se carga desactivado: la tabla lo trae con 0 m³ y el usuario indicó que no se usa.
+//
+// TURBO 6 SECA aparece DOS veces en la tabla del usuario, con datos distintos (7.500 kg · 20 m³ y
+// 2.800 kg · 25 m³). Son dos vehículos y quedan los dos, para que se pueda elegir cualquiera según
+// el peso de la orden (decisión del usuario, 2026-09-14). Llevan el peso en el nombre porque el
+// nombre es único y es lo que se muestra en la columna Carro: sin eso no se sabría cuál de los dos
+// se eligió.
+//
+// INSERT IGNORE por nombre: volver a correr este script no pisa lo que el usuario haya corregido
+// desde la pantalla.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS vehiculos (
+        `id_vehiculo` int(11) NOT NULL AUTO_INCREMENT,
+        `nombre` varchar(60) NOT NULL,
+        `peso_kg` int(11) NOT NULL COMMENT 'Carga útil máxima',
+        `estibas` int(11) NOT NULL DEFAULT 0,
+        `m3` decimal(8,2) NOT NULL COMMENT 'Volumen máximo de carga',
+        `activo` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'Los inactivos no se eligen como carro',
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`id_vehiculo`),
+        UNIQUE KEY `nombre` (`nombre`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+$flota = [
+    // nombre,               peso kg, estibas, m³,  activo
+    ['CAMIONETA',              600,  1,  6,    1],
+    ['LUV SECA',              1500,  2,  5,    1],
+    ['TURBO 4 SECA',          2500,  4, 10,    1],
+    ['TURBO 6 SECA · 2.800 kg', 2800,  6, 25,  1],   // los dos turbos 6: ver arriba
+    ['TURBO 6 SECA · 7.500 kg', 7500,  6, 20,  1],
+    ['TURBO 8 SECA',          4500,  8, 25,    1],
+    ['TURBO 10 SECA',         5000, 10, 32,    1],
+    ['TURBO 12 SECA',         5500, 12, 35,    1],
+    ['SENCILLO SECO',         8000, 12, 35,    1],
+    ['DOBLETROQUE SECO',     13000, 14, 45,    1],
+    ['MINIMULA SECA',        18000, 20, 60,    1],
+    ['TRACTOMULA SECA',      34000, 22, 77,    1],
+    ['DOBLEPISO',            35000, 48, 90,    1],
+    ['MOTOCARRO',              375,  0,  0,    0],   // 0 m³ en la tabla; el usuario no lo usa
+];
+// Migración de la primera versión de la flota (2026-09-14, el mismo día): tenía UN solo
+// "TURBO 6 SECA" con 2.800 kg y 20 m³, lo menor de las dos filas en conflicto. Si todavía está, se
+// convierte en el turbo de 2.800 kg con sus 25 m³ reales; el de 7.500 kg lo agrega el INSERT de
+// abajo. Sin esto, una base que ya había corrido el script terminaría con tres turbos 6.
+$turboViejo = $pdo->query("SELECT COUNT(*) FROM vehiculos WHERE nombre = 'TURBO 6 SECA'")->fetchColumn();
+$turboNuevo = $pdo->query("SELECT COUNT(*) FROM vehiculos WHERE nombre = 'TURBO 6 SECA · 2.800 kg'")->fetchColumn();
+if ($turboViejo && !$turboNuevo) {
+    echo "\n== Migración: TURBO 6 SECA pasa a ser dos vehículos ==\n";
+    $pdo->exec("UPDATE vehiculos SET nombre = 'TURBO 6 SECA · 2.800 kg', peso_kg = 2800, estibas = 6, m3 = 25
+                WHERE nombre = 'TURBO 6 SECA'");
+    echo "   Listo.\n";
+}
+
+$insertarVehiculo = $pdo->prepare("INSERT IGNORE INTO vehiculos (nombre, peso_kg, estibas, m3, activo) VALUES (?, ?, ?, ?, ?)");
+foreach ($flota as $v) {
+    $insertarVehiculo->execute($v);
+}
+
 // ==============================================================================================
 // ROLES
 // El id va explícito y no lo elige el AUTO_INCREMENT: así una instalación nueva y una que ya
@@ -414,10 +697,12 @@ $permisos = [
     'modulo_personal'     => 'Dar de alta, editar y eliminar el personal de alistamiento.',
     'modulo_historial'    => 'Consultar los pedidos ya despachados y restaurarlos si hizo falta.',
     'modulo_rotulos'      => 'Generar rótulos sueltos, sin que vengan de ningún pedido del sistema.',
+    'modulo_cajas_punto_venta' => 'Ver cuántas cajas le corresponden a cada punto de venta de un CEDI.',
+    'modulo_ordenes_compra'    => 'Ver las órdenes de compra del Éxito con cajas, volumen, valor y carro, y cargar los cubicajes.',
 ];
 
 $permisosPorRol = [
-    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos'],
+    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos', 'modulo_cajas_punto_venta', 'modulo_ordenes_compra'],
 ];
 
 if ($permisos) {

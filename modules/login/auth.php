@@ -96,7 +96,7 @@ switch ($error) {
 
         <!-- autocomplete="off" para que el navegador no ofrezca la cédula de otra persona: estas
              pantallas se usan en equipos compartidos. -->
-        <form action="<?php echo BASE_URL; ?>/modules/login/controller/UsuarioController.php"
+        <form action="<?php echo BASE_URL; ?>/login/entrar"
               method="POST" autocomplete="off" id="formLogin">
 
             <?php if (!empty($mensajeError)): ?>

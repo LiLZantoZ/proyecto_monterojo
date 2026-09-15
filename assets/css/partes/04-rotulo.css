@@ -83,8 +83,22 @@
     min-height: 0;
 }
 
+/* 0,8mm, igual que el PDF: con 1,4mm los rótulos de nombres cortos no entraban en el papel (ver
+   el comentario de .rotulo-campo en cssRotulosPdf). */
 .rotulo-campo {
-    margin-bottom: 1.4mm;
+    margin-bottom: 0.8mm;
+}
+
+/* La etiqueta del campo DESTACADO: en negrita y en negro, no en el gris de las demás. Junto con
+   el valor grande, es lo que hace que el número del punto de venta se encuentre de un vistazo
+   entre los cinco renglones. */
+/* Con las DOS clases en el selector a propósito: .rotulo-etiqueta está escrita más abajo y, con el
+   mismo peso, su gris (#444) le ganaba a este negro. En pantalla la etiqueta salía gris y en el
+   PDF negra, y la vista previa tiene que ser igual al papel. */
+.rotulo-etiqueta.rotulo-etiqueta-fuerte {
+    font-size: 3.2mm;
+    font-weight: 700;
+    color: #000000;
 }
 
 .rotulo-etiqueta {
@@ -112,17 +126,74 @@
     overflow: hidden;
 }
 
+/* --- Formato Éxito (Cajas por punto de venta) --- */
+
+/* Con número de CEDI, la etiqueta "N° PUNTO DE VENTA" va del tamaño del nombre de la tienda, y a
+   la derecha del número —o de "Cajas total", si al lado del número no entra— va "CEDI: 149" en
+   grande. Qué renglón le toca lo decide cediVaAlLadoDelNumero(), la misma cuenta en PHP y en
+   assets/js/rotulo.js. Las medidas son las mismas del PDF (cssRotulosPdf). */
+.rotulo-con-cedi .rotulo-etiqueta-fuerte {
+    font-size: 4.5mm;
+    letter-spacing: 0.1mm;
+}
+
+.rotulo-campo-cedi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3mm;
+}
+
+/* min-width: 0 para que el nowrap del valor recorte adentro de su columna y no empuje al CEDI
+   fuera del rótulo: un hijo flex, por defecto, no se achica por debajo de su contenido. */
+.rotulo-campo-texto {
+    flex: 1;
+    min-width: 0;
+}
+
+.rotulo-cedi {
+    flex-shrink: 0;
+    font-size: 7.5mm;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 /* La numeración: es lo que mira el que descarga el camión para saber si llegó todo, así que va
    abajo, sola, y es lo más grande de la hoja. */
+/* Más chico que antes (era 7,5mm): con el número del punto de venta agrandado, dos textos
+   grandes competían entre sí y ninguno de los dos se leía primero. El que manda es el número. */
 .rotulo-conteo {
-    padding-top: 1.5mm;
-    border-top: 0.6mm solid #000000;
+    flex: 1;
     text-align: center;
-    font-size: 7.5mm;
+    font-size: 8mm;
     line-height: 1.05;
     font-weight: bold;
     letter-spacing: 0.4mm;
     flex-shrink: 0;
+}
+
+/* --- Los dos códigos, lado a lado --- */
+
+/* El contador de cajas y el QR comparten el renglón del pie. El QR ocupaba antes media fila al
+   lado del código de barras; al sacar ese código (2026-09-12) se agrandó y subió acá, porque
+   cuanto más grande, de más lejos lo engancha el celular. */
+.rotulo-pie {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+    padding-top: 2mm;
+    border-top: 0.6mm solid #000000;
+    flex-shrink: 0;
+}
+
+/* El cuadrado del QR no se deforma nunca: un QR estirado no lo lee ningún celular. */
+.rotulo-qr {
+    width: 13mm;
+    height: 13mm;
+    flex-shrink: 0;
+    display: block;
 }
 
 /* --- Código de barras --- */

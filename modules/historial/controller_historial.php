@@ -87,7 +87,7 @@ if (($_GET['accion'] ?? '') === 'rotulos_pdf') {
 // HOJA DE ALISTAMIENTO DE UN PEDIDO YA DESPACHADO
 // -------------------------------------------------------------------------------------------
 if (($_GET['accion'] ?? '') === 'pdf') {
-    $vistaHistorial = BASE_URL . '/modules/historial/views/historial.php';
+    $vistaHistorial = BASE_URL . '/historial';
 
     $idCarga = (int) ($_GET['carga'] ?? 0);
     $entrega = $idCarga > 0
@@ -112,7 +112,7 @@ if (($_GET['accion'] ?? '') === 'pdf') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_masivo') {
     validarCSRF();
 
-    $vistaHistorial = BASE_URL . '/modules/historial/views/historial.php';
+    $vistaHistorial = BASE_URL . '/historial';
 
     $cargas = (array) ($_POST['carga'] ?? []);
     $cedis  = (array) ($_POST['cedi'] ?? []);

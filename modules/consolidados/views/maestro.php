@@ -26,15 +26,17 @@ if ($soloFaltantes) {
     // Sin filtrar por una sola carga: los archivos se acumulan (ver importarConsolidado), así que
     // "lo que falta" es sobre TODO lo pendiente, no solo la última importación.
     $stmt = $pdo->query(
-        "SELECT plu, ean_item, SUM(unidades) AS unidades_pedidas
+        "SELECT plu, ean_item, sku_item, descripcion_item, SUM(unidades) AS unidades_pedidas
          FROM consolidado_lineas WHERE despachado = 0
-         GROUP BY plu, ean_item ORDER BY unidades_pedidas DESC"
+         GROUP BY plu, ean_item, sku_item, descripcion_item ORDER BY unidades_pedidas DESC"
     );
 
     $mapa = mapaMaestro($pdo);
     $productos = [];
     foreach ($stmt as $fila) {
-        $p = productoDelMaestro($mapa, $fila['ean_item'], $fila['plu']);
+        $p = productoDelMaestro(
+            $mapa, $fila['ean_item'], $fila['plu'], $fila['sku_item'], $fila['descripcion_item']
+        );
         if ($p !== null && !empty($p['unidades_por_caja'])) {
             continue;
         }
@@ -92,7 +94,7 @@ $faltantes    = pluSinMaestro($pdo);
             <header class="modulo-header">
                 <h2>Maestro de productos</h2>
                 <div class="modulo-acciones">
-                    <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php">
+                    <a class="btn" href="<?php echo BASE_URL; ?>/consolidados">
                         <i class="fa-solid fa-arrow-left"></i> Volver a Consolidados
                     </a>
                     <button type="button" class="btn" data-abrir="modal-maestro">
@@ -131,11 +133,11 @@ $faltantes    = pluSinMaestro($pdo);
             <div class="filtros">
                 <?php if ($faltantes > 0 || $soloFaltantes): ?>
                     <?php if ($soloFaltantes): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/maestro">
                             <i class="fa-solid fa-list"></i> Ver todo el maestro
                         </a>
                     <?php else: ?>
-                        <a class="btn btn-acento" href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php?ver=faltantes">
+                        <a class="btn btn-acento" href="<?php echo BASE_URL; ?>/maestro?ver=faltantes">
                             <i class="fa-solid fa-triangle-exclamation"></i> Ver solo los que faltan (<?php echo $faltantes; ?>)
                         </a>
                     <?php endif; ?>
@@ -236,7 +238,7 @@ $faltantes    = pluSinMaestro($pdo);
             <h2>Cargar maestro desde SAP</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php"
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
               method="POST" enctype="multipart/form-data">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="importar_maestro_sap">
@@ -280,7 +282,7 @@ $faltantes    = pluSinMaestro($pdo);
             <h2>Cargar planilla</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php"
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
               method="POST" enctype="multipart/form-data">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="importar_maestro">

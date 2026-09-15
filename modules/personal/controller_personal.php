@@ -11,7 +11,7 @@ require_once __DIR__ . '/../../config/permisos.php';
 require_once __DIR__ . '/../../config/mensajes.php';
 require_once __DIR__ . '/model_personal.php';
 
-$vistaPersonal = BASE_URL . '/modules/personal/views/personal.php';
+$vistaPersonal = BASE_URL . '/personal';
 
 requierePermiso('modulo_personal', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 

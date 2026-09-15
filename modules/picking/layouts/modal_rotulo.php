@@ -45,9 +45,12 @@
                     <label for="rot-pv">Punto de venta</label>
                     <input type="text" id="rot-pv" maxlength="180" data-rotulo-campo>
                 </div>
+                <!-- El número de la tienda reemplazó a la orden de compra en el rótulo el
+                     2026-09-12: la orden ya va en la planilla, y en la caja lo que se busca es a qué
+                     tienda va. Se puede corregir acá si el archivo de la cadena no lo traía. -->
                 <div class="campo">
-                    <label for="rot-oc">Orden de compra</label>
-                    <input type="text" id="rot-oc" maxlength="40" data-rotulo-campo>
+                    <label for="rot-numero-pv">N° punto de venta</label>
+                    <input type="text" id="rot-numero-pv" maxlength="20" data-rotulo-campo>
                 </div>
                 <div class="campo campo-ancho">
                     <label for="rot-cedi">CEDI</label>
@@ -95,7 +98,7 @@
                  Es el respaldo de la etiquetadora: sirve para guardar los rótulos o sacarlos en
                  una impresora común si la TSC no está. El PDF ya trae la página de 100x40mm
                  adentro, así que se abre y se imprime a tamaño real. -->
-            <form action="<?php echo BASE_URL; ?>/modules/picking/controller_picking.php"
+            <form action="<?php echo BASE_URL; ?>/picking/acciones"
                   method="POST" id="form-rotulos-pdf">
                 <?php campoCSRF(); ?>
                 <input type="hidden" name="accion" value="rotulos_pdf">

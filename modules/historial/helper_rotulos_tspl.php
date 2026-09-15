@@ -21,6 +21,7 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/helper_rotulos_lista.php';
+require_once __DIR__ . '/helper_rotulos_enlace.php';
 
 // 203 dpi = 8 puntos por milímetro. Toda la maqueta de abajo está en PUNTOS, que es la única
 // unidad en la que TSPL posiciona texto, líneas y códigos de barras.
@@ -65,7 +66,14 @@ const TSPL_LOGO_MM = 14;
 // Alto del código de barras. 14mm era la medida del rótulo original; el estirado vertical no
 // afecta la lectura —lo que codifica un Code 128 son los ANCHOS— pero un código alto es mucho más
 // fácil de enganchar con la pistola sin tener que apuntar fino.
-const TSPL_CODIGO_MM = 14;
+const TSPL_CODIGO_MM = 12;
+
+// Ancho de cada celda del QR, en puntos. El enlace da un código de 33x33 celdas (medido con uno
+// real, ver helper_rotulos_enlace), así que con 4 puntos por celda el QR queda de 132 puntos =
+// 12,4mm de lado, que es lo mínimo que un celular engancha sin tener que acercarse mucho. Se
+// probó con 4 (16,5mm) y le quitaba demasiado protagonismo al número del punto de venta, que es
+// lo que hay que leer primero.
+const TSPL_QR_CELDA = 3;
 
 // En BITMAP, un bit en 0 imprime punto (negro) y un bit en 1 lo deja en blanco. Si alguna vez el
 // logo saliera en negativo —círculo blanco sobre fondo negro— es este valor el que hay que dar
@@ -235,38 +243,71 @@ function tsplDeUnRotulo(array $r) {
     // ---------- Los campos, cada uno con su etiqueta arriba ----------
     // El punto de venta va en la fuente más grande: es lo que mira quien recibe la caja. Los demás
     // comparten tamaño para que el rótulo se lea como una ficha y no como cinco cosas sueltas.
+    // La orden de compra salió de la etiqueta el 2026-09-12: ya va en el código de barras y en la
+    // planilla, y en la caja lo que se mira es a qué tienda va. En su lugar entró el NÚMERO del
+    // punto de venta, que es por donde la cadena identifica sus locales.
+    //
+    // El SKU acompaña a la etiqueta del producto en vez de ocupar su propio renglón: hay
+    // productos que comparten nombre y solo se distinguen por el SKU (ver productoDelMaestro),
+    // así que tiene que estar; pero un renglón entero para cinco dígitos sería robarle altura al
+    // nombre, que es lo que de verdad se lee.
+    $etiquetaProducto = $r['sku'] !== '' ? 'PRODUCTO  -  SKU ' . $r['sku'] : 'PRODUCTO';
+
+    // El cuarto elemento es el multiplicador de tamaño de la fuente. El NÚMERO del punto de venta
+    // va al doble: es el dato que se busca de lejos cuando las cajas ya están estibadas y solo se
+    // ve el canto de la etiqueta, y en cuerpo normal quedaba perdido entre los demás renglones.
+    // El número del punto de venta va al TRIPLE cuando es corto, que es el caso normal (3 o 4
+    // dígitos). Si la tienda viene identificada por su EAN de 13 dígitos, al triple no entraría y
+    // textoQueEntre lo recortaría, así que ahí se queda en el doble: más vale un número completo
+    // y algo más chico que uno enorme y cortado por la mitad.
+    $multNumero = mb_strlen($r['numero_pv']) <= 6 ? 3 : 2;
+
+    // FORMATO ÉXITO: con número de CEDI, la etiqueta "N. PUNTO DE VENTA" pasa a la fuente 4 —la
+    // misma del nombre de la tienda— y a la derecha va "CEDI: 149" en grande. $campoDelCedi es el
+    // índice del campo al lado del cual va: 1 (el número) si entra, 2 (cajas total) si no. Ver
+    // cediVaAlLadoDelNumero() en helper_rotulos_lista.php.
+    $numeroPvImpreso = $r['numero_pv'] !== '' ? $r['numero_pv'] : '-';
+    $textoCedi       = $r['numero_cedi'] !== '' ? 'CEDI: ' . $r['numero_cedi'] : '';
+    $fuenteFuerte    = $textoCedi !== '' ? '4' : '3';
+    $campoDelCedi    = $textoCedi === ''
+        ? null
+        : (cediVaAlLadoDelNumero($numeroPvImpreso, $r['numero_cedi']) ? 1 : 2);
+
+    // El quinto elemento marca el campo como DESTACADO: su etiqueta se imprime en negrita.
     $campos = [
-        ['PUNTO DE VENTA',  $r['pv'],                          ['5', '4', '3']],
-        ['ORDEN DE COMPRA', $r['oc'] !== '' ? $r['oc'] : '-',   ['4', '3']],
-        ['CAJAS TOTAL',     (string) $r['total'],               ['4']],
-        ['PRODUCTO',        $r['producto'] !== '' ? $r['producto'] : '________________', ['4', '3']],
-        ['CEDI',            $r['cedi'] !== '' ? $r['cedi'] : '-', ['4', '3']],
+        ['PUNTO DE VENTA',    $r['pv'],                        ['5', '4', '3'], 1, false],
+        ['N. PUNTO DE VENTA', $numeroPvImpreso,                ['4'], $multNumero, true],
+        ['CAJAS TOTAL',       (string) $r['total'],             ['4'], 1, false],
+        [$etiquetaProducto,   $r['producto'] !== '' ? $r['producto'] : '________________', ['4', '3'], 1, false],
+        ['CEDI',              $r['cedi'] !== '' ? $r['cedi'] : '-', ['4', '3'], 1, false],
     ];
 
     // La fuente de cada valor se resuelve ANTES de empezar a dibujar, porque de ella depende
     // cuánto miden los campos y, por lo tanto, cuánto aire sobra para repartir entre ellos.
-    foreach ($campos as $i => [$etiqueta, $valor, $candidatas]) {
-        [$fuente, $texto] = textoQueEntre($valor, $anchoUtil, $candidatas);
+    foreach ($campos as $i => [$etiqueta, $valor, $candidatas, $mult, $fuerte]) {
+        // El ancho disponible se divide por el multiplicador: una letra al doble ocupa el doble,
+        // así que en el mismo renglón entra la mitad de texto.
+        [$fuente, $texto] = textoQueEntre($valor, intdiv($anchoUtil, $mult), $candidatas);
         $campos[$i][] = $fuente;
         $campos[$i][] = $texto;
     }
 
-    // El bloque de abajo —línea, contador y código de barras— se ANCLA al pie en vez de dibujarse
-    // a continuación de los campos. Con el flujo al revés, un punto de venta largo que se lleva un
-    // renglón de más empujaba el código de barras fuera de la etiqueta y salía aplastado a 5mm o
-    // directamente cortado; anclándolo, el código siempre tiene su altura completa y lo que se
-    // ajusta es el aire entre campos, que es lo que no le importa a nadie.
+    // El bloque de abajo —línea, contador y QR— se ANCLA al pie en vez de dibujarse a continuación
+    // de los campos. Con el flujo al revés, un punto de venta largo que se lleva un renglón de más
+    // empujaba el pie fuera de la etiqueta; anclándolo, lo que se ajusta es el aire entre campos,
+    // que es lo que no le importa a nadie. El contador y el QR comparten renglón.
     $altoConteo  = TSPL_FUENTES['4']['alto'] * 2;
-    $altoCodigo  = TSPL_CODIGO_MM * TSPL_PUNTOS_POR_MM;
+    $ladoQr      = TSPL_QR_CELDA * 33;
     $altoAbajo   = 5 + 2 * TSPL_PUNTOS_POR_MM          // línea divisoria + su aire
-                 + $altoConteo + 2 * TSPL_PUNTOS_POR_MM
-                 + $altoCodigo + TSPL_FUENTES['3']['alto'];   // el código y su texto legible
+                 + max($altoConteo, $ladoQr);
     $pieArranca  = TSPL_Y0 + TSPL_DIB_ALTO - TSPL_MARGEN - $altoAbajo;
 
-    // Alto "natural" de los campos, sin aire entre uno y otro.
+    // Alto "natural" de los campos, sin aire entre uno y otro. El bloque del CEDI no suma: va al
+    // costado de un campo que ya es más alto que él.
     $altoCampos = 0;
-    foreach ($campos as [, , , $fuente]) {
-        $altoCampos += TSPL_FUENTES['2']['alto'] + 2 + TSPL_FUENTES[$fuente]['alto'];
+    foreach ($campos as [, , , $mult, $fuerte, $fuente]) {
+        $altoCampos += TSPL_FUENTES[$fuerte ? $fuenteFuerte : '2']['alto'] + 2
+                     + TSPL_FUENTES[$fuente]['alto'] * $mult;
     }
 
     // El sobrante se reparte en partes iguales. El tope de 4 puntos evita que dos campos se toquen
@@ -275,14 +316,44 @@ function tsplDeUnRotulo(array $r) {
     $aire = intdiv($pieArranca - $y - $altoCampos, count($campos));
     $aire = max(4, min(3 * TSPL_PUNTOS_POR_MM, $aire));
 
-    foreach ($campos as [$etiqueta, , , $fuente, $texto]) {
-        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"2",0,1,1,"' . textoTspl($etiqueta) . '"';
-        $y += TSPL_FUENTES['2']['alto'] + 2;
+    foreach ($campos as $i => [$etiqueta, , , $mult, $fuerte, $fuente, $texto]) {
+        $yCampo = $y;
 
-        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"' . $fuente . '",0,1,1,"' . textoTspl($texto) . '"';
-        $y += TSPL_FUENTES[$fuente]['alto'] + $aire;
+        // Las fuentes internas de la impresora no tienen negrita. Se simula imprimiendo el mismo
+        // texto dos veces, corrido un punto: los trazos se solapan y quedan un punto más gruesos.
+        // Es el truco estándar en TSPL, y a 203 dpi la diferencia se nota sin verse sucio.
+        $fuenteEtiqueta = $fuerte ? $fuenteFuerte : '2';
+        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"' . $fuenteEtiqueta . '",0,1,1,"'
+                  . textoTspl($etiqueta) . '"';
+        if ($fuerte) {
+            $lineas[] = 'TEXT ' . ($izq + 1) . ',' . $y . ',"' . $fuenteEtiqueta . '",0,1,1,"'
+                      . textoTspl($etiqueta) . '"';
+        }
+        $y += TSPL_FUENTES[$fuenteEtiqueta]['alto'] + 2;
+
+        $lineas[] = 'TEXT ' . $izq . ',' . $y . ',"' . $fuente . '",0,' . $mult . ',' . $mult
+                  . ',"' . textoTspl($texto) . '"';
+        $y += TSPL_FUENTES[$fuente]['alto'] * $mult;
+
+        // El bloque "CEDI: 149", pegado al margen derecho y centrado contra la altura del campo
+        // entero (etiqueta + valor). Al doble y con negrita doble —corrido 2 puntos y no 1, porque
+        // al doble cada trazo mide el doble—: tiene que leerse de lejos, igual que el número.
+        if ($i === $campoDelCedi) {
+            $anchoCedi = mb_strlen($textoCedi) * TSPL_FUENTES['3']['ancho'] * 2;
+            $altoCedi  = TSPL_FUENTES['3']['alto'] * 2;
+            // Menos 2: la segunda pasada de la negrita va corrida 2 puntos a la derecha, y tiene
+            // que terminar en el margen, no pasarse.
+            $xCedi     = $izq + $anchoUtil - $anchoCedi - 2;
+            $yCedi     = $yCampo + intdiv(($y - $yCampo) - $altoCedi, 2);
+
+            foreach ([0, 2] as $corrimiento) {
+                $lineas[] = 'TEXT ' . ($xCedi + $corrimiento) . ',' . $yCedi . ',"3",0,2,2,"'
+                          . textoTspl($textoCedi) . '"';
+            }
+        }
+
+        $y += $aire;
     }
-
     // ---------- El contador de cajas: abajo, solo, y lo más grande del rótulo ----------
     // Es lo que mira el que descarga el camión para saber si llegó todo, así que se lo deja
     // separado del resto por una línea y se lo imprime al doble de tamaño.
@@ -290,26 +361,40 @@ function tsplDeUnRotulo(array $r) {
     $lineas[] = 'BAR ' . $izq . ',' . $y . ',' . $anchoUtil . ',5';
     $y += 5 + 2 * TSPL_PUNTOS_POR_MM;
 
-    $conteo      = 'CAJ ' . $r['numero'] . ' DE ' . $r['total'];
+    $conteo = 'CAJ ' . $r['numero'] . ' DE ' . $r['total'];
+
+    // ---------- El QR, al lado del contador ----------
+    //
+    // Un solo código, y es el QR (el de barras salió el 2026-09-12). El QR lleva un enlace a una
+    // página con el rótulo completo —incluido el EAN, que no se imprime— y es lo único que un
+    // celular sabe abrir al escanear. Ver public/rotulo.php y helper_rotulos_enlace.php.
+    //
+    // Si no se puede armar el enlace, el rótulo sale sin QR y el contador se centra solo: una
+    // etiqueta sin código es molesta, pero una con un código que no abre nada hace perder tiempo
+    // en el muelle averiguando por qué no funciona.
+    $enlace = enlaceDeRotulo($GLOBALS['pdo'] ?? null, $r);
+
+    $derecha     = TSPL_X0 + TSPL_DIB_ANCHO - TSPL_MARGEN;
     $anchoConteo = mb_strlen($conteo) * TSPL_FUENTES['4']['ancho'] * 2;
-    $lineas[] = 'TEXT ' . max($izq, TSPL_X0 + intdiv(TSPL_DIB_ANCHO - $anchoConteo, 2)) . ',' . $y
+
+    if ($enlace !== null) {
+        // Parámetros de QRCODE: x, y, corrección de errores, ancho de celda, modo, rotación,
+        // contenido. Corrección L porque el enlace es corto y la etiqueta se pega en una caja
+        // limpia; subirla agrandaría el código sin ganar nada acá.
+        $lineas[] = 'QRCODE ' . ($derecha - $ladoQr) . ',' . $y
+                  . ',L,' . TSPL_QR_CELDA . ',A,0,"' . textoTspl($enlace) . '"';
+
+        // El contador se centra en lo que queda a la izquierda del QR, y se alinea al medio de su
+        // altura para que los dos se lean como un solo bloque.
+        $xConteo = $izq + intdiv(($derecha - $ladoQr - 4 * TSPL_PUNTOS_POR_MM) - $izq - $anchoConteo, 2);
+        $yConteo = $y + intdiv($ladoQr - $altoConteo, 2);
+    } else {
+        $xConteo = $izq + intdiv($derecha - $izq - $anchoConteo, 2);
+        $yConteo = $y;
+    }
+
+    $lineas[] = 'TEXT ' . max($izq, $xConteo) . ',' . $yConteo
               . ',"4",0,2,2,"' . textoTspl($conteo) . '"';
-    $y += $altoConteo + 2 * TSPL_PUNTOS_POR_MM;
-
-    // ---------- Código de barras ----------
-    // El módulo —el ancho de la barra más fina— baja a 1 solo si con 2 no entra: 2 puntos son
-    // 0,25mm, que es el mínimo que piden los lectores de las cadenas; con 1 el código es más
-    // exigente de leer, pero es preferible a que salga cortado y no lea nada.
-    $tienda  = $r['ean_pv'] !== '' ? $r['ean_pv'] : $r['pv'];
-    $idCaja  = identificadorDeCajaRotulo($r['oc'], $tienda, $r['numero']);
-    $modulo  = anchoCodigo128($idCaja, 2) <= $anchoUtil ? 2 : 1;
-    $xCodigo = max($izq, TSPL_X0 + intdiv(TSPL_DIB_ANCHO - anchoCodigo128($idCaja, $modulo), 2));
-
-    // Parámetros de BARCODE: x, y, tipo, alto, texto legible (2 = debajo y centrado), rotación,
-    // ancho de la barra fina, ancho de la barra gruesa, contenido.
-    $lineas[] = 'BARCODE ' . $xCodigo . ',' . $y . ',"128",' . $altoCodigo . ',2,0,'
-              . $modulo . ',' . ($modulo * 2) . ',"' . textoTspl($idCaja) . '"';
-
     return implode("\r\n", $lineas);
 }
 

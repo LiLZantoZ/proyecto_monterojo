@@ -69,7 +69,7 @@ if (($_GET['accion'] ?? '') === 'codigo_barras') {
 // puede abrir en otra pestaña o guardar el enlace.
 // -------------------------------------------------------------------------------------------
 if (($_GET['accion'] ?? '') === 'pdf') {
-    $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
+    $vistaPicking = BASE_URL . '/picking';
 
     $idCarga = (int) ($_GET['carga'] ?? 0);
     $entrega = $idCarga > 0
@@ -102,7 +102,7 @@ if (($_GET['accion'] ?? '') === 'pdf') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_masivo') {
     validarCSRF();
 
-    $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
+    $vistaPicking = BASE_URL . '/picking';
 
     // Llegan como cuatro arrays paralelos (carga[], cedi[], oc[], pv[]), que es lo que produce un
     // formulario con varios campos del mismo nombre. carga[] es nuevo: antes todo el lote era de
@@ -159,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'pdf_m
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['accion'] ?? '') === 'rotulos_pdf') {
     validarCSRF();
 
-    $vistaPicking = BASE_URL . '/modules/picking/views/picking.php';
+    $vistaPicking = BASE_URL . '/picking';
 
     $rotulos = json_decode($_POST['rotulos'] ?? '', true);
 

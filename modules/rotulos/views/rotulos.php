@@ -62,8 +62,8 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                     <input type="text" id="rot-pv" maxlength="180">
                 </div>
                 <div class="campo">
-                    <label for="rot-oc">Orden de compra <span class="opcional">(opcional)</span></label>
-                    <input type="text" id="rot-oc" maxlength="40">
+                    <label for="rot-numero-pv">N° punto de venta <span class="opcional">(opcional)</span></label>
+                    <input type="text" id="rot-numero-pv" maxlength="20">
                 </div>
                 <div class="campo campo-ancho">
                     <label for="rot-cedi">CEDI</label>
@@ -73,9 +73,13 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                     <label for="rot-producto">Producto</label>
                     <input type="text" id="rot-producto" maxlength="255" placeholder="Nombre del producto">
                 </div>
-                <div class="campo campo-ancho">
-                    <label for="rot-ean-pv">Código de la tienda para el código de barras <span class="opcional">(opcional)</span></label>
-                    <input type="text" id="rot-ean-pv" maxlength="40" placeholder="Si lo dejás vacío, usa el punto de venta">
+                <div class="campo">
+                    <label for="rot-sku">SKU <span class="opcional">(opcional)</span></label>
+                    <input type="text" id="rot-sku" maxlength="30">
+                </div>
+                <div class="campo">
+                    <label for="rot-ean">EAN del producto <span class="opcional">(opcional)</span></label>
+                    <input type="text" id="rot-ean" maxlength="20" placeholder="Se ve al escanear el QR">
                 </div>
             </div>
 
@@ -108,17 +112,11 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                      como una descarga, con su carpeta de destino, y no como una respuesta que hay
                      que interpretar en JS. Los campos ocultos los llena scripts_rotulos.js justo
                      antes de enviarlo, con lo que haya en pantalla en ese momento. -->
-                <form action="<?php echo BASE_URL; ?>/modules/rotulos/controller_rotulos.php" method="POST" id="form-rotulos-pdf">
+                <form action="<?php echo BASE_URL; ?>/rotulos/acciones" method="POST" id="form-rotulos-pdf">
                     <?php campoCSRF(); ?>
                     <input type="hidden" name="accion" value="pdf">
-                    <input type="hidden" name="cantidad">
-                    <input type="hidden" name="desde">
-                    <input type="hidden" name="total">
-                    <input type="hidden" name="pv">
-                    <input type="hidden" name="oc">
-                    <input type="hidden" name="cedi">
-                    <input type="hidden" name="producto">
-                    <input type="hidden" name="ean_pv">
+                    <!-- La lista de rótulos tal como se ve en pantalla, igual que en Picking. -->
+                    <input type="hidden" name="rotulos" id="rotulos-pdf-datos">
                     <button type="submit" class="btn">
                         <i class="fa-solid fa-file-pdf"></i> Descargar PDF
                     </button>
@@ -134,6 +132,7 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
     const LOGO_URL   = '<?php echo BASE_URL; ?>/assets/img/monterojo.png';
     const CSRF_TOKEN = '<?php echo htmlspecialchars(generarTokenCSRF(), ENT_QUOTES, 'UTF-8'); ?>';
 </script>
+<script src="<?php echo BASE_URL; ?>/assets/js/rotulo.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/rotulo.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/modules/rotulos/layouts/scripts_rotulos.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/rotulos/layouts/scripts_rotulos.js'); ?>"></script>
 
 </body>

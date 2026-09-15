@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../config/auth_guard.php';
 require_once __DIR__ . '/../../config/mensajes.php';
 require_once __DIR__ . '/model_perfil.php';
 
-$vistaPerfil = BASE_URL . '/modules/perfil/views/perfil.php';
+$vistaPerfil = BASE_URL . '/perfil';
 
 // El id sale de la SESIÓN, no de $_POST: así nadie puede mandar el id de otro usuario y editar
 // una cuenta que no es la suya.

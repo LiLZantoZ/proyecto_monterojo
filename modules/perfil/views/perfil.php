@@ -52,7 +52,7 @@ if (!$usuario) {
                         <img src="<?php echo htmlspecialchars(rutaImagenPerfil($usuario['imagen_url_Usuario'])); ?>"
                              alt="Tu foto de perfil">
                     </div>
-                    <form action="<?php echo BASE_URL; ?>/modules/perfil/controller_perfil.php"
+                    <form action="<?php echo BASE_URL; ?>/perfil/acciones"
                           method="POST" enctype="multipart/form-data">
                         <?php campoCSRF(); ?>
                         <input type="hidden" name="accion" value="subir_imagen">
@@ -70,7 +70,7 @@ if (!$usuario) {
                 <!-- DATOS -->
                 <section class="tarjeta-perfil">
                     <h3>Mis datos</h3>
-                    <form action="<?php echo BASE_URL; ?>/modules/perfil/controller_perfil.php" method="POST">
+                    <form action="<?php echo BASE_URL; ?>/perfil/acciones" method="POST">
                         <?php campoCSRF(); ?>
                         <input type="hidden" name="accion" value="actualizar_datos">
 
@@ -103,7 +103,7 @@ if (!$usuario) {
                 <!-- CONTRASEÑA -->
                 <section class="tarjeta-perfil">
                     <h3>Cambiar contraseña</h3>
-                    <form action="<?php echo BASE_URL; ?>/modules/perfil/controller_perfil.php" method="POST">
+                    <form action="<?php echo BASE_URL; ?>/perfil/acciones" method="POST">
                         <?php campoCSRF(); ?>
                         <input type="hidden" name="accion" value="cambiar_contrasena">
 
