@@ -156,6 +156,31 @@
     border-radius: 12px;
     background-color: var(--vino-claro);
     border: 1px solid #eddcdc;
+    /* Es un <a> (lleva a Mi perfil): sin esto se vería como cualquier otro enlace del navegador,
+       subrayado y con el texto en azul, en vez de como la tarjeta que ya era antes. */
+    text-decoration: none;
+    color: inherit;
+    transition: background-color 0.15s ease;
+}
+
+.sidebar-footer:hover {
+    background-color: #f3d9d9;
+}
+
+.sidebar-footer:hover .sidebar-footer-editar {
+    opacity: 1;
+}
+
+/* El lápiz. Empieza apagado y solo aparece al pasar el mouse: de entrada, la tarjeta se lee como
+   "quién soy" y no como un botón —tiene que notarse que es clickeable sin gritarlo todo el
+   tiempo. En celular (sin hover) queda tenue siempre, que es una pista suficiente al tacto. */
+.sidebar-footer-editar {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    color: var(--vino);
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
 }
 
 .user-avatar {

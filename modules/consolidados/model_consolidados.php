@@ -35,49 +35,134 @@ function desglosarCajas($unidades, $unidadesPorCaja) {
 // ---------------------------------------------------------------------------------------------
 // EL MAESTRO, EN MEMORIA
 //
-// El producto del Consolidado se puede reconocer por DOS caminos: el EAN (que es lo que trae el
-// export de SAP) o el PLU (lo que trae una planilla armada a mano). Manda el EAN, porque es el
-// código del producto y no el que le puso la cadena.
+// El producto de una línea del Consolidado se reconoce por TRES caminos, en este orden:
+//
+//   1. el SKU, cuando el archivo lo trae (el de Éxito sí, en una columna calculada; el export de
+//      SAP lo trae como "Material"). Es el ÚNICO identificador que no admite dudas;
+//   2. el EAN;
+//   3. el PLU, que es el código que le puso la cadena.
+//
+// POR QUÉ EL SKU MANDA, Y POR QUÉ EL EAN Y EL PLU DEVUELVEN UNA LISTA
+// Hay productos de Monterojo que comparten EAN y PLU y solo se distinguen por el SKU: el mismo
+// item empacado de a 12 y de a 20 por caja lleva los mismos códigos pero es otro material y tiene
+// otras unidades por caja (9 pares confirmados el 2026-09-11). Buscar por EAN puede devolver dos
+// productos, y quedarse con "el que aparezca" significaría contar las cajas con el empaque
+// equivocado — un error que no se ve en pantalla porque el número igual parece razonable.
+// Por eso los índices de EAN y PLU guardan LISTAS, y una línea ambigua se queda sin producto:
+// aparece como "falta en el maestro", que es visible y se corrige, en vez de salir mal en silencio.
 //
 // POR QUÉ ACÁ Y NO EN UN JOIN
 // Un `LEFT JOIN ... ON m.ean = l.ean_item OR m.plu = l.plu` puede enganchar DOS filas distintas
-// del maestro con la misma línea (una por EAN, otra por PLU) si esos datos quedaron
-// inconsistentes. Y como las consultas suman unidades, esa fila de más no da un dato raro en
-// pantalla: da un total DUPLICADO, que es el peor error posible acá porque parece correcto.
-// Resolviéndolo en PHP, cada línea tiene un producto o ninguno, nunca dos.
+// del maestro con la misma línea. Y como las consultas suman unidades, esa fila de más no da un
+// dato raro en pantalla: da un total DUPLICADO, que es el peor error posible acá porque parece
+// correcto. Resolviéndolo en PHP, cada línea tiene un producto o ninguno, nunca dos.
 //
 // El maestro son decenas o cientos de filas, así que cargarlo entero no cuesta nada.
 // ---------------------------------------------------------------------------------------------
 function mapaMaestro($pdo) {
-    $mapa = ['ean' => [], 'plu' => []];
+    $mapa = ['sku' => [], 'ean' => [], 'plu' => []];
 
     $sql = "SELECT sku, ean, plu, descripcion, unidades_por_caja, presentacion, peso_unidad_kg, linea
             FROM maestro_productos";
 
     foreach ($pdo->query($sql) as $fila) {
-        if (!empty($fila['ean'])) { $mapa['ean'][$fila['ean']] = $fila; }
-        if (!empty($fila['plu'])) { $mapa['plu'][$fila['plu']] = $fila; }
+        $mapa['sku'][$fila['sku']] = $fila;
+
+        // Listas, no un solo producto: ver la explicación de arriba.
+        if (!empty($fila['ean'])) { $mapa['ean'][$fila['ean']][] = $fila; }
+        if (!empty($fila['plu'])) { $mapa['plu'][$fila['plu']][] = $fila; }
     }
 
     return $mapa;
 }
 
-// Devuelve la fila del maestro para una línea del Consolidado, o null.
-function productoDelMaestro(array $mapa, $ean, $plu) {
-    if (!empty($ean) && isset($mapa['ean'][$ean])) {
-        return $mapa['ean'][$ean];
+// De una lista de candidatos, el único que hay; o el que coincide con la descripción de la línea,
+// si esa descripción alcanza para desempatar. Null si sigue habiendo dudas.
+function unicoProductoDe(array $candidatos, $descripcion) {
+    if (count($candidatos) === 1) {
+        return $candidatos[0];
     }
-    if (!empty($plu) && isset($mapa['plu'][$plu])) {
-        return $mapa['plu'][$plu];
+
+    $buscada = normalizarDescripcionProducto($descripcion);
+    if ($buscada === '') {
+        return null;
     }
-    return null;
+
+    $coinciden = array_values(array_filter($candidatos, function ($p) use ($buscada) {
+        return normalizarDescripcionProducto($p['descripcion']) === $buscada;
+    }));
+
+    return count($coinciden) === 1 ? $coinciden[0] : null;
 }
 
+// Deja una descripción comparable: sin tildes, sin mayúsculas y sin espacios de más. Los archivos
+// escriben el mismo producto como "MR100G PX18" o "MR 100G PX18" según quién lo exportó.
+function normalizarDescripcionProducto($texto) {
+    $texto = mb_strtolower(trim((string) $texto), 'UTF-8');
+    $texto = strtr($texto, ['á'=>'a', 'é'=>'e', 'í'=>'i', 'ó'=>'o', 'ú'=>'u', 'ñ'=>'n', 'ü'=>'u']);
+    return preg_replace('/\s+/', ' ', $texto);
+}
+
+/**
+ * La fila del maestro para una línea del Consolidado, o null.
+ *
+ * $sku y $descripcion son opcionales: las líneas importadas antes del 2026-09-11 no los tienen
+ * guardados, y sin ellos la búsqueda funciona igual que siempre —por EAN y por PLU— salvo que
+ * ahora, si esos códigos apuntan a más de un producto, devuelve null en vez de elegir uno.
+ */
+function productoDelMaestro(array $mapa, $ean, $plu, $sku = null, $descripcion = null) {
+    // 1. El SKU no admite dudas.
+    if (!empty($sku) && isset($mapa['sku'][$sku])) {
+        return $mapa['sku'][$sku];
+    }
+
+    // 2. El EAN, que es el código del producto y no el que le puso la cadena.
+    if (!empty($ean) && isset($mapa['ean'][$ean])) {
+        $producto = unicoProductoDe($mapa['ean'][$ean], $descripcion);
+        if ($producto !== null) {
+            return $producto;
+        }
+    }
+
+    // 3. El PLU.
+    if (!empty($plu) && isset($mapa['plu'][$plu])) {
+        return unicoProductoDe($mapa['plu'][$plu], $descripcion);
+    }
+
+    return null;
+}
 // Junta una línea agrupada del Consolidado con su producto del maestro y le calcula el desglose.
 // Lo usan por igual el Consolidado y Picking, para que las dos pantallas no puedan discrepar en
 // cuántas cajas es lo mismo.
+/**
+ * La condición SQL que reconoce una línea de un pedido del ÉXITO, para el alias de consolidado_lineas
+ * que se le pase. La usan Cajas por punto de venta y Órdenes de compra, que son solo del Éxito.
+ *
+ * Vive acá, en un solo lugar, porque estaba copiada en cuatro consultas y hubo que cambiarla el
+ * mismo día en las cuatro (2026-09-14, al sumar Farmatodo).
+ *
+ *   · Si la línea sabe quién compró (empresa_compradora), manda eso: es del Éxito si el comprador
+ *     dice "éxito". La comparación no distingue mayúsculas ni tildes (collation general_ci), así que
+ *     "ALMACENES EXITO S.A" y "Almacenes Éxito" valen igual.
+ *   · Si no lo sabe —todo lo importado antes de guardar el comprador—, se usa la regla de antes: un
+ *     CEDI cuyas tiendas traen EAN. Así lo que ya estaba cargado se sigue viendo exactamente igual.
+ */
+function condicionPedidoExito($alias = 'l') {
+    return "({$alias}.empresa_compradora LIKE '%exito%'
+             OR ({$alias}.empresa_compradora IS NULL
+                 AND EXISTS (SELECT 1 FROM consolidado_lineas x
+                             WHERE x.cedi = {$alias}.cedi
+                               AND x.ean_punto_venta IS NOT NULL AND x.ean_punto_venta <> '')))";
+}
+
 function decorarConMaestro(array $linea, array $mapa) {
-    $producto = productoDelMaestro($mapa, $linea['ean_item'] ?? null, $linea['plu'] ?? null);
+    $producto = productoDelMaestro(
+        $mapa,
+        $linea['ean_item'] ?? null,
+        $linea['plu'] ?? null,
+        $linea['sku_item'] ?? null,
+        $linea['descripcion_item'] ?? null
+    );
 
     $linea['sku']               = $producto['sku'] ?? null;
     $linea['descripcion']       = $producto['descripcion'] ?? null;
@@ -97,9 +182,9 @@ function decorarConMaestro(array $linea, array $mapa) {
     return $linea;
 }
 
-// La carga vigente: siempre la última importada. No hay pantalla para elegir entre cargas viejas
-// porque el archivo del día es la foto completa — mirar el de ayer al lado del de hoy solo sirve
-// para alistar lo que no era.
+// La última carga importada, sea cual sea su estado. Ya no es "el alcance de todo lo pendiente"
+// —eso ahora lo dan cargasActivas()— sino solo un dato de referencia: qué fue lo último que se
+// subió, para el aviso de "¿archivo repetido?" al importar y para mostrarlo en pantalla.
 function cargaVigente($pdo) {
     $stmt = $pdo->query(
         "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
@@ -110,16 +195,43 @@ function cargaVigente($pdo) {
     return $stmt->fetch() ?: null;
 }
 
-// Los CEDI que trae la carga. Salen del propio archivo y no de una lista fija: hoy vienen tres,
-// otro día pueden ser cuatro, y una lista escrita a mano dejaría el cuarto sin pantalla.
-function cedisDeLaCarga($pdo, $idCarga) {
-    $stmt = $pdo->prepare(
+/**
+ * Todas las cargas que todavía tienen alguna línea pendiente (despachado = 0), de la más nueva a
+ * la más vieja.
+ *
+ * Antes solo existía "la carga vigente" —la última— porque importar reemplazaba lo pendiente y
+ * nunca podía haber más de una activa. Ahora los archivos se acumulan (ver importarConsolidado en
+ * model_consolidados_import.php) y Picking/Consolidados muestran los pendientes de TODAS estas
+ * juntos, diferenciados por su fecha. Esta es la lista que arma esa cabecera ("3 archivos
+ * activos") y la que usan Picking/Consolidados para saber sobre qué cargas construir su consulta.
+ */
+function cargasActivas($pdo) {
+    return $pdo->query(
+        "SELECT c.id_carga, c.nombre_archivo, c.filas, c.fecha_carga, u.nombre_usuario
+         FROM consolidado_cargas c
+         LEFT JOIN usuarios u ON u.id_usuario = c.id_usuario
+         WHERE EXISTS (
+             SELECT 1 FROM consolidado_lineas l WHERE l.id_carga = c.id_carga AND l.despachado = 0
+         )
+         ORDER BY c.id_carga DESC"
+    )->fetchAll();
+}
+
+// Los CEDI que traen las cargas pendientes. Salen del propio archivo y no de una lista fija: hoy
+// vienen tres, otro día pueden ser cuatro, y una lista escrita a mano dejaría el cuarto sin
+// pantalla.
+//
+// Ya no se filtra por UNA carga (ver cargasActivas): un CEDI puede tener pendientes de varios
+// archivos a la vez, y acá se suman todos.
+//
+// despachado = 0: un CEDI cuyas entregas ya salieron todas no debe seguir ofreciéndose en el
+// filtro ni contando para "cuántos CEDI hay pendientes" — ya no queda nada pendiente ahí.
+function cedisPendientes($pdo) {
+    return $pdo->query(
         "SELECT cedi, COUNT(*) AS lineas, SUM(unidades) AS unidades
-         FROM consolidado_lineas WHERE id_carga = :carga
+         FROM consolidado_lineas WHERE despachado = 0
          GROUP BY cedi ORDER BY cedi"
-    );
-    $stmt->execute([':carga' => $idCarga]);
-    return $stmt->fetchAll();
+    )->fetchAll();
 }
 
 // Las líneas de producto que existen en el maestro, para el desplegable de filtro.
@@ -130,33 +242,57 @@ function lineasDelMaestro($pdo) {
     )->fetchAll(PDO::FETCH_COLUMN);
 }
 
+/**
+ * Agrega al WHERE el filtro por CEDI, sobre el alias l de consolidado_lineas.
+ *
+ *   · 'cedis' => [...]  varios, los tildados en la barra de selección de Consolidados;
+ *   · 'cedi'  => '...'  uno solo, el del desplegable de filtros o el botón de un grupo.
+ *
+ * Si vienen los dos manda la lista: es lo que la persona eligió a mano. Un marcador por CEDI y no
+ * los nombres pegados en el SQL: los nombres salen del archivo de la cadena y son texto libre.
+ */
+function filtroDeCedis(array $filtros, array &$where, array &$params) {
+    if (!empty($filtros['cedis']) && is_array($filtros['cedis'])) {
+        $marcas = [];
+        foreach (array_values($filtros['cedis']) as $i => $cedi) {
+            $marcas[] = ":cedi{$i}";
+            $params[":cedi{$i}"] = (string) $cedi;
+        }
+        $where[] = 'l.cedi IN (' . implode(', ', $marcas) . ')';
+    } elseif (!empty($filtros['cedi'])) {
+        $where[] = 'l.cedi = :cedi';
+        $params[':cedi'] = $filtros['cedi'];
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // EL CONSOLIDADO PARA EL ELEVADOR
 //
-// Una fila por CEDI y PLU, con las unidades de TODOS los puntos de venta de ese CEDI sumadas:
-// al elevador no le sirve saber a qué tienda va cada caja, sino cuántas cajas de cada producto
-// tiene que bajar para ese CEDI. El reparto por tienda es problema de Picking.
+// Una fila por CEDI y PLU, con las unidades de TODOS los puntos de venta de ese CEDI sumadas —y,
+// desde que los archivos se acumulan (ver importarConsolidado), de TODAS las cargas pendientes
+// también: al elevador no le importa si dos cajas del mismo producto vinieron en archivos
+// distintos, solo cuántas tiene que bajar en total para ese CEDI ahora mismo. El reparto por
+// tienda (y por fecha) es problema de Picking.
 //
-// $filtros acepta 'cedi', 'linea' y 'plu' (búsqueda por PLU, SKU o descripción).
+// $filtros acepta 'cedi' (o 'cedis', varios), 'linea' y 'plu' (búsqueda por PLU, SKU o descripción).
 // ---------------------------------------------------------------------------------------------
-function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
-    $where  = ['l.id_carga = :carga'];
-    $params = [':carga' => $idCarga];
+function consolidadoPorCedi($pdo, array $filtros = []) {
+    // despachado = 0 SIEMPRE: una entrega despachada ya salió de bodega, y no tiene que seguir
+    // apareciendo como pendiente ni acá ni en el PDF que se arma con esto mismo.
+    $where  = ['l.despachado = 0'];
+    $params = [];
 
     // Solo el CEDI se filtra en SQL: es una columna del propio Consolidado. La línea y la búsqueda
     // por descripción viven en el maestro, que se resuelve en PHP (ver mapaMaestro), así que se
     // aplican abajo sobre el resultado.
-    if (!empty($filtros['cedi'])) {
-        $where[] = 'l.cedi = :cedi';
-        $params[':cedi'] = $filtros['cedi'];
-    }
+    filtroDeCedis($filtros, $where, $params);
 
-    $sql = "SELECT l.cedi, l.plu, l.ean_item,
+    $sql = "SELECT l.cedi, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
                    SUM(l.unidades) AS unidades,
                    COUNT(DISTINCT l.punto_venta) AS puntos_venta
             FROM consolidado_lineas l
             WHERE " . implode(' AND ', $where) . "
-            GROUP BY l.cedi, l.plu, l.ean_item";
+            GROUP BY l.cedi, l.plu, l.ean_item, l.sku_item, l.descripcion_item";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -186,7 +322,14 @@ function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
         $porCedi[$fila['cedi']][] = $fila;
     }
 
-    // ORDEN: primero los productos que van a MÁS puntos de venta.
+    // ORDEN DE LOS CEDI: el que tiene MENOS productos primero, hacia abajo de menor a mayor
+    // (decidido con el usuario el 2026-09-08). Un CEDI con pocos productos es un consolidado
+    // chico que se resuelve rápido, y verlo primero deja lo grande —lo que va a tomar más
+    // tiempo— para cuando ya se calentó con lo fácil, en vez de tener que buscarlo entre CEDI
+    // ordenados alfabéticamente sin ninguna relación con cuánto trabajo representan.
+    uasort($porCedi, fn($a, $b) => count($a) <=> count($b));
+
+    // ORDEN DENTRO DE CADA CEDI: primero los productos que van a MÁS puntos de venta.
     //
     // Es el orden de trabajo del elevador: el producto que se reparte entre más tiendas es el que
     // más veces hay que tocar, así que conviene tenerlo bajado y a mano desde el principio. Los
@@ -195,7 +338,6 @@ function consolidadoPorCedi($pdo, $idCarga, array $filtros = []) {
     // A igual cantidad de tiendas manda el que mueve más unidades, y recién ahí el orden
     // alfabético — que no aporta nada operativo, pero hace que dos cargas del mismo archivo
     // salgan siempre en el mismo orden en vez de depender de cómo las devolvió la base.
-    ksort($porCedi);
     foreach ($porCedi as &$filas) {
         usort($filas, function ($a, $b) {
             $cmp = (int) $b['puntos_venta'] <=> (int) $a['puntos_venta'];
@@ -241,22 +383,206 @@ function totalesDelGrupo(array $filas) {
     return $totales;
 }
 
-// Cuántos productos distintos de la carga no se pueden convertir a cajas: o no están en el
-// maestro, o están pero sin unidades por caja. Es el número que decide si la pantalla muestra el
-// aviso de "falta cargar el maestro".
+// ---------------------------------------------------------------------------------------------
+// TODOS LOS PRODUCTOS EN UNA SOLA TABLA (2026-09-14)
 //
-// Se cuenta por PLU + EAN y no solo por PLU porque la resolución del maestro mira los dos.
-function pluSinMaestro($pdo, $idCarga) {
-    $stmt = $pdo->prepare(
-        "SELECT DISTINCT plu, ean_item FROM consolidado_lineas WHERE id_carga = :carga"
+// Lo que piden los CEDI elegidos, sumado por producto sin importar a cuál va: cuánto hay que tener
+// en total de cada cosa. Sale de consolidadoPorCedi() y no de una consulta propia, así los filtros y
+// la resolución del maestro son exactamente los mismos que en el consolidado interno.
+//
+// Se junta por el SKU del MAESTRO y no por PLU: el mismo producto llega con un PLU del Éxito y otro
+// de Farmatodo, y por PLU saldría dos veces. Una línea que no está en el maestro no tiene SKU con
+// qué juntarse y queda como su propia fila, con los códigos que trajo el archivo.
+//
+// Las cajas se recalculan sobre el TOTAL y no se suman las de cada CEDI, con el mismo criterio del
+// interno, que suma las unidades de las tiendas antes de dividir: sumando por CEDI, dos saldos de 10
+// en una paca de 20 darían 0 cajas y 20 saldos en vez de 1 caja.
+//
+// Devuelve ['filas' => [...], 'cedis' => [nombres]]. Las filas traen lo mismo que las del interno
+// (así sirven con totalesDelGrupo), con 'plu' juntando los PLU distintos y 'cedis' contando destinos.
+// ---------------------------------------------------------------------------------------------
+function productosDelConsolidado($pdo, array $filtros = []) {
+    $porCedi   = consolidadoPorCedi($pdo, $filtros);
+    $productos = [];
+
+    foreach ($porCedi as $cedi => $filas) {
+        foreach ($filas as $f) {
+            $clave = $f['sku'] !== null
+                ? 'S:' . $f['sku']
+                : 'L:' . implode('|', [$f['plu'], $f['ean_item'], $f['sku_item'], $f['descripcion_item']]);
+
+            if (!isset($productos[$clave])) {
+                $productos[$clave] = [
+                    'plus'              => [],
+                    'sku'               => $f['sku'],
+                    'descripcion'       => $f['descripcion'],
+                    'unidades_por_caja' => $f['unidades_por_caja'],
+                    'unidades'          => 0,
+                    'peso_kg'           => null,
+                    'destinos'          => [],
+                    'puntos_venta'      => 0,
+                ];
+            }
+
+            $p = &$productos[$clave];
+            if ($f['plu'] !== null && $f['plu'] !== '') { $p['plus'][$f['plu']] = true; }
+            $p['unidades']       += (int) $f['unidades'];
+            $p['puntos_venta']   += (int) $f['puntos_venta'];
+            $p['destinos'][$cedi] = true;
+            if ($f['peso_kg'] !== null) { $p['peso_kg'] = round((float) $p['peso_kg'] + (float) $f['peso_kg'], 2); }
+            unset($p);
+        }
+    }
+
+    $filas = [];
+    foreach ($productos as $p) {
+        $fila = [
+            'plu'          => implode(' / ', array_keys($p['plus'])),
+            'sku'          => $p['sku'],
+            'descripcion'  => $p['descripcion'],
+            'peso_kg'      => $p['peso_kg'],
+            'cedis'        => count($p['destinos']),
+            'puntos_venta' => $p['puntos_venta'],
+        ];
+        $filas[] = $fila + desglosarCajas($p['unidades'], $p['unidades_por_caja']);
+    }
+
+    // Primero lo que va a más CEDI, después lo que mueve más unidades: el mismo orden de trabajo que
+    // el interno (lo que más se reparte, a mano desde el principio).
+    usort($filas, function ($a, $b) {
+        return [$b['cedis'], $b['unidades'], (string) $a['descripcion']]
+           <=> [$a['cedis'], $a['unidades'], (string) $b['descripcion']];
+    });
+
+    return ['filas' => $filas, 'cedis' => array_keys($porCedi)];
+}
+
+// ---------------------------------------------------------------------------------------------
+// EL CONSOLIDADO EXTERNO: CEDI -> PUNTO DE VENTA -> PRODUCTOS
+//
+// Es el mismo pedido que el consolidado interno, mirado desde el otro lado. El interno junta todo
+// lo que va a un CEDI en un solo total por producto: es el papel del elevador, que baja de bodega
+// una sola vez lo que después se reparte. El externo lo abre por tienda, porque es lo que se
+// entrega —o se le muestra— a la cadena, y ahí a nadie le sirve saber que del CEDI salen 40 cajas
+// si no dice cuántas son de cada local.
+//
+// Devuelve: [cedi => ['puntos' => [punto_venta => ['filas' => [...], 'totales' => [...]]],
+//                     'totales' => [...]]]
+//
+// La estructura la arma este modelo y no la vista, por lo mismo que consolidadoPorCedi(): el PDF
+// necesita exactamente la misma agrupación y los mismos subtotales, y con la lógica repetida en
+// los dos lados terminarían discrepando el día que alguien toque uno solo.
+// ---------------------------------------------------------------------------------------------
+function consolidadoExternoPorCedi($pdo, array $filtros = []) {
+    $where  = ['l.despachado = 0'];
+    $params = [];
+
+    filtroDeCedis($filtros, $where, $params);
+
+    // El punto de venta entra al GROUP BY: acá cada fila es "este producto, para esta tienda", no
+    // "este producto en todo el CEDI" como en el interno. Las unidades por tienda son el dato del
+    // que cuelga todo lo demás.
+    $sql = "SELECT l.cedi, l.punto_venta, l.ean_punto_venta, l.direccion_punto_venta,
+                   l.orden_compra, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
+                   SUM(l.unidades) AS unidades
+            FROM consolidado_lineas l
+            WHERE " . implode(' AND ', $where) . "
+            GROUP BY l.cedi, l.punto_venta, l.ean_punto_venta, l.direccion_punto_venta,
+                     l.orden_compra, l.plu, l.ean_item, l.sku_item, l.descripcion_item";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    $mapa   = mapaMaestro($pdo);
+    $patron = isset($filtros['plu']) ? mb_strtolower(trim($filtros['plu'])) : '';
+
+    $porCedi = [];
+    foreach ($stmt as $fila) {
+        $fila = decorarConMaestro($fila, $mapa);
+
+        if (!empty($filtros['linea']) && $fila['linea'] !== $filtros['linea']) {
+            continue;
+        }
+
+        // La misma caja busca por PLU, por SKU o por descripción: quien la usa tiene un papel en
+        // la mano con uno de los tres y no tiene por qué saber cuál es.
+        if ($patron !== '') {
+            $donde = mb_strtolower(($fila['plu'] ?? '') . ' ' . ($fila['sku'] ?? '') . ' ' . ($fila['descripcion'] ?? ''));
+            if (mb_strpos($donde, $patron) === false) {
+                continue;
+            }
+        }
+
+        $porCedi[$fila['cedi']]['puntos'][$fila['punto_venta']]['filas'][] = $fila;
+    }
+
+    foreach ($porCedi as $cedi => &$datos) {
+        $todasLasFilas = [];
+
+        foreach ($datos['puntos'] as $punto => &$pv) {
+            // Dentro de una tienda, primero lo que más unidades lleva: es el orden en que conviene
+            // armar la estiba, lo pesado abajo.
+            usort($pv['filas'], function ($a, $b) {
+                return [(int) $b['unidades'], (string) $a['descripcion']]
+                   <=> [(int) $a['unidades'], (string) $b['descripcion']];
+            });
+
+            $pv['totales'] = totalesDelGrupo($pv['filas']);
+
+            // La orden de compra y el EAN de la tienda son los mismos en todas sus líneas; se
+            // suben al nivel del punto de venta para que el PDF no tenga que ir a buscarlos a la
+            // primera fila.
+            $pv['orden_compra']    = $pv['filas'][0]['orden_compra'] ?? null;
+            $pv['ean_punto_venta'] = $pv['filas'][0]['ean_punto_venta'] ?? null;
+            $pv['direccion']       = $pv['filas'][0]['direccion_punto_venta'] ?? null;
+
+            $todasLasFilas = array_merge($todasLasFilas, $pv['filas']);
+        }
+        unset($pv);
+
+        // Las tiendas, alfabéticas: acá no hay un orden de trabajo que respetar como en el
+        // interno —el externo se lee buscando una tienda concreta— y alfabético es donde el ojo
+        // la encuentra sin pensar.
+        ksort($datos['puntos']);
+
+        // El total del CEDI se calcula sobre TODAS las filas y no sumando los subtotales de cada
+        // tienda: 'productos' tiene que contar productos distintos del CEDI, y sumando subtotales
+        // un producto que va a ocho tiendas contaría ocho veces.
+        $datos['totales'] = totalesDelGrupo($todasLasFilas);
+        $datos['totales']['productos'] = count(array_unique(array_map(
+            fn($f) => ($f['sku'] ?? '') . '|' . ($f['plu'] ?? ''),
+            $todasLasFilas
+        )));
+        $datos['totales']['puntos_venta'] = count($datos['puntos']);
+    }
+    unset($datos);
+
+    // Mismo criterio que el interno: el CEDI con menos trabajo primero. Acá "menos trabajo" son
+    // menos tiendas que atender, que es lo que define el tamaño de este consolidado.
+    uasort($porCedi, fn($a, $b) => count($a['puntos']) <=> count($b['puntos']));
+
+    return $porCedi;
+}
+// Cuántos productos distintos de TODO lo pendiente no se pueden convertir a cajas: o no están en
+// el maestro, o están pero sin unidades por caja. Es el número que decide si la pantalla muestra
+// el aviso de "falta cargar el maestro".
+//
+// Se cuenta por PLU + EAN + SKU + descripción, que es exactamente lo que mira la resolución
+// del maestro: contar por menos campos juntaría en una sola cuenta dos productos que comparten
+// PLU y EAN pero son materiales distintos (ver productoDelMaestro).
+function pluSinMaestro($pdo) {
+    $stmt = $pdo->query(
+        "SELECT DISTINCT plu, ean_item, sku_item, descripcion_item
+          FROM consolidado_lineas WHERE despachado = 0"
     );
-    $stmt->execute([':carga' => $idCarga]);
 
     $mapa = mapaMaestro($pdo);
     $faltan = 0;
 
     foreach ($stmt as $fila) {
-        $producto = productoDelMaestro($mapa, $fila['ean_item'], $fila['plu']);
+        $producto = productoDelMaestro(
+            $mapa, $fila['ean_item'], $fila['plu'], $fila['sku_item'], $fila['descripcion_item']
+        );
         if ($producto === null || empty($producto['unidades_por_caja'])) {
             $faltan++;
         }

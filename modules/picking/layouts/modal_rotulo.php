@@ -45,9 +45,12 @@
                     <label for="rot-pv">Punto de venta</label>
                     <input type="text" id="rot-pv" maxlength="180" data-rotulo-campo>
                 </div>
+                <!-- El número de la tienda reemplazó a la orden de compra en el rótulo el
+                     2026-09-12: la orden ya va en la planilla, y en la caja lo que se busca es a qué
+                     tienda va. Se puede corregir acá si el archivo de la cadena no lo traía. -->
                 <div class="campo">
-                    <label for="rot-oc">Orden de compra</label>
-                    <input type="text" id="rot-oc" maxlength="40" data-rotulo-campo>
+                    <label for="rot-numero-pv">N° punto de venta</label>
+                    <input type="text" id="rot-numero-pv" maxlength="20" data-rotulo-campo>
                 </div>
                 <div class="campo campo-ancho">
                     <label for="rot-cedi">CEDI</label>
@@ -74,20 +77,44 @@
                 <div id="rotulo-aviso-saldos-texto"></div>
             </div>
 
+            <!-- Cómo salió el envío a la etiquetadora. Va acá adentro y no en un cartel flotante
+                 porque quien imprime está mirando la vista previa: el resultado tiene que
+                 aparecer al lado de lo que mandó a imprimir. -->
+            <div class="aviso" id="rotulo-aviso-impresion" hidden>
+                <i class="fa-solid fa-circle-info"></i>
+                <div id="rotulo-aviso-impresion-texto"></div>
+            </div>
+
             <div class="rotulos-previa" id="rotulos-previa"></div>
         </div>
 
         <div class="modal-pie">
             <button type="button" class="btn" data-cerrar>Cerrar</button>
-            <button type="button" class="btn btn-primario" id="btn-imprimir-rotulos">
-                <i class="fa-solid fa-print"></i> Imprimir
+
+            <!-- La descarga va por un formulario y no por fetch: así el navegador la trata como
+                 una descarga normal. El campo oculto lo llena scripts_picking.js justo antes de
+                 enviarlo, con la MISMA lista de rótulos que acaba de dibujar en la vista previa.
+
+                 Es el respaldo de la etiquetadora: sirve para guardar los rótulos o sacarlos en
+                 una impresora común si la TSC no está. El PDF ya trae la página de 100x40mm
+                 adentro, así que se abre y se imprime a tamaño real. -->
+            <form action="<?php echo BASE_URL; ?>/picking/acciones"
+                  method="POST" id="form-rotulos-pdf">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="rotulos_pdf">
+                <input type="hidden" name="rotulos" id="rotulos-pdf-datos">
+                <button type="submit" class="btn">
+                    <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+                </button>
+            </form>
+
+            <!-- El sistema le habla directo a la etiquetadora en su propio idioma (TSPL): la
+                 etiqueta sale sola, sin diálogo de impresión y sin nada que configurar en el
+                 equipo. Ver modules/historial/helper_rotulos_tspl.php. -->
+            <button type="button" class="btn btn-primario" id="btn-imprimir-etiquetadora">
+                <i class="fa-solid fa-tags"></i> Imprimir en la etiquetadora
             </button>
         </div>
 
     </div>
 </div>
-
-<!-- Adonde se mueven los rótulos para imprimir. Tiene que ser hijo DIRECTO de <body>: al imprimir
-     se oculta todo lo demás, y un elemento con un ancestro en display:none no se puede volver a
-     mostrar desde el descendiente. Ver el @media print de assets/css/partes/04-rotulo.css. -->
-<div id="area-impresion-rotulos" hidden></div>

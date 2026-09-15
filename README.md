@@ -114,6 +114,24 @@ luego hay al menos una caja. Es lo mínimo cierto, y el rótulo es editable para
 Hay un botón en cada nivel: el de la **fila del pedido** saca las 8 de una, y el de **cada
 producto** reimprime solo su tramo (las cajas 3 y 4 de 8, por ejemplo) sin volver a empezar en 1.
 
+### Trabajar con varios pedidos a la vez
+
+Cada fila lleva una casilla, y el encabezado de cada CEDI una de «todos» (uno por grupo y no uno
+global: se trabaja un CEDI a la vez). Con al menos uno tildado aparece abajo una barra flotante
+—abajo y no encima de la tabla porque con 97 entregas hay que scrollear— con tres acciones sobre
+**solo lo seleccionado**:
+
+| Acción | Qué hace |
+|---|---|
+| **Asignar personal** | Abre el mismo modal y asigna a todos los tildados de una |
+| **Rótulos** | Junta las etiquetas de todos en una sola impresión |
+| **Imprimir hojas** | Un único PDF con una hoja de alistamiento por pedido |
+
+En los rótulos masivos **cada pedido conserva su propia numeración** (`CAJ 1 DE 3` del uno,
+`CAJ 1 DE 8` del otro): son envíos a tiendas distintas y cada una cuenta las suyas. Lo que se junta
+es la impresión, no la numeración. Ahí el panel de edición se oculta, porque un solo juego de
+campos no puede representar a varios pedidos sin mentir sobre alguno.
+
 Todos los campos son **editables antes de imprimir**, incluida la cantidad, desde qué caja
 arranca y el total. Lo que se cambia ahí vale solo para esos rótulos: no toca el Consolidado ni el
 pedido SAP guardado. Por eso el botón nunca se deshabilita, ni siquiera cuando el sistema no pudo
@@ -200,8 +218,26 @@ venta), no del producto, y se escribe en todas sus líneas. Eliminar a alguien d
 `consolidado_lineas` **no guarda cajas ni saldos** a propósito: se calculan al consultar cruzando
 con el maestro. Guardadas, cargar el maestro después las dejaría en cero para siempre.
 
-Importar el Consolidado **reemplaza** lo anterior (el archivo del día es la foto entera del
-pedido). Importar el maestro **no**: hace UPSERT, porque se completa de a poco.
+Importar el Consolidado **reemplaza lo pendiente** (el archivo del día es la foto entera de lo que
+falta), pero **conserva para siempre lo que ya se despachó** — eso es el Historial de Pedidos, y no
+tiene por qué borrarse solo porque llegó el archivo de mañana. Importar el maestro **no** reemplaza
+nada: hace UPSERT, porque se completa de a poco.
+
+### Aviso de archivo repetido
+
+Si el Consolidado que se sube trae **exactamente la misma información** que el que ya está
+cargado, no se importa: se pregunta con un **Sí / No**. Reimportar reemplaza las líneas actuales y
+con ellas se pierden las asignaciones de personal ya hechas sobre ese pedido, así que rehacer sin
+querer el trabajo del día es un costo real.
+
+La comparación es del **contenido**, no del archivo: `consolidado_cargas.huella` guarda un SHA-256
+de los valores que se importan, con las líneas ordenadas. Dos exportaciones del mismo pedido tienen
+bytes distintos —cambia la fecha interna, la versión de Excel— pero la misma información, y
+comparar bytes no detectaría nada.
+
+Mientras se espera la respuesta, el archivo queda en `temp/` (con `.htaccess` que niega el acceso
+web): el archivo subido vive en el temporal de PHP y desaparece al terminar el request, así que sin
+guardarlo un «Sí» no tendría nada que importar. Se borra al contestar, y al empezar otra carga.
 
 ---
 

@@ -6,20 +6,45 @@
 
    Las medidas están en MILÍMETROS y no en px a propósito: esto termina en una impresora, y en
    papel un píxel no es una medida — depende del DPI con el que cada navegador decida imprimir.
-   En mm, el rótulo mide lo mismo salga de donde salga. */
+   En mm, el rótulo mide lo mismo salga de donde salga.
 
+   TAMAÑO: 100mm x 40mm exactos —el formato real de la impresora de etiquetas (decidido con el
+   usuario el 2026-09-08)—, no un mínimo que crece con el contenido como antes. Por eso el alto es
+   `height` fijo y no `min-height`, y por eso el diseño de acá es tan apretado: en 4cm de alto no
+   entra el rótulo anterior (encabezado con logo, cinco campos con etiqueta propia, contador
+   separado abajo). Lo que se sacrificó para que entre:
+     - El logo como IMAGEN: queda solo el nombre de la marca en texto, en el mismo renglón que el
+       contador de cajas.
+     - Las ETIQUETAS de cada campo ("Punto de venta", "Orden de compra"...): ya no hay una línea
+       aparte para el nombre del campo, el valor solo ya dice de qué se trata por su posición.
+     - "Cajas total" como campo propio: ese número ya está en "CAJ X DE total", no hace falta
+       repetirlo.
+     - Orden de compra y CEDI ahora comparten un solo renglón chico en vez de uno cada uno.
+   Lo que se conservó completo: el punto de venta (lo más importante para saber a qué caja
+   corresponde), el producto, y el código de barras a todo el ancho —más ancho que antes, de
+   hecho, porque ya no hay que dejarle sitio a una columna de campos al lado. */
+
+/* El rótulo mide lo mismo que el ÁREA QUE SE DIBUJA en la etiquetadora (ver ROTULO_DIBUJO_ANCHO_MM
+   en config/config.php), no lo que mide el sticker: los 2,5mm de diferencia por lado son aire al
+   filo del papel y no se ven en la etiqueta impresa.
+
+   TODAS las medidas de acá abajo son las mismas que usa el PDF (ver cssRotulosPdf en
+   modules/historial/helper_rotulos_pdf.php), y esa coincidencia no es estética: si la vista previa
+   fuera más holgada que el papel, mostraría entrando un texto que en la etiqueta real sale
+   cortado, que es exactamente lo que no puede hacer una vista previa. */
 .rotulo {
-    width: 100mm;
+    width: 95mm;
+    height: 95mm;
     /* flex-shrink: 0 porque en la vista previa el rótulo es un hijo flex y, por defecto, un hijo
        flex se encoge para caber. Encogido, la previa muestra un rótulo más chico que el que va a
        salir impreso —y con las barras más finas de lo que serán—, que es justo lo que no se
        quiere poder creer de una vista previa. */
     flex-shrink: 0;
-    min-height: 70mm;
-    padding: 7mm;
+    padding: 4mm;
     background: #ffffff;
     color: #000000;
-    border: 1.2mm solid #000000;
+    border: 0.8mm solid #000000;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     /* Se fija la tipografía en vez de heredarla: la hoja de la aplicación puede cambiar y el
@@ -27,93 +52,166 @@
     font-family: Arial, Helvetica, sans-serif;
 }
 
+/* --- Marca: logo + nombre, con línea divisoria --- */
+
 .rotulo-marca {
     display: flex;
     align-items: center;
     gap: 3mm;
-    padding-bottom: 3mm;
-    margin-bottom: 4mm;
+    padding-bottom: 1.5mm;
+    margin-bottom: 1.5mm;
     border-bottom: 0.6mm solid #000000;
+    flex-shrink: 0;
 }
 
 .rotulo-marca img {
-    width: 14mm;
-    height: auto;
+    width: 12mm;
+    height: 12mm;
 }
 
 .rotulo-marca span {
-    font-size: 3.4mm;
+    font-size: 4mm;
     font-weight: bold;
-    letter-spacing: 0.6mm;
+    letter-spacing: 0.5mm;
     text-transform: uppercase;
 }
 
+/* --- Los campos, cada uno con su etiqueta arriba --- */
+
+.rotulo-campos {
+    flex: 1;
+    min-height: 0;
+}
+
+/* 0,8mm, igual que el PDF: con 1,4mm los rótulos de nombres cortos no entraban en el papel (ver
+   el comentario de .rotulo-campo en cssRotulosPdf). */
 .rotulo-campo {
-    margin-bottom: 3.2mm;
+    margin-bottom: 0.8mm;
+}
+
+/* La etiqueta del campo DESTACADO: en negrita y en negro, no en el gris de las demás. Junto con
+   el valor grande, es lo que hace que el número del punto de venta se encuentre de un vistazo
+   entre los cinco renglones. */
+/* Con las DOS clases en el selector a propósito: .rotulo-etiqueta está escrita más abajo y, con el
+   mismo peso, su gris (#444) le ganaba a este negro. En pantalla la etiqueta salía gris y en el
+   PDF negra, y la vista previa tiene que ser igual al papel. */
+.rotulo-etiqueta.rotulo-etiqueta-fuerte {
+    font-size: 3.2mm;
+    font-weight: 700;
+    color: #000000;
 }
 
 .rotulo-etiqueta {
     display: block;
-    font-size: 2.8mm;
-    letter-spacing: 0.4mm;
+    font-size: 2.4mm;
+    line-height: 1.1;
+    letter-spacing: 0.3mm;
     text-transform: uppercase;
     color: #444444;
 }
 
+/* El cuerpo de letra NO se fija acá: lo calcula el JavaScript según cuán largo sea cada texto y lo
+   escribe en el style del elemento (ver cuerpoValor() en los scripts_*.js, que es la copia exacta
+   de cuerpoValorPdf() en PHP). Es el equivalente de lo que hace la etiquetadora eligiendo entre
+   sus fuentes de ancho fijo: primero achica la letra y recién si no alcanza recorta.
+
+   El nowrap es la razón de todo eso: si un valor largo se partiera en dos renglones, el rótulo
+   crecería de alto y el último campo quedaría cortado por el overflow —que fue justo lo que pasó
+   con el CEDI al volver a este diseño. */
 .rotulo-valor {
     display: block;
-    font-size: 5mm;
     font-weight: bold;
-    line-height: 1.2;
-    /* El nombre del punto de venta puede ser largo ("4212 - SUPER INTER EXPRESS Av SEXTA"): se
-       parte en dos renglones en vez de desbordar el borde del rótulo. */
-    overflow-wrap: anywhere;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-.rotulo-valor-grande {
-    font-size: 7mm;
+/* --- Formato Éxito (Cajas por punto de venta) --- */
+
+/* Con número de CEDI, la etiqueta "N° PUNTO DE VENTA" va del tamaño del nombre de la tienda, y a
+   la derecha del número —o de "Cajas total", si al lado del número no entra— va "CEDI: 149" en
+   grande. Qué renglón le toca lo decide cediVaAlLadoDelNumero(), la misma cuenta en PHP y en
+   assets/js/rotulo.js. Las medidas son las mismas del PDF (cssRotulosPdf). */
+.rotulo-con-cedi .rotulo-etiqueta-fuerte {
+    font-size: 4.5mm;
+    letter-spacing: 0.1mm;
 }
 
-/* El nombre del producto es el valor más largo del rótulo ("PLÁTANOS VERDES LIMA LIMÓN MR100G
-   PX24"): un punto menos de cuerpo evita que se coma tres renglones y empuje el código de barras
-   fuera de la etiqueta. */
-.rotulo-valor-producto {
-    font-size: 4.2mm;
-    line-height: 1.25;
+.rotulo-campo-cedi {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3mm;
+}
+
+/* min-width: 0 para que el nowrap del valor recorte adentro de su columna y no empuje al CEDI
+   fuera del rótulo: un hijo flex, por defecto, no se achica por debajo de su contenido. */
+.rotulo-campo-texto {
+    flex: 1;
+    min-width: 0;
+}
+
+.rotulo-cedi {
+    flex-shrink: 0;
+    font-size: 7.5mm;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 /* La numeración: es lo que mira el que descarga el camión para saber si llegó todo, así que va
    abajo, sola, y es lo más grande de la hoja. */
+/* Más chico que antes (era 7,5mm): con el número del punto de venta agrandado, dos textos
+   grandes competían entre sí y ninguno de los dos se leía primero. El que manda es el número. */
 .rotulo-conteo {
-    margin-top: auto;
-    padding-top: 4mm;
-    border-top: 0.6mm solid #000000;
+    flex: 1;
     text-align: center;
-    font-size: 9mm;
+    font-size: 8mm;
+    line-height: 1.05;
     font-weight: bold;
-    letter-spacing: 0.5mm;
+    letter-spacing: 0.4mm;
+    flex-shrink: 0;
+}
+
+/* --- Los dos códigos, lado a lado --- */
+
+/* El contador de cajas y el QR comparten el renglón del pie. El QR ocupaba antes media fila al
+   lado del código de barras; al sacar ese código (2026-09-12) se agrandó y subió acá, porque
+   cuanto más grande, de más lejos lo engancha el celular. */
+.rotulo-pie {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4mm;
+    padding-top: 2mm;
+    border-top: 0.6mm solid #000000;
+    flex-shrink: 0;
+}
+
+/* El cuadrado del QR no se deforma nunca: un QR estirado no lo lee ningún celular. */
+.rotulo-qr {
+    width: 13mm;
+    height: 13mm;
+    flex-shrink: 0;
+    display: block;
 }
 
 /* --- Código de barras --- */
 
-/* Los márgenes negativos cancelan parte del padding de 7 mm del rótulo, para que el código use
-   94 mm en vez de 86. No es cosmética: con un identificador de 32 caracteres, esos 8 mm de más
-   engordan cada barra de 0,28 a 0,30 mm, y el grosor de la barra más fina es exactamente lo que
-   decide si el lector engancha a la primera o hay que pasarlo tres veces. Quedan 3 mm a cada
-   lado como zona muda, que el estándar exige para que el lector sepa dónde empieza el código. */
 .rotulo-codigo {
-    margin: 3mm -4mm 0;
-    padding: 0 3mm;
+    margin-top: 1.5mm;
     text-align: center;
+    flex-shrink: 0;
 }
 
-/* Altura fija en mm y no en porcentaje: un código de barras se mide en milímetros, no en
-   píxeles. El estirado vertical no afecta la lectura — lo que codifica un Code 128 son los
-   anchos, y esos se escalan todos por igual. */
+/* Altura fija en mm y no en porcentaje: un código de barras se mide en milímetros, no en píxeles.
+   El estirado vertical no afecta la lectura —lo que codifica un Code 128 son los anchos, y esos se
+   escalan todos por igual— pero un código alto es mucho más fácil de enganchar con la pistola sin
+   tener que apuntar fino. */
 .rotulo-codigo img {
     display: block;
     width: 100%;
-    height: 14mm;
+    height: 12mm;
     margin: 0 auto;
 }
 
@@ -122,12 +220,14 @@
    tipografía proporcional un 1 y una l se confunden. */
 .rotulo-codigo-texto {
     display: block;
-    margin-top: 1mm;
+    margin-top: 0.6mm;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 3.2mm;
-    letter-spacing: 0.3mm;
+    font-size: 2.8mm;
+    line-height: 1.1;
+    letter-spacing: 0.2mm;
+    white-space: nowrap;
+    overflow: hidden;
 }
-
 /* --- Panel de edición (solo en pantalla) --- */
 
 /* Los campos que se pueden ajustar antes de imprimir. En grilla y no en una fila: son cinco y
@@ -141,6 +241,13 @@
     background: var(--crema);
     border: 1px solid var(--borde);
     border-radius: 12px;
+}
+
+/* Sin esto, el display:grid de arriba le gana al display:none que el navegador aplica a [hidden],
+   y el panel "oculto" se seguiría viendo. Pasa al imprimir los rótulos de varios pedidos, donde el
+   panel se esconde porque sus campos no pueden representar a todos. */
+.rotulo-controles[hidden] {
+    display: none;
 }
 
 .rotulo-controles .campo {
@@ -198,40 +305,4 @@
     justify-content: center;
     overflow-x: auto;
     padding-bottom: 4px;
-}
-
-/* --- Impresión --- */
-
-@media print {
-    /* Se oculta TODO y después se vuelve a mostrar solo el área de impresión. Es al revés de lo
-       que parece natural (ocultar "lo que sobra"), pero es la única forma que no se rompe cuando
-       la pantalla gana un elemento nuevo que nadie se acordó de agregar a la lista de ocultos. */
-    body.imprimiendo-rotulos > * {
-        display: none !important;
-    }
-
-    body.imprimiendo-rotulos > #area-impresion-rotulos {
-        display: block !important;
-    }
-
-    body.imprimiendo-rotulos {
-        background: #ffffff;
-    }
-
-    #area-impresion-rotulos .rotulo {
-        /* Uno por hoja: pegar dos rótulos cortados a la mitad no le sirve a nadie. El último no
-           lleva salto, para no imprimir una página en blanco al final. */
-        page-break-after: always;
-        break-after: page;
-        margin: 0;
-    }
-
-    #area-impresion-rotulos .rotulo:last-child {
-        page-break-after: auto;
-        break-after: auto;
-    }
-
-    @page {
-        margin: 8mm;
-    }
 }

@@ -3,3 +3,5 @@ backups/
 .vscode/
 *.zip
 vendor/
+temp/*
+!temp/.htaccess

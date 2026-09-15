@@ -11,6 +11,100 @@
     if (!contenedor) { return; }
 
     // =============================================================================
+    // SELECCIÓN DE VARIOS PEDIDOS
+    //
+    // Las casillas de cada fila alimentan la barra de acciones de abajo. Todo por delegación:
+    // las tablas viven dentro de un <details> y pueden no existir cuando corre este script.
+    // =============================================================================
+
+    var barra        = document.getElementById('barra-seleccion');
+    var barraConteo  = document.getElementById('barra-conteo');
+    var camposPdf    = document.getElementById('campos-pdf-masivo');
+    var formPdf      = document.getElementById('form-pdf-masivo');
+
+    function pedidosSeleccionados() {
+        return [].slice.call(contenedor.querySelectorAll('.chk-pedido:checked'));
+    }
+
+    // La fila tildada se resalta: con el detalle de un pedido abierto entre medio, la casilla
+    // sola queda lejos y no se ve qué está seleccionado.
+    function refrescarSeleccion() {
+        var marcadas = pedidosSeleccionados();
+
+        contenedor.querySelectorAll('.chk-pedido').forEach(function (chk) {
+            chk.closest('.fila-pedido').classList.toggle('fila-seleccionada', chk.checked);
+        });
+
+        // Cada "todos" refleja el estado de SU tabla: marcado si están todas, indeterminado si
+        // hay algunas. Sin el indeterminado, con tres de veinte tildadas el encabezado se vería
+        // igual que con ninguna.
+        contenedor.querySelectorAll('.chk-todos').forEach(function (todos) {
+            var tabla = todos.closest('table');
+            var enTabla = [].slice.call(tabla.querySelectorAll('.chk-pedido'));
+            var tildadas = enTabla.filter(function (c) { return c.checked; }).length;
+
+            todos.checked = enTabla.length > 0 && tildadas === enTabla.length;
+            todos.indeterminate = tildadas > 0 && tildadas < enTabla.length;
+        });
+
+        if (!barra) { return; }
+
+        barra.hidden = marcadas.length === 0;
+        barraConteo.textContent = marcadas.length;
+
+        // Los campos ocultos del formulario de descarga se rehacen en cada cambio: así el POST
+        // siempre lleva exactamente lo que está tildado ahora. 'carga' es nuevo: antes todo el
+        // lote era de la única carga vigente, y ahora cada pedido puede ser de una distinta.
+        camposPdf.innerHTML = '';
+        marcadas.forEach(function (chk) {
+            ['carga', 'cedi', 'oc', 'pv'].forEach(function (campo) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = campo + '[]';
+                input.value = chk.dataset[campo];
+                camposPdf.appendChild(input);
+            });
+        });
+    }
+
+    contenedor.addEventListener('change', function (e) {
+        if (e.target.classList.contains('chk-pedido')) {
+            refrescarSeleccion();
+            return;
+        }
+
+        if (e.target.classList.contains('chk-todos')) {
+            var tabla = e.target.closest('table');
+            tabla.querySelectorAll('.chk-pedido').forEach(function (chk) {
+                chk.checked = e.target.checked;
+            });
+            refrescarSeleccion();
+        }
+    });
+
+    // Un clic en la casilla no debe abrir ni cerrar el detalle del pedido, ni el <details> del
+    // CEDI cuando es la del encabezado.
+    contenedor.addEventListener('click', function (e) {
+        if (e.target.classList.contains('chk-pedido') || e.target.classList.contains('chk-todos')) {
+            e.stopPropagation();
+        }
+    });
+
+    document.getElementById('btn-limpiar-seleccion')?.addEventListener('click', function () {
+        contenedor.querySelectorAll('.chk-pedido, .chk-todos').forEach(function (chk) {
+            chk.checked = false;
+            chk.indeterminate = false;
+        });
+        refrescarSeleccion();
+    });
+
+    // Enviar el formulario vacío descargaría un PDF sin hojas; no debería poder pasar, pero la
+    // barra se muestra y se oculta por JS y una condición de carrera dejaría el botón activo.
+    formPdf?.addEventListener('submit', function (e) {
+        if (pedidosSeleccionados().length === 0) { e.preventDefault(); }
+    });
+
+    // =============================================================================
     // ASIGNAR PERSONAL
     //
     // La asignación es de la ENTREGA, no del producto: quien alista arma la tienda completa. Por
@@ -23,43 +117,72 @@
     var textoEntrega   = document.getElementById('asignar-entrega');
     var botonGuardar   = document.getElementById('btn-guardar-asignacion');
 
-    // Qué botón —y por lo tanto qué entrega— abrió el modal. Se guarda para poder actualizar ese
-    // mismo botón cuando el servidor confirme, sin volver a buscarlo por selector.
-    var botonEnCurso = null;
+    // Qué entregas está tocando el modal. Siempre una lista, aunque venga una sola: así guardar
+    // es el mismo camino se haya abierto desde la fila o desde la barra de selección.
+    var entregasEnCurso = [];
 
-    contenedor.addEventListener('click', function (e) {
-        var boton = e.target.closest('.btn-asignar');
-        if (!boton || !modalAsignar) { return; }
+    // El botón "Asignar personal" de una fila, buscado por su clave de entrega. Se usa para
+    // actualizar en pantalla lo que el servidor confirmó.
+    function botonAsignarDe(clave) {
+        return contenedor.querySelector('.btn-asignar[data-entrega="' + CSS.escape(clave) + '"]');
+    }
 
-        botonEnCurso = boton;
+    function abrirModalAsignar(entregas, titulo, idPersonalActual) {
+        if (!modalAsignar || !entregas.length) { return; }
 
-        textoEntrega.textContent = boton.dataset.pv + ' · O/C ' + boton.dataset.oc;
+        entregasEnCurso = entregas;
+        textoEntrega.textContent = titulo;
+
         if (selectPersona) {
-            // El 0 del data- significa "sin asignar", y en el <select> eso es la opción vacía.
-            var actual = boton.dataset.idPersonal;
-            selectPersona.value = (actual && actual !== '0') ? actual : '';
+            // Con varias entregas se arranca en blanco: si tienen asignados distintos, precargar
+            // el de una sería decir que todas están así.
+            selectPersona.value = idPersonalActual || '';
         }
 
         modalAsignar.classList.add('active');
+    }
+
+    // Desde la fila: una sola entrega, con su asignado actual precargado.
+    contenedor.addEventListener('click', function (e) {
+        var boton = e.target.closest('.btn-asignar');
+        if (!boton) { return; }
+
+        var actual = boton.dataset.idPersonal;
+        abrirModalAsignar(
+            [{ carga: boton.dataset.carga, cedi: boton.dataset.cedi, orden_compra: boton.dataset.oc, punto_venta: boton.dataset.pv }],
+            boton.dataset.pv + ' · O/C ' + boton.dataset.oc,
+            (actual && actual !== '0') ? actual : ''
+        );
+    });
+
+    // Desde la barra: todas las tildadas.
+    document.getElementById('btn-asignar-masivo')?.addEventListener('click', function () {
+        var marcadas = pedidosSeleccionados();
+        if (!marcadas.length) { return; }
+
+        abrirModalAsignar(
+            marcadas.map(function (chk) {
+                return { carga: chk.dataset.carga, cedi: chk.dataset.cedi, orden_compra: chk.dataset.oc, punto_venta: chk.dataset.pv };
+            }),
+            marcadas.length + ' pedido(s) seleccionado(s)',
+            ''
+        );
     });
 
     if (botonGuardar) {
         botonGuardar.addEventListener('click', function () {
-            if (!botonEnCurso) { return; }
+            if (!entregasEnCurso.length) { return; }
 
-            var boton = botonEnCurso;
             botonGuardar.disabled = true;   // sin esto, dos clics mandan dos peticiones
 
-            fetch(BASE_URL + '/modules/picking/controller_picking.php', {
+            fetch(BASE_URL + '/picking/acciones', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    accion:       'asignar_personal',
-                    csrf_token:   CSRF_TOKEN,
-                    cedi:         boton.dataset.cedi,
-                    orden_compra: boton.dataset.oc,
-                    punto_venta:  boton.dataset.pv,
-                    id_personal:  selectPersona.value
+                    accion:      'asignar_personal',
+                    csrf_token:  CSRF_TOKEN,
+                    entregas:    entregasEnCurso,
+                    id_personal: selectPersona.value
                 })
             })
             .then(function (r) { return r.json(); })
@@ -71,17 +194,24 @@
 
                 var asignado = !!datos.id_personal;
 
-                boton.dataset.idPersonal = asignado ? String(datos.id_personal) : '0';
-                boton.querySelector('.texto-asignado').textContent = asignado ? datos.nombre : 'Sin asignar';
-                boton.classList.toggle('btn-sin-asignar', !asignado);
-                boton.querySelector('i').className = asignado
-                    ? 'fa-solid fa-user-check'
-                    : 'fa-solid fa-user-plus';
+                // Se recorren las claves que devolvió el SERVIDOR, no las que se mandaron: si
+                // alguna no se pudo guardar, su botón no debe quedar diciendo que sí.
+                (datos.grupos || []).forEach(function (clave) {
+                    var boton = botonAsignarDe(clave);
+                    if (!boton) { return; }
 
-                // Verde un momento: confirma que ESA fila quedó guardada, cosa que cerrar el modal
-                // sin más no dice.
-                boton.classList.add('guardado');
-                setTimeout(function () { boton.classList.remove('guardado'); }, 1500);
+                    boton.dataset.idPersonal = asignado ? String(datos.id_personal) : '0';
+                    boton.querySelector('.texto-asignado').textContent = asignado ? datos.nombre : 'Sin asignar';
+                    boton.classList.toggle('btn-sin-asignar', !asignado);
+                    boton.querySelector('i').className = asignado
+                        ? 'fa-solid fa-user-check'
+                        : 'fa-solid fa-user-plus';
+
+                    // Verde un momento: confirma qué filas quedaron guardadas, cosa que cerrar el
+                    // modal sin más no dice.
+                    boton.classList.add('guardado');
+                    setTimeout(function () { boton.classList.remove('guardado'); }, 1500);
+                });
 
                 modalAsignar.classList.remove('active');
             })
@@ -99,10 +229,6 @@
     //
     // Cada pedido de la tabla tiene debajo una <tr> oculta con sus productos. El botón de la
     // primera columna la muestra u oculta.
-    //
-    // Se usa el atributo `hidden` y no style.display: así el estado se lee del propio HTML —y
-    // cualquiera que inspeccione la fila entiende por qué no se ve— en vez de quedar escondido en
-    // un estilo en línea.
     // =============================================================================
 
     contenedor.addEventListener('click', function (e) {
@@ -123,6 +249,195 @@
     });
 
     // =============================================================================
+    // DESPACHAR PEDIDOS
+    //
+    // Marca una o varias entregas como despachadas: desde ese momento desaparecen de Picking y
+    // también de Consolidados, porque las dos pantallas leen la misma columna `despachado` de
+    // la base (ver filasPicking() y consolidadoPorCedi()).
+    //
+    // El chequeo de "¿todos tienen personal?" se hace ACÁ para dar el aviso al instante, sin ir
+    // al servidor cuando ya se sabe que falta alguno — pero el servidor lo vuelve a comprobar
+    // por su cuenta (ver despacharEntregas() en model_picking.php) antes de tocar la base. La
+    // pantalla puede llevar un rato abierta; confiar solo en lo que el navegador cree que hay
+    // asignado dejaría despachar con datos que ya cambiaron.
+    // =============================================================================
+
+    // Arma {carga, cedi, orden_compra, punto_venta} a partir de cualquier elemento que lleve esos
+    // cuatro data- (el checkbox de la fila, el propio botón de despachar...). 'carga' es
+    // obligatorio ahora: cedi+oc+pv ya no alcanzan para identificar la entrega si hay más de una
+    // carga pendiente con esos mismos tres datos.
+    function datosDeEntrega(el) {
+        return { carga: el.dataset.carga, cedi: el.dataset.cedi, orden_compra: el.dataset.oc, punto_venta: el.dataset.pv };
+    }
+
+    // Si la fila tiene personal asignado. Se lee del botón "Asignar personal" de esa misma fila
+    // —la única fuente de verdad en pantalla— y no de un data- propio en el botón de despachar,
+    // que quedaría desactualizado si se reasigna sin recargar la página.
+    function filaTienePersonal(fila) {
+        var boton = fila && fila.querySelector('.btn-asignar');
+        return !!(boton && boton.dataset.idPersonal && boton.dataset.idPersonal !== '0');
+    }
+
+    function enviarDespacho(pedidos, callback) {
+        fetch(BASE_URL + '/picking/acciones', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accion: 'despachar_pedidos', csrf_token: CSRF_TOKEN, pedidos: pedidos })
+        })
+        .then(function (r) { return r.json(); })
+        .then(callback)
+        .catch(function () {
+            callback({ exito: false, error: 'No se pudo conectar con el servidor para despachar.' });
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // EL MODAL DE DESPACHAR
+    //
+    // Uno solo para las dos situaciones posibles —"¿confirmás?" y "no se puede todavía"—, con el
+    // mismo aspecto que el resto del sistema en vez del cuadro nativo del navegador (que ni
+    // siquiera se puede reconocer como parte de esta pantalla, y que en la captura que mandó el
+    // usuario aparecía como "localhost dice").
+    //
+    // Se arma con el DOM y no con innerHTML de punta a punta porque los botones necesitan sus
+    // propios listeners (Despachar, Cerrar, "Asignar ahora"), y crear el HTML como texto
+    // obligaría a usar atributos onclick en línea.
+    // -----------------------------------------------------------------------
+
+    var modalDespachar  = document.getElementById('modal-despachar');
+    var despacharTitulo = document.getElementById('despachar-titulo');
+    var despacharCuerpo = document.getElementById('despachar-cuerpo');
+    var despacharPie    = document.getElementById('despachar-pie');
+
+    function botonModal(texto, clase, icono) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = clase;
+        b.innerHTML = (icono ? '<i class="fa-solid ' + icono + '"></i> ' : '') + esc(texto);
+        return b;
+    }
+
+    // Modo "no se puede": lista los pedidos a los que les falta personal, con un atajo que abre
+    // el modal de asignación directamente sobre esos mismos pedidos —así la condición que falta
+    // se puede resolver ahí mismo, sin ir a buscar cada fila una por una.
+    //
+    // `paraAsignar` puede venir vacío (pasa cuando la lista sale de la respuesta del servidor tras
+    // un intento de confirmar, que no manda el CEDI de cada pedido): ahí se omite el atajo y
+    // queda solo el aviso, porque sin el CEDI no se puede armar la asignación.
+    function mostrarDespachoBloqueado(pendientes, paraAsignar) {
+        despacharTitulo.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> No se puede despachar todavía';
+
+        var items = pendientes.map(function (p) {
+            return '<li>' + esc(p.punto_venta) + ' <span class="sin-dato">· O/C ' + esc(p.orden_compra) + '</span></li>';
+        }).join('');
+
+        despacharCuerpo.innerHTML =
+            '<div class="aviso aviso-atencion" style="margin-bottom:0;">' +
+            '<i class="fa-solid fa-triangle-exclamation"></i>' +
+            '<div>' +
+            '<strong>' + pendientes.length + ' pedido(s) sin personal asignado.</strong> ' +
+            'Se le tiene que asignar alguien a cada uno antes de poder despacharlos.' +
+            '<ul class="lista-pendientes">' + items + '</ul>' +
+            '</div></div>';
+
+        despacharPie.innerHTML = '';
+        var btnCerrar = botonModal('Cerrar', 'btn');
+        btnCerrar.addEventListener('click', function () { modalDespachar.classList.remove('active'); });
+        despacharPie.appendChild(btnCerrar);
+
+        if (paraAsignar && paraAsignar.length) {
+            var btnAsignar = botonModal('Asignar ahora', 'btn btn-primario', 'fa-user-plus');
+            btnAsignar.addEventListener('click', function () {
+                modalDespachar.classList.remove('active');
+                abrirModalAsignar(paraAsignar, pendientes.length + ' pedido(s) sin asignar', '');
+            });
+            despacharPie.appendChild(btnAsignar);
+        }
+
+        modalDespachar.classList.add('active');
+    }
+
+    // Modo "¿confirmás?": la pregunta y, al aceptar, `onConfirmar` hace el envío. Si el servidor
+    // responde que ya no se puede (alguien más quitó una asignación mientras el modal estaba
+    // abierto), el mismo modal cambia al modo bloqueado en vez de cerrarse con un error suelto.
+    function mostrarDespachoConfirmar(pedidos, descripcion) {
+        despacharTitulo.textContent = pedidos.length === 1 ? 'Despachar pedido' : 'Despachar pedidos';
+
+        despacharCuerpo.innerHTML =
+            '<p class="confirmar-pregunta">¿Despachar ' + esc(descripcion) + '?</p>' +
+            '<div class="aviso aviso-info" style="margin-bottom:0;">' +
+            '<i class="fa-solid fa-circle-info"></i>' +
+            '<div>Desaparece' + (pedidos.length === 1 ? '' : 'n') + ' de Picking y de Consolidados. '
+            + 'No se puede deshacer desde acá.</div></div>';
+
+        despacharPie.innerHTML = '';
+        var btnCancelar = botonModal('Cancelar', 'btn');
+        var btnConfirmar = botonModal('Despachar', 'btn btn-primario', 'fa-truck-fast');
+
+        btnCancelar.addEventListener('click', function () { modalDespachar.classList.remove('active'); });
+
+        btnConfirmar.addEventListener('click', function () {
+            btnConfirmar.disabled = true;
+            btnCancelar.disabled = true;
+
+            enviarDespacho(pedidos, function (datos) {
+                if (!datos.exito) {
+                    // Los pedidos que manda el servidor acá NO traen cedi, así que no hay con qué
+                    // armar el atajo "Asignar ahora" — se muestra solo la lista.
+                    mostrarDespachoBloqueado(datos.sin_personal && datos.sin_personal.length
+                        ? datos.sin_personal
+                        : pedidos);
+                    return;
+                }
+                window.location.reload();
+            });
+        });
+
+        despacharPie.appendChild(btnCancelar);
+        despacharPie.appendChild(btnConfirmar);
+        modalDespachar.classList.add('active');
+    }
+
+    // Un solo pedido, desde el botón de su fila.
+    contenedor.addEventListener('click', function (e) {
+        var boton = e.target.closest('.btn-despachar');
+        if (!boton || !modalDespachar) { return; }
+
+        var fila = boton.closest('.fila-pedido');
+        var entrega = datosDeEntrega(boton);
+
+        if (!filaTienePersonal(fila)) {
+            mostrarDespachoBloqueado([entrega], [entrega]);
+            return;
+        }
+
+        mostrarDespachoConfirmar([entrega], 'el pedido de ' + boton.dataset.pv);
+    });
+
+    // Varios pedidos de una, desde la barra de selección.
+    document.getElementById('btn-despachar-masivo')?.addEventListener('click', function () {
+        if (!modalDespachar) { return; }
+
+        var marcadas = pedidosSeleccionados();
+        if (!marcadas.length) { return; }
+
+        var sinAsignar = [];
+        var todas = [];
+        marcadas.forEach(function (chk) {
+            var entrega = datosDeEntrega(chk);
+            todas.push(entrega);
+            if (!filaTienePersonal(chk.closest('.fila-pedido'))) { sinAsignar.push(entrega); }
+        });
+
+        if (sinAsignar.length) {
+            mostrarDespachoBloqueado(sinAsignar, sinAsignar);
+            return;
+        }
+
+        mostrarDespachoConfirmar(todas, 'los ' + todas.length + ' pedido(s) seleccionados');
+    });
+
+    // =============================================================================
     // RÓTULOS
     // =============================================================================
 
@@ -131,7 +446,6 @@
     var detalle = document.getElementById('rotulo-titulo-detalle');
     var avisoSaldos = document.getElementById('rotulo-aviso-saldos');
     var avisoSaldosTexto = document.getElementById('rotulo-aviso-saldos-texto');
-    var areaImpresion = document.getElementById('area-impresion-rotulos');
 
     function esc(texto) {
         var div = document.createElement('div');
@@ -139,175 +453,94 @@
         return div.innerHTML;
     }
 
-    // El identificador de UNA caja, que es lo que va dentro del código de barras:
-    //
-    //     orden de compra - EAN de la tienda - número de caja
-    //
-    // Los tres alcanzan para que sea único porque la numeración es CORRIDA sobre el pedido: la
-    // caja 3 de un pedido es una sola, sin importar qué producto lleve adentro. Antes el
-    // identificador incluía además el SKU, y hacía falta: con cada producto numerando desde 1, la
-    // "caja 1" de un pedido podían ser tres cajas distintas. Al pasar a numeración corrida ese
-    // dato dejó de aportar, y sacarlo acorta el código de 32 a 26 caracteres — barras más gruesas
-    // en el mismo ancho de rótulo, que es lo que hace que el lector enganche a la primera.
-    //
-    // La tienda va por su EAN y no por el código del nombre. El nombre NO sirve como fuente: de
-    // las 69 tiendas del archivo, 14 no llevan el código adelante ("TURBO CARULLA LIMONAR-4845")
-    // y alguna no lo tiene en ninguna parte ("Carulla La Maria"). El EAN está siempre y es
-    // inequívoco. Si falta —no debería—, se cae al nombre limpio antes que generar un código
-    // ambiguo.
-    function identificadorDeCaja(datos, numero) {
-        var tienda = datos.eanPv && datos.eanPv !== ''
-            ? datos.eanPv
-            : datos.pv;
+    // El rótulo se dibuja con assets/js/rotulo.js, el mismo archivo para las cuatro pantallas que
+    // lo muestran. Hasta el 2026-09-14 había acá una copia propia de htmlRotulo(), y quedó con el
+    // diseño viejo cuando el rótulo cambió: el "CAJ 1 DE 3" salía encima del producto.
 
-        return [datos.oc, tienda, numero]
-            .map(function (parte) { return String(parte).replace(/[^A-Za-z0-9]/g, ''); })
-            .join('-');
-    }
-
-    // Un rótulo: punto de venta, orden de compra, cajas totales, producto, CEDI y la numeración.
-    //
-    // `producto` llega por etiqueta y no en `datos` porque al imprimir el pedido entero cada caja
-    // lleva uno distinto.
-    function htmlRotulo(datos, numero, total, producto) {
-        var nombreProducto = producto && producto.trim() !== ''
-            ? esc(producto)
-            // Se imprime el hueco en vez de dejar el renglón afuera: el rótulo se pega igual y
-            // alguien tiene que poder escribirlo a mano.
-            : '<span style="color:#888">_______________</span>';
-
-        var idCaja = identificadorDeCaja(datos, numero);
-        var urlCodigo = BASE_URL + '/modules/picking/controller_picking.php?accion=codigo_barras&texto='
-                      + encodeURIComponent(idCaja);
-
-        return ''
-            + '<div class="rotulo">'
-            +   '<div class="rotulo-marca">'
-            +     '<img src="' + LOGO_URL + '" alt="">'
-            +     '<span>Monterojo Gourmet</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Punto de venta</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.pv) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Orden de compra</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.oc) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Cajas total</span>'
-            +     '<span class="rotulo-valor">' + total + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">Producto</span>'
-            +     '<span class="rotulo-valor rotulo-valor-producto">' + nombreProducto + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-campo">'
-            +     '<span class="rotulo-etiqueta">CEDI</span>'
-            +     '<span class="rotulo-valor">' + esc(datos.cedi) + '</span>'
-            +   '</div>'
-            +   '<div class="rotulo-conteo">CAJ ' + numero + ' DE ' + total + '</div>'
-            // El mismo identificador va en barras y en texto debajo: si el lector no engancha
-            // —etiqueta arrugada, mal impresa—, alguien tiene que poder teclearlo.
-            +   '<div class="rotulo-codigo">'
-            +     '<img src="' + urlCodigo + '" alt="Código de barras ' + esc(idCaja) + '">'
-            +     '<span class="rotulo-codigo-texto">' + esc(idCaja) + '</span>'
-            +   '</div>'
-            + '</div>';
-    }
-
-    // Los campos editables del modal. Se leen de acá y no del botón que lo abrió, para que
-    // dibujar los rótulos sea siempre lo mismo: lo que haya en pantalla es lo que se imprime.
     var campos = {
         cantidad: document.getElementById('rot-cantidad'),
         desde:    document.getElementById('rot-desde'),
         total:    document.getElementById('rot-total'),
         pv:       document.getElementById('rot-pv'),
-        oc:       document.getElementById('rot-oc'),
+        numeroPv: document.getElementById('rot-numero-pv'),
         cedi:     document.getElementById('rot-cedi'),
         producto: document.getElementById('rot-producto')
     };
 
-    // El EAN de la tienda no se edita: es con lo que se arma el código de barras, y dejarlo
-    // escribir a mano abriría la puerta a rótulos con un código que no corresponde a nada. Se
-    // guarda del botón que abrió el modal.
-    var identificadores = { eanPv: '' };
+    // Lo que viene del botón y no tiene campo propio en el panel. La orden de compra ya no se
+    // imprime, pero sigue viajando con la lista.
+    var identificadores = { eanPv: '', oc: '' };
 
-    // Qué producto va en cada caja: [{n: 2, producto: 'PAPAS BBQ DULCE...'}, ...] en el orden de
-    // la numeración. Al abrir el rótulo de un producto suelto trae un solo tramo; al abrir el del
-    // pedido completo, uno por línea.
+    // Los productos del pedido en orden, cada uno con cuántas cajas lleva, su SKU y su EAN.
     var segmentos = [];
-
-    // El producto que le toca a la caja número `numero` (1 = la primera del pedido).
-    //
-    // Lo escrito a mano en el campo manda sobre la lista: es la vía para corregir un nombre o
-    // para poner uno cuando el producto todavía no está en el maestro.
-    function productoDeLaCaja(numero) {
-        var escrito = campos.producto.value.trim();
-        if (escrito !== '') { return escrito; }
-
-        var restante = numero;
-        for (var i = 0; i < segmentos.length; i++) {
-            if (restante <= segmentos[i].n) { return segmentos[i].producto; }
-            restante -= segmentos[i].n;
-        }
-
-        // Más allá de lo que cubren los tramos —pasa si se sube la cantidad a mano— se repite el
-        // último producto, que es lo más probable que esté empacando quien agregó cajas.
-        return segmentos.length ? segmentos[segmentos.length - 1].producto : '';
-    }
 
     function entero(campo, porDefecto, minimo, maximo) {
         var valor = parseInt(campo.value, 10);
         if (!valor || valor < minimo) { valor = porDefecto; }
-        if (valor > maximo) { valor = maximo; }   // el mismo tope del input, por si se teclea
+        if (valor > maximo) { valor = maximo; }
         return valor;
     }
 
-    function dibujarRotulos() {
+    // Los rótulos que hay AHORA en la vista previa, uno por caja, con todo lo que va impreso en
+    // cada uno. Lo llenan las dos funciones que dibujan (esta y la del botón masivo), y lo leen la
+    // etiquetadora y el formulario de "Descargar PDF": así el papel es exactamente lo que se ve.
+    var rotulosActuales = [];
+
+    // espera: cuánto aguardar antes de pedir el QR. Al abrir el modal no se espera; mientras se
+    // escribe en el panel, sí (ver dibujar() en assets/js/rotulo.js).
+    function dibujarRotulos(espera) {
         var cantidad = entero(campos.cantidad, 1, 1, 99);
         var desde    = entero(campos.desde, 1, 1, 999);
         var total    = entero(campos.total, 1, 1, 999);
 
-        // El total nunca puede quedar por debajo de la última caja que se está imprimiendo: un
-        // "CAJ 8 DE 5" no significa nada para quien lo recibe.
         var ultima = desde + cantidad - 1;
         if (total < ultima) { total = ultima; }
 
-        var datos = {
-            pv:    campos.pv.value,
-            oc:    campos.oc.value,
-            cedi:  campos.cedi.value,
-            eanPv: identificadores.eanPv
-        };
+        // Un producto escrito a mano reemplaza al del pedido en TODAS las cajas. El SKU y el EAN
+        // eran del producto original y ya no le corresponden, así que en ese caso no se mandan: un
+        // SKU equivocado en la etiqueta es peor que ninguno.
+        var escrito = campos.producto.value.trim();
 
-        var html = '';
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
+
         for (var i = 0; i < cantidad; i++) {
             var numero = desde + i;
-            html += htmlRotulo(datos, numero, total, productoDeLaCaja(numero));
+            var segmento = RotuloMonterojo.segmentoDeLaCaja(segmentos, numero);
+
+            rotulosActuales.push({
+                pv:        campos.pv.value,
+                numero_pv: campos.numeroPv.value.trim(),
+                oc:        identificadores.oc,
+                cedi:      campos.cedi.value,
+                ean_pv:    identificadores.eanPv,
+                numero:    numero,
+                total:     total,
+                producto:  escrito !== '' ? escrito : (segmento.producto || ''),
+                sku:       escrito !== '' ? '' : (segmento.sku || ''),
+                ean:       escrito !== '' ? '' : (segmento.ean || '')
+            });
         }
-        previa.innerHTML = html;
+
+        RotuloMonterojo.dibujar(previa, rotulosActuales, espera);
     }
 
-    // Cualquier campo del panel vuelve a dibujar TODOS los rótulos: se edita una vez y no una por
-    // caja. 'input' y no 'change' para que la previa acompañe mientras se escribe.
+    // Envuelto en una función a propósito: pasado directo, addEventListener le daría el evento
+    // como primer argumento y dibujarRotulos() lo tomaría como la espera.
     Object.keys(campos).forEach(function (nombre) {
-        campos[nombre].addEventListener('input', dibujarRotulos);
+        campos[nombre].addEventListener('input', function () { dibujarRotulos(); });
     });
 
     contenedor.addEventListener('click', function (e) {
         var boton = e.target.closest('.btn-rotulo');
         if (!boton) { return; }
 
-        // Cuántas cajas propone el sistema. Puede ser 0 —una línea sin unidades—; en ese caso se
-        // arranca en 1 en vez de no mostrar nada: el rótulo se puede ver y ajustar igual, que es
-        // para lo que es editable.
         var calculadas = parseInt(boton.dataset.cajas, 10) || 0;
         var totalPedido = parseInt(boton.dataset.total, 10) || 0;
 
         identificadores.eanPv = boton.dataset.eanPv || '';
+        identificadores.oc    = boton.dataset.oc || '';
 
-        // El botón del pedido trae la lista de tramos; el de un producto, su nombre a secas.
         if (boton.dataset.segmentos) {
             try {
                 segmentos = JSON.parse(boton.dataset.segmentos) || [];
@@ -316,26 +549,30 @@
             }
         } else {
             segmentos = boton.dataset.producto
-                ? [{ n: Math.max(calculadas, 1), producto: boton.dataset.producto }]
+                ? [{
+                    n:        Math.max(calculadas, 1),
+                    producto: boton.dataset.producto,
+                    sku:      boton.dataset.sku || '',
+                    ean:      boton.dataset.ean || ''
+                  }]
                 : [];
         }
+
+        mostrarPanelEdicion(true);
 
         campos.cantidad.value = calculadas > 0 ? calculadas : 1;
         campos.desde.value    = parseInt(boton.dataset.desde, 10) || 1;
         campos.total.value    = totalPedido > 0 ? totalPedido : 1;
         campos.pv.value       = boton.dataset.pv || '';
-        campos.oc.value       = boton.dataset.oc || '';
+        campos.numeroPv.value = boton.dataset.numeroPv || '';
         campos.cedi.value     = boton.dataset.cedi || '';
-        campos.producto.value = '';   // vacío = cada caja toma el suyo de los tramos
+        campos.producto.value = '';
 
-        dibujarRotulos();
+        dibujarRotulos(0);
 
         detalle.textContent = '· ' + boton.dataset.pv + ' · '
             + (boton.dataset.descripcion || 'pedido completo');
 
-        // El conteo son cajas FÍSICAS: las unidades que no llenan una caja igual viajan en una, y
-        // esa caja va contada y rotulada. Se avisa solo cuando la última queda incompleta, para
-        // que nadie la dé por errónea al verla a medio llenar.
         var saldos = parseInt(boton.dataset.saldos, 10) || 0;
         if (calculadas < 1) {
             avisoSaldosTexto.innerHTML = 'Esta línea no tiene unidades que rotular, así que el rótulo '
@@ -353,32 +590,150 @@
         modal.classList.add('active');
     });
 
-    // Impresión: los rótulos se MUEVEN a un contenedor hijo directo de <body>, porque al imprimir
-    // se oculta todo lo demás y un elemento con un ancestro en display:none no se puede volver a
-    // mostrar desde el descendiente. Al terminar vuelven a su lugar dentro del modal.
-    document.getElementById('btn-imprimir-rotulos')?.addEventListener('click', function () {
-        while (previa.firstChild) {
-            areaImpresion.appendChild(previa.firstChild);
-        }
-        areaImpresion.hidden = false;
-        document.body.classList.add('imprimiendo-rotulos');
+    var panelControles = document.querySelector('.rotulo-controles');
+    var notaControles  = document.querySelector('.rotulo-nota');
 
-        function restaurar() {
-            while (areaImpresion.firstChild) {
-                previa.appendChild(areaImpresion.firstChild);
+    function mostrarPanelEdicion(visible) {
+        if (panelControles) { panelControles.hidden = !visible; }
+        if (notaControles)  { notaControles.hidden  = !visible; }
+    }
+
+    document.getElementById('btn-rotulos-masivo')?.addEventListener('click', function () {
+        var marcadas = pedidosSeleccionados();
+        if (!marcadas.length) { return; }
+
+        var sinCajas = 0;
+        rotulosActuales = [];
+        if (avisoImpresion) { avisoImpresion.hidden = true; }
+
+        marcadas.forEach(function (chk) {
+            var boton = chk.closest('.fila-pedido').querySelector('.btn-rotulo');
+            if (!boton) { return; }
+
+            var total = parseInt(boton.dataset.cajas, 10) || 0;
+            if (total < 1) { sinCajas++; return; }
+
+            var segmentosPedido = [];
+            try {
+                segmentosPedido = JSON.parse(boton.dataset.segmentos || '[]');
+            } catch (error) {
+                segmentosPedido = [];
             }
-            areaImpresion.hidden = true;
-            document.body.classList.remove('imprimiendo-rotulos');
-            window.removeEventListener('afterprint', restaurar);
+
+            for (var i = 1; i <= total; i++) {
+                var segmento = RotuloMonterojo.segmentoDeLaCaja(segmentosPedido, i);
+
+                rotulosActuales.push({
+                    pv:        boton.dataset.pv,
+                    numero_pv: boton.dataset.numeroPv || '',
+                    oc:        boton.dataset.oc,
+                    cedi:      boton.dataset.cedi,
+                    ean_pv:    boton.dataset.eanPv,
+                    numero:    i,
+                    total:     total,
+                    producto:  segmento.producto || '',
+                    sku:       segmento.sku || '',
+                    ean:       segmento.ean || ''
+                });
+            }
+        });
+
+        var totalRotulos = rotulosActuales.length;
+
+        if (!totalRotulos) {
+            alert('Ninguno de los pedidos seleccionados tiene cajas que rotular.');
+            return;
         }
 
-        window.addEventListener('afterprint', restaurar);
-        window.print();
+        mostrarPanelEdicion(false);
+        RotuloMonterojo.dibujar(previa, rotulosActuales, 0);
+        detalle.textContent = '· ' + totalRotulos + ' rótulos de ' + marcadas.length + ' pedido(s)';
 
-        // Respaldo: algunos navegadores no disparan afterprint, y sin esto la pantalla quedaría
-        // en blanco (con todo oculto por la clase de impresión) hasta recargar.
-        setTimeout(function () {
-            if (document.body.classList.contains('imprimiendo-rotulos')) { restaurar(); }
-        }, 1500);
+        if (sinCajas > 0) {
+            avisoSaldosTexto.innerHTML = '<strong>' + sinCajas + '</strong> de los pedidos seleccionados no '
+                + 'tienen cajas que rotular, así que quedaron fuera. Se pueden abrir uno por uno desde su '
+                + 'fila para ponerles la cantidad a mano.';
+            avisoSaldos.hidden = false;
+        } else {
+            avisoSaldos.hidden = true;
+        }
+
+        modal.classList.add('active');
     });
+
+    // ---------------------------------------------------------------------------------------
+    // IMPRIMIR EN LA ETIQUETADORA
+    //
+    // Manda la misma lista que ya está dibujada en la vista previa y el servidor la traduce a
+    // TSPL, el idioma de la TSC (ver modules/historial/helper_rotulos_tspl.php). No abre el
+    // diálogo de impresión: la etiqueta sale sola.
+    // ---------------------------------------------------------------------------------------
+    var avisoImpresion      = document.getElementById('rotulo-aviso-impresion');
+    var avisoImpresionTexto = document.getElementById('rotulo-aviso-impresion-texto');
+    var botonEtiquetadora   = document.getElementById('btn-imprimir-etiquetadora');
+
+    function mostrarResultadoImpresion(texto, salioBien) {
+        if (!avisoImpresion) { return; }
+        avisoImpresionTexto.textContent = texto;
+        avisoImpresion.className = 'aviso ' + (salioBien ? 'aviso-exito' : 'aviso-atencion');
+        avisoImpresion.querySelector('i').className = salioBien
+            ? 'fa-solid fa-circle-check'
+            : 'fa-solid fa-triangle-exclamation';
+        avisoImpresion.hidden = false;
+    }
+
+    if (botonEtiquetadora) {
+        botonEtiquetadora.addEventListener('click', function () {
+            if (!rotulosActuales.length) { return; }
+
+            // Sin esto, dos clics mandan el lote dos veces — y acá eso son etiquetas de papel
+            // gastadas, no una fila repetida que se pueda borrar.
+            botonEtiquetadora.disabled = true;
+            var textoOriginal = botonEtiquetadora.innerHTML;
+            botonEtiquetadora.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enviando...';
+            if (avisoImpresion) { avisoImpresion.hidden = true; }
+
+            fetch(BASE_URL + '/picking/acciones', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    accion:     'imprimir_rotulos',
+                    csrf_token: CSRF_TOKEN,
+                    rotulos:    rotulosActuales
+                })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (datos) {
+                mostrarResultadoImpresion(
+                    datos.mensaje || datos.error || 'No se pudo imprimir.',
+                    !!datos.exito
+                );
+            })
+            .catch(function () {
+                mostrarResultadoImpresion(
+                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    false
+                );
+            })
+            .finally(function () {
+                botonEtiquetadora.disabled = false;
+                botonEtiquetadora.innerHTML = textoOriginal;
+            });
+        });
+    }
+
+    // El PDF sale de la MISMA lista que se acaba de dibujar arriba, no de un recálculo en el
+    // servidor. Es a propósito: acá los rótulos son editables (el picker cambia el punto de venta,
+    // la cantidad de cajas o el nombre del producto), y al rotular un pedido entero cada caja lleva
+    // un producto distinto. Recalcularlo del lado del servidor devolvería lo que dice el archivo
+    // original, que es justamente lo que el picker acaba de corregir. Mandando la lista, el PDF
+    // sale idéntico a la vista previa.
+    document.getElementById('form-rotulos-pdf')?.addEventListener('submit', function (evento) {
+        if (!rotulosActuales.length) {
+            evento.preventDefault();
+            return;
+        }
+        document.getElementById('rotulos-pdf-datos').value = JSON.stringify(rotulosActuales);
+    });
+
 })();

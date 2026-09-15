@@ -9,7 +9,12 @@ require_once __DIR__ . '/../model_consolidados.php';
 
 requierePermiso('modulo_consolidados', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
-$carga = cargaVigente($pdo);
+// Ya no "la carga vigente": los archivos se acumulan (ver importarConsolidado en
+// model_consolidados_import.php), así que acá se juntan los pendientes de TODAS las que sigan
+// activas. $cargasActivas es la lista completa (para la cabecera, "3 archivos"); $hayPendientes
+// es el gate simple que reemplaza al viejo "si hay carga" en el resto de la pantalla.
+$cargasActivas  = cargasActivas($pdo);
+$hayPendientes  = !empty($cargasActivas);
 
 $filtros = [
     'cedi'  => trim($_GET['cedi'] ?? ''),
@@ -17,10 +22,10 @@ $filtros = [
     'plu'   => trim($_GET['plu'] ?? ''),
 ];
 
-$porCedi        = $carga ? consolidadoPorCedi($pdo, $carga['id_carga'], $filtros) : [];
-$cedisDisponibles = $carga ? cedisDeLaCarga($pdo, $carga['id_carga']) : [];
+$porCedi           = $hayPendientes ? consolidadoPorCedi($pdo, $filtros) : [];
+$cedisDisponibles  = $hayPendientes ? cedisPendientes($pdo) : [];
 $lineasDisponibles = lineasDelMaestro($pdo);
-$sinMaestro     = $carga ? pluSinMaestro($pdo, $carga['id_carga']) : 0;
+$sinMaestro        = $hayPendientes ? pluSinMaestro($pdo) : 0;
 
 // Totales generales: se suman los de cada CEDI ya calculados, para no recorrer las filas dos veces.
 $totalGeneral = ['unidades' => 0, 'cajas' => 0, 'saldos' => 0, 'peso_kg' => 0, 'productos' => 0];
@@ -37,6 +42,11 @@ foreach ($porCedi as $cedi => $filas) {
 
 // La URL para volver acá conservando los filtros; la usan los enlaces de PDF.
 $filtrosEnUrl = http_build_query(array_filter($filtros));
+
+// Importación a la espera de que se conteste "¿ya estaba cargado, lo subo igual?".
+// El controlador la deja en la sesión junto con el archivo, y acá solo se muestra la pregunta.
+$pendiente = $_SESSION['importacion_pendiente'] ?? null;
+$hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -58,14 +68,23 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 <h2>Consolidados</h2>
                 <div class="modulo-acciones">
                     <?php if (tienePermiso('modulo_maestro')): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php">
+                        <a class="btn" href="<?php echo BASE_URL; ?>/maestro">
                             <i class="fa-solid fa-list-check"></i> Maestro de productos
                         </a>
                     <?php endif; ?>
                     <?php if (!empty($porCedi)): ?>
+                        <!-- Los dos consolidados son el MISMO pedido visto de dos formas:
+                             el interno junta todo lo del CEDI en un total por producto (el
+                             papel del elevador, para bajar de bodega una sola vez), y el
+                             externo lo abre por punto de venta (lo que se entrega o se le
+                             muestra a la cadena). Ver consolidadoExternoPorCedi(). -->
                         <a class="btn"
-                           href="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php?accion=pdf&<?php echo $filtrosEnUrl; ?>">
-                            <i class="fa-solid fa-file-pdf"></i> PDF de todos los CEDI
+                           href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&<?php echo $filtrosEnUrl; ?>">
+                            <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+                        </a>
+                        <a class="btn"
+                           href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&<?php echo $filtrosEnUrl; ?>">
+                            <i class="fa-solid fa-shop"></i> Consolidado externo
                         </a>
                     <?php endif; ?>
                     <button type="button" class="btn btn-primario" data-abrir="modal-importar">
@@ -74,10 +93,23 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 </div>
             </header>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
+                <?php
+                // El tooltip lista cada archivo activo con su fecha: la pastilla sola dice "3
+                // archivos", y sin esto no habría forma de ver CUÁLES sin ir a Picking a mirar
+                // fila por fila.
+                $tituloArchivos = implode("\n", array_map(
+                    fn($c) => $c['nombre_archivo'] . ' · ' . date('d/m/Y H:i', strtotime($c['fecha_carga'])),
+                    $cargasActivas
+                ));
+                ?>
                 <div class="pastillas">
-                    <span class="pastilla">Archivo <strong><?php echo htmlspecialchars($carga['nombre_archivo']); ?></strong></span>
-                    <span class="pastilla">Cargado <strong><?php echo date('d/m/Y H:i', strtotime($carga['fecha_carga'])); ?></strong></span>
+                    <span class="pastilla" title="<?php echo htmlspecialchars($tituloArchivos); ?>">
+                        <?php echo count($cargasActivas) === 1 ? 'Archivo' : 'Archivos activos'; ?>
+                        <strong><?php echo count($cargasActivas) === 1
+                            ? htmlspecialchars($cargasActivas[0]['nombre_archivo'])
+                            : count($cargasActivas); ?></strong>
+                    </span>
                     <span class="pastilla">CEDI <strong><?php echo count($cedisDisponibles); ?></strong></span>
                     <span class="pastilla">Unidades <strong><?php echo number_format($totalGeneral['unidades'], 0, ',', '.'); ?></strong></span>
                     <span class="pastilla">Cajas <strong><?php echo number_format($totalGeneral['cajas'], 0, ',', '.'); ?></strong></span>
@@ -105,14 +137,14 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                         ni las unidades por caja, así que esas filas se muestran con una raya en vez de cajas
                         y <strong>no suman en los totales</strong>.
                         <?php if (tienePermiso('modulo_maestro')): ?>
-                            Cárgalos en <a href="<?php echo BASE_URL; ?>/modules/consolidados/views/maestro.php">Maestro de productos</a>
+                            Cárgalos en <a href="<?php echo BASE_URL; ?>/maestro">Maestro de productos</a>
                             y las cajas aparecen solas, sin volver a importar el Consolidado.
                         <?php endif; ?>
                     </div>
                 </div>
             <?php endif; ?>
 
-            <?php if ($carga): ?>
+            <?php if ($hayPendientes): ?>
                 <form class="filtros" method="GET">
                     <div class="filtro">
                         <label for="f-cedi">CEDI</label>
@@ -150,16 +182,16 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
 
                     <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                     <?php if (array_filter($filtros)): ?>
-                        <a class="btn" href="<?php echo BASE_URL; ?>/modules/consolidados/views/consolidados.php">Limpiar</a>
+                        <a class="btn" href="<?php echo BASE_URL; ?>/consolidados">Limpiar</a>
                     <?php endif; ?>
                 </form>
             <?php endif; ?>
 
-            <?php if (!$carga): ?>
+            <?php if (!$hayPendientes): ?>
                 <div class="tabla-caja">
                     <p class="tabla-vacia">
-                        Todavía no hay ningún Consolidado cargado.<br>
-                        Usa <strong>Importar Consolidado</strong> para subir el archivo del día.
+                        No hay ningún pedido pendiente.<br>
+                        Usa <strong>Importar Consolidado</strong> para subir un archivo.
                     </p>
                 </div>
 
@@ -169,6 +201,13 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 </div>
 
             <?php else: ?>
+                <!-- Tilda todos los CEDI que se están viendo (con un filtro puesto, solo los que
+                     quedaron). Lo tildado alimenta la barra de descargas de abajo. -->
+                <label class="seleccion-general">
+                    <input type="checkbox" id="chk-todos-cedi">
+                    Seleccionar todos <span>(<?php echo count($porCedi); ?> CEDI)</span>
+                </label>
+
                 <?php foreach ($porCedi as $cedi => $filas): $t = $totalesPorCedi[$cedi]; ?>
                     <!-- <details> y no un div con JavaScript: el desplegar/plegar lo hace el
                          navegador, funciona con el teclado sin que haya que programarlo, y
@@ -181,6 +220,12 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                          filtro sin abrir nada. -->
                     <details class="grupo-desplegable">
                         <summary class="grupo-cabecera">
+                            <!-- Tildarla no abre ni cierra el grupo: desplegables.js corta el clic
+                                 de los controles que viven dentro de la cabecera. -->
+                            <input type="checkbox" class="chk-cedi"
+                                   data-cedi="<?php echo htmlspecialchars($cedi); ?>"
+                                   title="Seleccionar este CEDI"
+                                   aria-label="Seleccionar <?php echo htmlspecialchars($cedi); ?>">
                             <i class="fa-solid fa-chevron-right grupo-flecha" aria-hidden="true"></i>
                             <div class="grupo-titulo">
                                 <div class="grupo-nombre"><?php echo htmlspecialchars($cedi); ?></div>
@@ -198,8 +243,12 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                                 </div>
                             </div>
                             <a class="btn btn-chico"
-                               href="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php?accion=pdf&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
-                                <i class="fa-solid fa-file-pdf"></i> PDF de este CEDI
+                               href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
+                                <i class="fa-solid fa-file-pdf"></i> Interno
+                            </a>
+                            <a class="btn btn-chico"
+                               href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
+                                <i class="fa-solid fa-shop"></i> Externo
                             </a>
                         </summary>
 
@@ -252,6 +301,40 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
     </div>
 </div>
 
+<?php if (!empty($porCedi)): ?>
+<!-- BARRA DE DESCARGAS DE LOS CEDI TILDADOS
+     La misma barra flotante de Picking, con las descargas de acá. Un solo formulario para los tres
+     botones: cada uno manda su 'formato' como valor del botón, y los CEDI tildados los rellena
+     scripts_consolidados.js en campos ocultos. Por formulario y no por fetch, para que el navegador
+     lo trate como una descarga normal. -->
+<div class="barra-seleccion" id="barra-seleccion" hidden>
+    <div class="barra-seleccion-info">
+        <strong id="barra-conteo">0</strong> CEDI seleccionado(s)
+        <button type="button" class="barra-limpiar" id="btn-limpiar-seleccion">Quitar selección</button>
+    </div>
+
+    <div class="barra-seleccion-acciones">
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST" id="form-seleccion">
+            <?php campoCSRF(); ?>
+            <input type="hidden" name="accion" value="pdf_seleccion">
+            <input type="hidden" name="linea" value="<?php echo htmlspecialchars($filtros['linea']); ?>">
+            <div id="campos-seleccion"></div>
+
+            <button type="submit" class="btn btn-chico" name="formato" value="interno">
+                <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+            </button>
+            <button type="submit" class="btn btn-chico" name="formato" value="externo">
+                <i class="fa-solid fa-shop"></i> Consolidado externo
+            </button>
+            <button type="submit" class="btn btn-chico" name="formato" value="productos"
+                    title="Todos los productos de los CEDI seleccionados, sumados en una sola tabla">
+                <i class="fa-solid fa-table-list"></i> Todos los productos
+            </button>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- MODAL: IMPORTAR EL CONSOLIDADO -->
 <div class="modal-fondo" id="modal-importar">
     <div class="modal-caja">
@@ -259,7 +342,7 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
             <h2>Importar Consolidado</h2>
             <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
         </div>
-        <form action="<?php echo BASE_URL; ?>/modules/consolidados/controller_consolidados.php"
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
               method="POST" enctype="multipart/form-data">
             <?php campoCSRF(); ?>
             <input type="hidden" name="accion" value="importar_consolidado">
@@ -277,9 +360,9 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 <div class="aviso aviso-info" style="margin-bottom: 0;">
                     <i class="fa-solid fa-circle-info"></i>
                     <div>
-                        El archivo del día <strong>reemplaza por completo</strong> al anterior: es la foto
-                        entera del pedido, no un agregado. Los números de pedido SAP que ya se hayan
-                        escrito en Picking se pierden con él.
+                        Este archivo se <strong>agrega</strong> a lo que ya está pendiente, no lo
+                        reemplaza: los pedidos que traiga se suman a los que hubiera de otros
+                        archivos, diferenciados por su fecha en Picking y en Consolidados.
                     </div>
                 </div>
             </div>
@@ -292,8 +375,73 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
     </div>
 </div>
 
+<?php if ($hayQueConfirmar): ?>
+<!-- AVISO: EL ARCHIVO YA ESTABA CARGADO
+     Se abre solo (la clase `active` viene puesta desde PHP) y NO se puede cerrar con la X ni con
+     Escape ni tocando el fondo: hay un archivo esperando en el servidor y una de las dos
+     respuestas tiene que llegar, o queda ahí colgado. Por eso tampoco lleva `data-cerrar`. -->
+<div class="modal-fondo active" id="modal-duplicado" data-obligatorio>
+    <div class="modal-caja">
+        <div class="modal-cabecera">
+            <h2><i class="fa-solid fa-triangle-exclamation"></i> Este archivo ya fue subido</h2>
+        </div>
+
+        <div class="modal-cuerpo">
+            <p class="confirmar-pregunta">
+                <strong><?php echo htmlspecialchars($pendiente['nombre']); ?></strong>
+                tiene exactamente la misma información que el Consolidado que ya está cargado.
+            </p>
+
+            <div class="pastillas" style="margin-bottom: 16px;">
+                <span class="pastilla">
+                    Cargado como <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_archivo']); ?></strong>
+                </span>
+                <span class="pastilla">
+                    El <strong><?php echo date('d/m/Y \a \l\a\s H:i', strtotime($pendiente['carga_previa']['fecha_carga'])); ?></strong>
+                </span>
+                <?php if (!empty($pendiente['carga_previa']['nombre_usuario'])): ?>
+                    <span class="pastilla">
+                        Por <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_usuario']); ?></strong>
+                    </span>
+                <?php endif; ?>
+                <span class="pastilla">
+                    <strong><?php echo number_format((int) $pendiente['carga_previa']['filas'], 0, ',', '.'); ?></strong> líneas
+                </span>
+            </div>
+
+            <div class="aviso aviso-atencion" style="margin-bottom: 0;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <div>
+                    Como los archivos ya no se reemplazan, volver a importarlo <strong>agrega una
+                    segunda copia</strong> de estos mismos pedidos: van a aparecer duplicados en
+                    Picking y en Consolidados, cada uno pidiendo el doble de lo que corresponde.
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-pie">
+            <!-- Dos formularios y no uno con dos submit: cada botón manda su propia respuesta, y
+                 así ninguno depende de un `value` que un cambio posterior podría dejar vacío. -->
+            <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="resolver_duplicado">
+                <input type="hidden" name="respuesta" value="no">
+                <button type="submit" class="btn">No</button>
+            </form>
+            <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="resolver_duplicado">
+                <input type="hidden" name="respuesta" value="si">
+                <button type="submit" class="btn btn-acento">Sí, subirlo igual</button>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script src="<?php echo BASE_URL; ?>/assets/js/desplegables.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/desplegables.js'); ?>"></script>
 <script src="<?php echo BASE_URL; ?>/assets/js/modales.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/modales.js'); ?>"></script>
+<script src="<?php echo BASE_URL; ?>/modules/consolidados/layouts/scripts_consolidados.js?v=<?php echo assetVersion(ROOT_PATH . '/modules/consolidados/layouts/scripts_consolidados.js'); ?>"></script>
 
 </body>
 </html>

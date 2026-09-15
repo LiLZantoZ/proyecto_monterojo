@@ -1,8 +1,10 @@
 # Evita que se pueda listar el contenido de una carpeta si no hay index
 Options -Indexes
 
-# Bloquea el acceso directo a archivos de configuración/control de versiones
-<FilesMatch "^(composer\.json|composer\.lock|\.env|\.git.*)$">
+# Bloquea el acceso directo a archivos de configuración, control de versiones y documentación
+# interna. README.md describe cómo está armado el sistema por dentro: no tiene por qué leerlo
+# cualquiera que esté conectado a la red.
+<FilesMatch "^(composer\.json|composer\.lock|\.env|\.git.*|README\.md)$">
     <IfModule mod_authz_core.c>
         Require all denied
     </IfModule>
@@ -12,7 +14,42 @@ Options -Indexes
     </IfModule>
 </FilesMatch>
 
-# Bloquea el acceso al directorio .git/ completo (el FilesMatch de arriba solo compara el nombre de archivo, no la ruta)
 RewriteEngine On
+
+# Bloquea el acceso al directorio .git/ completo (el FilesMatch de arriba solo compara el nombre de archivo, no la ruta)
 RewriteRule "(^|/)\.git/" - [F,L]
 
+# -----------------------------------------------------------------------------------------------
+# CARPETAS QUE NUNCA SE PIDEN POR URL (2026-09-14)
+#
+# vendor/  las librerías. Su installed.json listaba cada una con su versión exacta —justo lo que
+#          se necesita para buscar vulnerabilidades conocidas— y sus PHP se podían ejecutar sueltos.
+# logs/    el registro de errores. El archivo todavía no existía, pero en modo producción los errores
+#          van ahí, y con el primero que se registrara se habría podido descargar.
+# .vscode/ la configuración del editor.
+#
+# Se cierran con una regla y no con un .htaccess adentro de cada una porque vendor/ se reemplaza
+# entero con cada "composer install", y un archivo puesto ahí se perdería sin que nadie lo note.
+# -----------------------------------------------------------------------------------------------
+RewriteRule "^(vendor|logs|\.vscode)(/|$)" - [F,L,NC]
+
+# -----------------------------------------------------------------------------------------------
+# EL ENRUTADOR (2026-09-14)
+#
+# Las direcciones del sistema son /picking, /historial, /consolidados... y las atiende index.php
+# con la tabla de config/rutas.php. Ver el comentario de ese archivo.
+#
+# 1. Todo PHP de modules/ pedido directo va al enrutador. Si era una pantalla, la redirige a su
+#    dirección nueva; si es un archivo interno (modelo, helper, pedazo de pantalla), responde 404.
+#    Sin esta regla se podían ejecutar sueltos, y el menú lateral pedido solo devolvía un error con
+#    la ruta del disco del servidor. Sin $ al final, para atrapar también "algo.php/lo-que-sea";
+#    NC para que "algo.PHP" no se escape.
+#    Los CSS, JS e imágenes de modules/ siguen sirviéndose: no son código que se ejecute.
+RewriteRule "^modules/.*\.php" index.php [QSA,L,NC]
+
+# 2. Lo que no es un archivo ni una carpeta que existan es una ruta del sistema.
+#    public/rotulo.php (la página de los QR) y los archivos de assets/ existen, así que no pasan por
+#    acá y responden igual que siempre.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]

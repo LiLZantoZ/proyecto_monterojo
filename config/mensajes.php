@@ -34,6 +34,7 @@ function catalogoMensajesSistema() {
             'formato'             => 'El archivo tiene que ser un Excel (.xlsx o .xls).',
             'sin_datos'           => 'Todavía no hay un Consolidado cargado.',
             'invalid_id'          => 'No se encontró ese registro. Puede que el Consolidado se haya vuelto a cargar.',
+            'falta_punto_venta'   => 'Escribí al menos el punto de venta antes de generar el rótulo.',
         ],
         'exito' => [
             'creado'      => 'Registro creado correctamente.',

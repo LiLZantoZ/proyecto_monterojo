@@ -8,8 +8,8 @@ require_once __DIR__ . '/../../config/permisos.php';
 require_once __DIR__ . '/../../config/mensajes.php';
 require_once __DIR__ . '/model_consolidados.php';
 
-$vistaConsolidados = BASE_URL . '/modules/consolidados/views/consolidados.php';
-$vistaMaestro      = BASE_URL . '/modules/consolidados/views/maestro.php';
+$vistaConsolidados = BASE_URL . '/consolidados';
+$vistaMaestro      = BASE_URL . '/maestro';
 
 $accion = $_GET['accion'] ?? $_POST['accion'] ?? '';
 
@@ -45,6 +45,31 @@ function archivoExcelSubidoOSalir($destinoSiFalla) {
     return $archivo;
 }
 
+// Dónde esperan los archivos cuya importación quedó pendiente de que el usuario conteste Sí o No.
+//
+// Hace falta guardarlos: el archivo subido vive en el temporal de PHP y desaparece en cuanto
+// termina el request, así que sin esto un "Sí" no tendría nada que importar y habría que pedirle a
+// la persona que lo vuelva a seleccionar. La carpeta tiene su propio .htaccess que niega el acceso
+// web (son datos de pedidos).
+function carpetaImportacionesPendientes() {
+    $carpeta = ROOT_PATH . '/temp';
+    if (!is_dir($carpeta)) {
+        mkdir($carpeta, 0775, true);
+    }
+    return $carpeta;
+}
+
+// Borra el archivo que hubiera quedado esperando y limpia la sesión.
+//
+// Se llama al resolver la pregunta y también antes de dejar uno nuevo: si alguien sube un archivo,
+// ve el aviso y se va de la pantalla sin contestar, ese archivo se quedaría ahí para siempre.
+function descartarImportacionPendiente() {
+    if (!empty($_SESSION['importacion_pendiente']['ruta'])) {
+        @unlink($_SESSION['importacion_pendiente']['ruta']);
+    }
+    unset($_SESSION['importacion_pendiente']);
+}
+
 switch ($accion) {
 
     // -----------------------------------------------------------------------------------------
@@ -61,6 +86,34 @@ switch ($accion) {
         require_once __DIR__ . '/model_consolidados_import.php';
         $archivo = archivoExcelSubidoOSalir($vistaConsolidados);
 
+        // ¿Es exactamente lo mismo que ya está cargado? Si lo es, no se importa todavía: se
+        // pregunta. Reimportar borra las líneas actuales y con ellas las asignaciones de personal
+        // que ya se hubieran hecho, así que rehacer sin querer el trabajo del día es un costo
+        // real, no una molestia.
+        $huella = huellaDelConsolidado($archivo['tmp_name']);
+        $cargaPrevia = cargaConLaMismaHuella($pdo, $huella);
+
+        if ($cargaPrevia) {
+            descartarImportacionPendiente();   // por si había otro esperando de antes
+
+            $destino = carpetaImportacionesPendientes() . '/consolidado_' . bin2hex(random_bytes(8)) . '.xlsx';
+
+            if (!move_uploaded_file($archivo['tmp_name'], $destino)) {
+                guardarMensajeFlashTexto('error', 'No se pudo preparar el archivo para confirmarlo. Volvé a subirlo.');
+                header("Location: {$vistaConsolidados}");
+                exit();
+            }
+
+            $_SESSION['importacion_pendiente'] = [
+                'ruta'         => $destino,
+                'nombre'       => $archivo['name'],
+                'carga_previa' => $cargaPrevia,
+            ];
+
+            header("Location: {$vistaConsolidados}?confirmar=duplicado");
+            exit();
+        }
+
         $resultado = importarConsolidado(
             $pdo, $archivo['tmp_name'], $archivo['name'], $_SESSION['usuario_id'] ?? null
         );
@@ -70,6 +123,46 @@ switch ($accion) {
         // cambia en cada carga.
         guardarMensajeFlashTexto($resultado['exito'] ? 'exito' : 'error', $resultado['mensaje']);
 
+        header("Location: {$vistaConsolidados}");
+        exit();
+
+    // -----------------------------------------------------------------------------------------
+    // RESPUESTA A "ESTE ARCHIVO YA ESTÁ CARGADO, ¿LO SUBO IGUAL?"
+    // -----------------------------------------------------------------------------------------
+    case 'resolver_duplicado':
+        requierePermiso('modulo_consolidados', $vistaConsolidados);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        $pendiente = $_SESSION['importacion_pendiente'] ?? null;
+
+        // Sin nada esperando: la pantalla quedó abierta de antes, o se recargó el POST. No se
+        // importa nada y no se avisa de un error que no lo es.
+        if (!$pendiente || !is_file($pendiente['ruta'])) {
+            descartarImportacionPendiente();
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        if (($_POST['respuesta'] ?? '') !== 'si') {
+            descartarImportacionPendiente();
+            guardarMensajeFlashTexto('exito', 'No se importó nada: el Consolidado cargado quedó como estaba.');
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        require_once __DIR__ . '/model_consolidados_import.php';
+
+        $resultado = importarConsolidado(
+            $pdo, $pendiente['ruta'], $pendiente['nombre'], $_SESSION['usuario_id'] ?? null
+        );
+
+        descartarImportacionPendiente();
+
+        guardarMensajeFlashTexto($resultado['exito'] ? 'exito' : 'error', $resultado['mensaje']);
         header("Location: {$vistaConsolidados}");
         exit();
 
@@ -117,24 +210,116 @@ switch ($accion) {
         exit();
 
     // -----------------------------------------------------------------------------------------
-    // PDF DEL CONSOLIDADO
-    // Sin ?cedi= sale el archivo completo, con una hoja por CEDI.
+    // DESCARGAS DE LOS CEDI SELECCIONADOS (barra de abajo de Consolidados)
+    //
+    // Por POST y no por GET como las de un solo CEDI: la lista de nombres elegidos puede ser larga
+    // para una URL. 'formato' lo pone el botón que se pulsó:
+    //   · interno   → consolidado interno, una hoja por CEDI;
+    //   · externo   → consolidado externo, una hoja por CEDI;
+    //   · productos → todos los productos de esos CEDI sumados en UNA tabla.
     // -----------------------------------------------------------------------------------------
-    case 'pdf':
+    case 'pdf_seleccion':
         requierePermiso('modulo_consolidados', $vistaConsolidados);
 
-        $carga = cargaVigente($pdo);
-        if (!$carga) {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        // Solo textos: un cedi[][] armado a mano llegaría como arreglo y no es un nombre.
+        $cedis = array_values(array_unique(array_filter(
+            array_map(fn($c) => is_string($c) ? trim($c) : '', (array) ($_POST['cedi'] ?? [])),
+            fn($c) => $c !== ''
+        )));
+        $formato = $_POST['formato'] ?? '';
+
+        if (!$cedis || !in_array($formato, ['interno', 'externo', 'productos'], true)) {
+            guardarMensajeFlashTexto('error', 'Seleccioná al menos un CEDI para descargar.');
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        $filtros = ['cedis' => $cedis, 'linea' => is_string($_POST['linea'] ?? null) ? trim($_POST['linea']) : ''];
+        $meta    = cargaVigente($pdo) ?? [];
+        $varios  = count($cedis) . '_CEDI_' . date('Ymd') . '.pdf';
+
+        if ($formato === 'productos') {
+            $datos = productosDelConsolidado($pdo, $filtros);
+            if (empty($datos['filas'])) {
+                header("Location: {$vistaConsolidados}?error=sin_datos");
+                exit();
+            }
+            require_once __DIR__ . '/helper_consolidado_productos_pdf.php';
+            $nombre = count($cedis) === 1
+                ? 'Productos_' . nombreArchivoCedi($cedis[0])
+                : 'Productos_consolidado_' . $varios;
+            descargarProductosConsolidadoPdf($datos, $meta, $nombre);
+        }
+
+        if ($formato === 'externo') {
+            $porCedi = consolidadoExternoPorCedi($pdo, $filtros);
+            if (empty($porCedi)) {
+                header("Location: {$vistaConsolidados}?error=sin_datos");
+                exit();
+            }
+            require_once __DIR__ . '/helper_consolidado_externo_pdf.php';
+            $nombre = count($cedis) === 1 ? nombreArchivoCediExterno($cedis[0]) : 'Consolidado_externo_' . $varios;
+            descargarConsolidadoExternoPdf($porCedi, $meta, $nombre);
+        }
+
+        $porCedi = consolidadoPorCedi($pdo, $filtros);
+        if (empty($porCedi)) {
             header("Location: {$vistaConsolidados}?error=sin_datos");
             exit();
         }
+        require_once __DIR__ . '/helper_consolidado_pdf.php';
+        $nombre = count($cedis) === 1 ? nombreArchivoCedi($cedis[0]) : 'Consolidado_' . $varios;
+        descargarConsolidadoPdf($porCedi, $meta, $nombre);
+        // Las tres funciones de descarga terminan la ejecución.
+
+    // -----------------------------------------------------------------------------------------
+    // PDF DEL CONSOLIDADO
+    // Sin ?cedi= sale el archivo completo, con una hoja por CEDI.
+    // -----------------------------------------------------------------------------------------
+    // EL CONSOLIDADO EXTERNO EN PDF
+    //
+    // El mismo pedido que el interno pero abierto por punto de venta: el interno es el papel
+    // del elevador (cuánto bajar de bodega) y el externo es el que se entrega o se le muestra
+    // a la cadena (cuánto va a cada tienda). Ver consolidadoExternoPorCedi().
+    // -----------------------------------------------------------------------------------------
+    case 'pdf_externo':
+        requierePermiso('modulo_consolidados', $vistaConsolidados);
 
         $filtros = [
             'cedi'  => trim($_GET['cedi'] ?? ''),
             'linea' => trim($_GET['linea'] ?? ''),
         ];
 
-        $porCedi = consolidadoPorCedi($pdo, $carga['id_carga'], $filtros);
+        $porCedi = consolidadoExternoPorCedi($pdo, $filtros);
+        if (empty($porCedi)) {
+            header("Location: {$vistaConsolidados}?error=sin_datos");
+            exit();
+        }
+
+        require_once __DIR__ . '/helper_consolidado_externo_pdf.php';
+
+        $nombre = $filtros['cedi'] !== ''
+            ? nombreArchivoCediExterno($filtros['cedi'])
+            : 'Consolidado_externo_todos_los_CEDI_' . date('Ymd') . '.pdf';
+
+        descargarConsolidadoExternoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
+        // descargarConsolidadoExternoPdf() termina la ejecución.
+
+    // -----------------------------------------------------------------------------------------
+    case 'pdf':
+        requierePermiso('modulo_consolidados', $vistaConsolidados);
+
+        $filtros = [
+            'cedi'  => trim($_GET['cedi'] ?? ''),
+            'linea' => trim($_GET['linea'] ?? ''),
+        ];
+
+        $porCedi = consolidadoPorCedi($pdo, $filtros);
         if (empty($porCedi)) {
             header("Location: {$vistaConsolidados}?error=sin_datos");
             exit();
@@ -146,7 +331,10 @@ switch ($accion) {
             ? nombreArchivoCedi($filtros['cedi'])
             : 'Consolidado_todos_los_CEDI_' . date('Ymd') . '.pdf';
 
-        descargarConsolidadoPdf($porCedi, $carga, $nombre);
+        // $meta ya no es "la carga vigente" (puede haber varias pendientes): se le pasa la última
+        // importada solo como referencia de "emitido" en el encabezado del PDF, no como el alcance
+        // de los datos —eso ya lo decidió consolidadoPorCedi() mirando TODO lo pendiente.
+        descargarConsolidadoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
         // descargarConsolidadoPdf() termina la ejecución.
 
     default:

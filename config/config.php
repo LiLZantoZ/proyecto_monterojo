@@ -14,6 +14,23 @@
 // Si no está definida, cae de vuelta a 'development' para no romper el entorno local (XAMPP).
 define('APP_ENV', getenv('APP_ENV') ?: 'development');
 
+// ZONA HORARIA
+//
+// Se fija ACÁ y no se confía en el php.ini por dos razones. La primera es que el php.ini no viaja
+// con el proyecto: cada PC donde se copie el sistema traería la zona que tuviera puesta, y un
+// mismo PDF diría una hora distinta según en qué equipo se generó. La segunda es que el XAMPP con
+// el que se trabaja venía en 'Europe/Berlin', SIETE horas adelante: los PDF de consolidado,
+// picking e historial se sellaban con una hora futura, y los archivos que llevan la fecha en el
+// nombre (date('Ymd')) cambiaban de día a partir de las 5 de la tarde.
+//
+// Colombia no tiene horario de verano, así que es -05:00 todo el año y no hay ningún caso borde.
+//
+// Ojo: esto NO altera cómo se muestran las fechas que ya están guardadas. Esas se leen con
+// strtotime() y se imprimen con date(), las dos con la misma zona, así que el texto sale igual.
+// Lo que corrige es la hora "de ahora": la que se estampa en los PDF y en los nombres de archivo.
+define('ZONA_HORARIA', getenv('ZONA_HORARIA') ?: 'America/Bogota');
+date_default_timezone_set(ZONA_HORARIA);
+
 if (APP_ENV === 'production') {
     ini_set('display_errors', '0');
     ini_set('display_startup_errors', '0');
@@ -41,7 +58,20 @@ if (session_status() === PHP_SESSION_NONE) {
     // En producción, forzar la cookie segura sin depender de la heurística de arriba (que confía
     // en X-Forwarded-Proto, un header que un cliente podría falsear si el servidor PHP fuera
     // alcanzable directamente sin pasar por el proxy de confianza).
-    if (APP_ENV === 'production') {
+    //
+    // SALVO que el servidor declare que no tiene HTTPS, con APP_PERMITIR_HTTP=1.
+    //
+    // Hace falta para el servidor de la red local, que corre por http:// y usa el modo producción
+    // para no mostrarle errores de PHP a quien entra desde otro equipo (lo fija Apache, ver
+    // C:/xampp/apache/conf/extra/httpd-servidor-bodega.conf). Sin esta excepción, producción marca
+    // la cookie como `secure`, el navegador no la devuelve por HTTP y NADIE puede iniciar sesión:
+    // cada clic vuelve al login. No se nota trabajando en localhost, porque ahí el modo es otro.
+    //
+    // Es la misma excepción que ya tiene el sistema de bodega. El valor por defecto sigue siendo
+    // el seguro: un despliegue con HTTPS que no defina la variable mantiene la cookie `secure`. La
+    // variable se llama así para que quien la lea sepa lo que acepta: la sesión y las contraseñas
+    // viajan sin cifrar por la red.
+    if (APP_ENV === 'production' && getenv('APP_PERMITIR_HTTP') !== '1') {
         $conexionEsSegura = true;
     }
 
@@ -74,7 +104,16 @@ require_once __DIR__ . '/csrf.php';
 // DB_NAME también sale del entorno porque en un hosting compartido el nombre de la base no lo
 // elige uno: viene con el prefijo de la cuenta (u123456_monterojo). Sin esto habría que editar
 // este archivo en el servidor después de cada despliegue.
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+// 127.0.0.1 Y NO 'localhost' (2026-09-14). Medido en este servidor: conectar a 'localhost' tardaba
+// 2.050 ms SIEMPRE, y a 127.0.0.1 tarda 1 ms. Windows resuelve 'localhost' primero a la dirección
+// IPv6 (::1), pero MySQL escucha solo en IPv4 (bind-address=127.0.0.1 en my.ini); Windows reintenta
+// la conexión por IPv6 durante unos 2 segundos y recién después prueba por IPv4. Como cada pantalla
+// y cada pedido AJAX abre una conexión, TODO el sistema andaba con 2 segundos de retraso fijo, y en
+// las acciones que hacen varios pedidos seguidos (los QR de la vista previa) se sumaban.
+//
+// No se arregla haciendo que MySQL escuche también en IPv6: bind-address en "*" lo expondría a la
+// red, y el usuario root no tiene contraseña.
+define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
 define('DB_NAME', getenv('DB_NAME') ?: 'proyecto_monterojo');
 define('DB_USER', getenv('DB_USER') ?: 'root');
 define('DB_PASS', getenv('DB_PASS') ?: '');
@@ -112,10 +151,79 @@ define('BASE_URL', normalizarBaseUrl($baseUrlEntorno === false ? '/proyecto_mont
 // La pantalla de entrada. En el sistema de bodega hay DOS (una portada para elegir perfil y
 // después el formulario), y cada redirección tiene que acordarse de a cuál de las dos manda.
 // Acá el login es una sola pantalla, y esta constante es la única que la nombra.
-define('URL_LOGIN', BASE_URL . '/modules/login/auth.php');
+define('URL_LOGIN', BASE_URL . '/login');
 
 // Cierre de sesión automático por inactividad
 define('TIEMPO_INACTIVIDAD_SEGUNDOS', 600); // 10 minutos
+
+// ── Etiquetadora de rótulos ──────────────────────────────────────────────────────────────────
+// La impresora de etiquetas NO recibe una página: recibe comandos TSPL que ella
+// misma dibuja. Todo lo de acá abajo son los parámetros de ESE trabajo de impresión; están juntos
+// y con nombre para que cambiar de impresora, de rollo o de sentido no sea tocar código.
+// Ver modules/historial/helper_rotulos_tspl.php para cómo se arma el trabajo.
+
+// El tamaño FÍSICO de la etiqueta que hay puesta en la impresora, en milímetros. Es de lo único
+// que dependen la maqueta del rótulo, la página del PDF y la vista previa en pantalla: las tres
+// se calculan a partir de estos dos números, así que cambiar de rollo es cambiarlos acá y nada
+// más. (El 2026-09-08 el rollo era de 100x40; el 2026-09-11 se pasó a 100x100, que es el que
+// permitió volver al diseño con logo y con cada campo en su renglón.)
+define('ROTULO_ANCHO_MM', 100);
+define('ROTULO_ALTO_MM', 100);
+
+// El área que se DIBUJA, centrada dentro del sticker. Es más chica a propósito: con el rótulo
+// ocupando los 100mm exactos, el marco quedaba pegado al filo del papel y la primera impresión
+// salió con el recuadro casi tocando las esquinas. Dibujando 95x95 quedan 2,5mm de aire por lado,
+// que además absorben el pequeño corrimiento lateral que tiene el avance del rollo.
+//
+// OJO: esto NO reemplaza a ROTULO_ANCHO_MM / ROTULO_ALTO_MM. Esos dos siguen siendo la medida
+// FÍSICA del sticker y son los que la impresora usa para saber cuánto papel avanzar entre una
+// etiqueta y la siguiente; si se los tocara para "achicar el rótulo", el rollo se iría corriendo
+// un poco en cada etiqueta hasta desalinearse del todo.
+define('ROTULO_DIBUJO_ANCHO_MM', 95);
+define('ROTULO_DIBUJO_ALTO_MM', 95);
+
+// La dirección con la que se arma el enlace del QR del rótulo.
+//
+// NO puede ser 'localhost': el QR lo escanea un celular, y para un celular 'localhost' es el
+// celular mismo. Tiene que ser la dirección del PC en la red de la bodega —algo como
+// http://192.168.1.50/proyecto_monterojo— y el teléfono tiene que estar en el mismo WiFi.
+//
+// Para saber cuál poner, en ese PC:  ipconfig  (la "Dirección IPv4" del adaptador en uso).
+// Mientras esté vacía, los rótulos salen SIN QR: es preferible una etiqueta sin código a una
+// con un código que no lleva a ninguna parte.
+//
+// 2026-09-14: pasó de 192.168.1.13 a 10.7.12.119, la IP del servidor en la red Wi-Fi donde se
+// va a usar. Las etiquetas impresas ANTES apuntan a 192.168.1.13 y en esta red no abren.
+//
+// ESTA IP TIENE QUE QUEDAR FIJA. Hoy la da el DHCP del router y puede cambiar al reiniciar el
+// equipo; si cambia, hay que actualizar esta línea y TODAS las etiquetas ya pegadas dejan de
+// abrir, porque la dirección está impresa en el papel. Se fija con una reserva de DHCP en el
+// router (lo hace quien administra la red) o con una IP estática en Windows.
+define('URL_PUBLICA_ROTULOS', getenv('URL_PUBLICA_ROTULOS') ?: 'http://10.7.12.119/proyecto_monterojo');
+
+// El nombre EXACTO con el que la impresora aparece en Windows (Configuración > Impresoras).
+// Si no coincide, el sistema lo avisa en pantalla en vez de fallar en silencio.
+//
+// Tiene que ser una impresora que hable TSPL y sea de 203 dpi, que es la resolución sobre la que
+// está calculada toda la maqueta del rótulo (8 puntos por milímetro, ver TSPL_PUNTOS_POR_MM en
+// modules/historial/helper_rotulos_tspl.php). Con una de 300 dpi la etiqueta saldría a dos tercios
+// del tamaño, encogida contra la esquina superior izquierda.
+define('IMPRESORA_ROTULOS', getenv('IMPRESORA_ROTULOS') ?: 'TSC TA210');
+
+// Sentido en el que sale la etiqueta. Esto es lo que arregla el "sale al revés": si el texto sale
+// cabeza abajo, cambiar 1 por 0 (o al revés) y volver a imprimir. No hace falta tocar nada más.
+define('ROTULO_TSPL_DIRECCION', 1);
+
+// Separación entre una etiqueta y la siguiente en el rollo, en milímetros. El valor típico de un
+// rollo troquelado es 2mm; si la impresora saca etiquetas de más o corta a destiempo, este es el
+// número a revisar (y conviene recalibrar el sensor desde TSC Console).
+define('ROTULO_TSPL_GAP_MM', 2);
+
+// Qué tan oscuro imprime (0 a 15) y a qué velocidad (pulgadas por segundo). Más densidad = más
+// negro pero barras más gordas; si el lector no engancha el código de barras, bajar la velocidad
+// antes que subir la densidad.
+define('ROTULO_TSPL_DENSIDAD', 8);
+define('ROTULO_TSPL_VELOCIDAD', 4);
 
 try {
     $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
@@ -124,6 +232,20 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,        // Lanzar excepciones en errores
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,   // Devolver arrays asociativos
         PDO::ATTR_EMULATE_PREPARES => false,                // Usar sentencias reales
+
+        // La zona horaria de la conexión, para que NOW() y los DEFAULT current_timestamp() de las
+        // tablas (fecha_carga, fecha_creacion, fecha_despacho...) escriban en hora de Colombia
+        // pase lo que pase con el reloj del equipo.
+        //
+        // Va el desfase -05:00 y no el nombre 'America/Bogota' porque MySQL solo entiende nombres
+        // si tiene cargadas las tablas de zonas horarias, y el MySQL de XAMPP no las trae: se
+        // probó y responde "Unknown or incorrect time zone". El desfase no necesita esas tablas y
+        // en Colombia es exacto todo el año, porque no hay horario de verano.
+        //
+        // Hoy este equipo ya estaba en hora correcta (MySQL tomaba la de Windows). Esto no cambia
+        // ningún dato: lo que hace es que deje de depender de cómo esté configurado el Windows de
+        // cada PC donde se copie el sistema.
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '-05:00'",
     ];
 
     $conexion = new PDO($dsn, DB_USER, DB_PASS, $opciones);
@@ -251,5 +373,5 @@ function sesionUsuarioActiva() {
 // es exactamente el problema del sistema de bodega, donde la misma lista de roles está copiada
 // en cuatro archivos y desincronizarla produce un bucle infinito de redirecciones.
 function urlPanelDelRol($idRol = null) {
-    return BASE_URL . '/modules/inicio/dashboard.php';
+    return BASE_URL . '/inicio';
 }
