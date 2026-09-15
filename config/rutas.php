@@ -45,6 +45,7 @@ return [
     'cajas-punto-venta/acciones'=> 'modules/cajas_punto_venta/controller_cajas_punto_venta.php',
     'rotulos/acciones'          => 'modules/rotulos/controller_rotulos.php',
     'rotulos/enlaces'           => 'modules/historial/controller_rotulos_enlace.php',
+    'rotulos/agente'            => 'modules/historial/controller_agente_impresion.php',
     'ordenes-compra/acciones'   => 'modules/ordenes_compra/controller_ordenes_compra.php',
     'perfil/acciones'           => 'modules/perfil/controller_perfil.php',
 ];

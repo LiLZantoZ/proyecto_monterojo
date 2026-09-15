@@ -195,11 +195,22 @@ define('ROTULO_DIBUJO_ALTO_MM', 95);
 // 2026-09-14: pasó de 192.168.1.13 a 10.7.12.119, la IP del servidor en la red Wi-Fi donde se
 // va a usar. Las etiquetas impresas ANTES apuntan a 192.168.1.13 y en esta red no abren.
 //
-// ESTA IP TIENE QUE QUEDAR FIJA. Hoy la da el DHCP del router y puede cambiar al reiniciar el
-// equipo; si cambia, hay que actualizar esta línea y TODAS las etiquetas ya pegadas dejan de
-// abrir, porque la dirección está impresa en el papel. Se fija con una reserva de DHCP en el
-// router (lo hace quien administra la red) o con una IP estática en Windows.
-define('URL_PUBLICA_ROTULOS', getenv('URL_PUBLICA_ROTULOS') ?: 'http://10.7.12.119/proyecto_monterojo');
+// 2026-09-15: el DHCP del router le había cambiado la IP al PC a 10.7.12.149 —justo lo que este
+// mismo comentario advertía—, así que pasó de .119 a .149. Las etiquetas impresas entre el 14 y
+// el 15 de septiembre apuntan a 10.7.12.119 y en esta red ya no abren.
+//
+// 2026-09-15 (mismo día, más tarde): se probó a fijarla y trajo un problema nuevo —Windows marcó
+// la red como "Pública" y el firewall dejó de dejar entrar a las demás PCs—, así que se decidió
+// volver a DHCP a propósito y aceptar que la IP cambie. Pasó de .149 a .185. La red de este PC
+// ("ITGuest") tiene aislamiento de clientes —cada equipo llega a internet pero no ve a los demás
+// de la red— y es la única a la que este PC puede conectarse (es personal, no corporativo); la
+// reserva de DHCP en el router tampoco es una opción hoy porque no hay acceso a él. Mientras esas
+// dos cosas sigan así, no tiene sentido perseguir una IP fija: total cambia solo igual.
+//
+// CUANDO LA IP CAMBIE: actualizar esta línea con la nueva (ipconfig en este PC, "Dirección
+// IPv4"). Las etiquetas que ya estén impresas y pegadas con la IP vieja dejan de abrir su QR; las
+// que se impriman después de actualizar esta línea salen con la nueva.
+define('URL_PUBLICA_ROTULOS', getenv('URL_PUBLICA_ROTULOS') ?: 'http://10.7.12.185/proyecto_monterojo');
 
 // El nombre EXACTO con el que la impresora aparece en Windows (Configuración > Impresoras).
 // Si no coincide, el sistema lo avisa en pantalla en vez de fallar en silencio.
@@ -210,6 +221,31 @@ define('URL_PUBLICA_ROTULOS', getenv('URL_PUBLICA_ROTULOS') ?: 'http://10.7.12.1
 // del tamaño, encogida contra la esquina superior izquierda.
 define('IMPRESORA_ROTULOS', getenv('IMPRESORA_ROTULOS') ?: 'TSC TA210');
 
+// ── Impresión remota (2026-09-15) ───────────────────────────────────────────────────────────
+// Desde el 2026-09-15 la TA210 está conectada por USB a OTRA PC de la red (no a este servidor,
+// que es el único que puede hablarle a una impresora LOCAL por el método de arriba), y esa PC no
+// se puede compartir por Windows porque no hay acceso de administrador ahí.
+//
+// Con IMPRESION_ROTULOS_MODO = 'remota', imprimirRotulosEnEtiquetadora() (ver
+// modules/historial/helper_rotulos_tspl.php) deja de intentar imprimir LOCAL: en cambio, encola
+// el trabajo en la tabla trabajos_impresion_remota, y un programita que corre en la otra PC
+// (scripts/agente_impresion_remota.ps1) lo va a buscar solo y lo imprime ahí. Ninguna de las dos
+// PCs necesita permisos de administrador: la otra PC solo pide datos hacia afuera —eso nunca
+// requiere permiso especial en Windows— y le habla a SU impresora local, ya instalada.
+//
+// El día que la impresora vuelva a estar conectada a ESTE servidor (o se consiga compartirla por
+// Windows), alcanza con volver esto a 'local' —o definir la variable de entorno
+// IMPRESION_ROTULOS_MODO=local— para que vuelva a imprimir directo, sin tocar nada más.
+define('IMPRESION_ROTULOS_MODO', getenv('IMPRESION_ROTULOS_MODO') ?: 'remota');
+
+// La "contraseña" del agente: viaja en cada pedido que hace la otra PC para demostrar que es el
+// agente y no cualquiera en la red. No es una cuenta de usuario —el agente no inicia sesión, no
+// tiene rol ni permisos de pantalla— así que no usa el login del sistema: es un valor fijo, largo
+// y al azar, para que adivinarlo sea tan difícil como adivinar cualquier otra contraseña.
+//
+// Si algún día hay que invalidar el acceso del agente (por ejemplo, se pierde o se clona ese PC),
+// alcanza con cambiar este valor acá y volver a poner el nuevo en el script de la otra PC.
+define('TOKEN_AGENTE_IMPRESION', getenv('TOKEN_AGENTE_IMPRESION') ?: '97ab80e4c230908fa078e02a5d584699c0a94cf6ed7b9e45');
 // Sentido en el que sale la etiqueta. Esto es lo que arregla el "sale al revés": si el texto sale
 // cabeza abajo, cambiar 1 por 0 (o al revés) y volver a imprimir. No hace falta tocar nada más.
 define('ROTULO_TSPL_DIRECCION', 1);

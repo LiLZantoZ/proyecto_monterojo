@@ -68,7 +68,13 @@ function dependenciaDelPuntoDeVenta($puntoVenta, array $catalogo) {
         return (string) (int) $m[1];
     }
 
-    if (preg_match('/^\s*(\p{L}.*?)\s*[-–]\s*([0-9]{1,6})\s*$/u', $texto, $m)
+    // El separador antes del número, igual que arriba, puede ser un guion O un espacio —incluso
+    // dos, como en "TURBO CARULLA COUNTRY  4847"—. Hasta el 2026-09-15 acá solo se aceptaba el
+    // guion, y un punto de venta como "CARULLA CEDRO BOLIVAR 550" (nombre y número separados por
+    // un simple espacio, sin guion) no lo reconocía: ni por este camino —fallaba el guion— ni por
+    // el nombre completo de más abajo —"CARULLA CEDRO BOLIVAR 550" no es igual a "CARULLA CEDRO
+    // BOLIVAR"—. La dependencia quedaba en la lista pero el pedido decía "no está en la lista".
+    if (preg_match('/^\s*(\p{L}.*?)\s*(?:[-–]\s*|\s+)([0-9]{1,6})\s*$/u', $texto, $m)
         && isset($catalogo['por_numero'][(string) (int) $m[2]])) {
         return (string) (int) $m[2];
     }

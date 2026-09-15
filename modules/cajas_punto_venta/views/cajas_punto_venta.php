@@ -111,10 +111,11 @@ $num = fn($n) => number_format((int) $n, 0, ',', '.');
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="filtro">
+                <div class="filtro" style="flex: 1;">
                     <label for="f-punto">Punto de venta</label>
                     <input type="text" name="punto" id="f-punto" value="<?php echo $esc($filtros['punto']); ?>"
-                           placeholder="Número o nombre">
+                           placeholder="Número o nombre. Para varios: 550, 4847, exito bello"
+                           title="Se puede buscar más de un punto de venta a la vez, separados por coma.">
                 </div>
                 <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                 <?php if ($filtrosEnUrl !== ''): ?>

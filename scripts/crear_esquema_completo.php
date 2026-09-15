@@ -667,6 +667,35 @@ foreach ($flota as $v) {
     $insertarVehiculo->execute($v);
 }
 
+// ----------------------------------------------------------------------------------------------
+// TRABAJOS DE IMPRESIÓN REMOTA (2026-09-15): la cola para el modo IMPRESION_ROTULOS_MODO=remota
+//
+// Cuando la etiquetadora está conectada a OTRA PC (ver config/config.php), el servidor no le
+// imprime directo: deja acá el trabajo TSPL y un agente que corre en esa PC
+// (scripts/agente_impresion_remota.ps1) lo reclama y lo imprime ahí. `tspl` es MEDIUMBLOB y no
+// TEXT a propósito: el trabajo trae el logo como bitmap, bytes binarios de verdad, y una columna
+// de texto podría alterarlos al pasar por el charset de la conexión.
+//
+// pendiente  → recién encolado, nadie lo pidió todavía.
+// reclamado  → un agente lo pidió y se lo llevó; está esperando que confirme si pudo imprimir.
+// entregado  → el agente confirmó que imprimió bien.
+// error      → el agente lo intentó y falló (impresora apagada, sin papel, etc: mensaje_error).
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS trabajos_impresion_remota (
+        `id_trabajo` int(11) NOT NULL AUTO_INCREMENT,
+        `tspl` mediumblob NOT NULL,
+        `etiquetas` int(11) NOT NULL,
+        `estado` enum('pendiente','reclamado','entregado','error') NOT NULL DEFAULT 'pendiente',
+        `mensaje_error` varchar(255) DEFAULT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
+        `fecha_entrega` timestamp NULL DEFAULT NULL,
+        PRIMARY KEY (`id_trabajo`),
+        KEY `estado` (`estado`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
 // ==============================================================================================
 // ROLES
 // El id va explícito y no lo elige el AUTO_INCREMENT: así una instalación nueva y una que ya

@@ -60,6 +60,17 @@ function resumenCubicajes($pdo) {
  * Una fila sin SKU o con un cubicaje que no es un número mayor que cero se SALTA y se cuenta en el
  * resultado. No se guarda en cero: un cubicaje en cero sumaría volumen cero sin que nadie lo note,
  * que es exactamente lo que este módulo no tiene que hacer.
+ *
+ * DE PASO, COMPLETA EL MAESTRO (2026-09-15)
+ * Este archivo ya trae SKU, EAN y DENOMINACIÓN —lo mismo que hace falta para que un producto deje
+ * de aparecer "sin maestro" en Consolidados—, y antes esos datos se quedaban solo en la tabla
+ * cubicajes: subir el archivo diez veces no le agregaba la descripción al maestro ni una sola vez.
+ * Ahora, para cada fila, si el SKU YA EXISTE en el maestro y le falta la descripción o las
+ * unidades por caja, se completan con la DENOMINACIÓN de acá —las unidades, si el nombre trae el
+ * empaque al final (PX20, BX6x8...), igual que hace importarMaestroDesdeSap() con el export de SAP.
+ * Nunca pisa un dato que ya estuviera cargado, y nunca CREA un producto nuevo: eso sigue siendo
+ * trabajo de "Cargar desde SAP" o "Cargar planilla", donde si hace falta se puede armar el SKU
+ * desde cero.
  */
 function importarCubicajes($pdo, $rutaArchivo) {
     $filas = leerPrimeraHoja($rutaArchivo);
@@ -96,7 +107,18 @@ function importarCubicajes($pdo, $rutaArchivo) {
                                  tipo_caja = VALUES(tipo_caja), cubicaje_m3 = VALUES(cubicaje_m3)"
     );
 
-    $nuevos = 0; $actualizados = 0; $sinCambios = 0; $omitidos = [];
+    // COALESCE: solo llena lo que esté en NULL. Un producto que ya tenía su descripción o su
+    // empaque cargados —por SAP o por una planilla— no se toca, aunque este archivo traiga otra
+    // forma de escribir el mismo nombre.
+    $completarMaestro = $pdo->prepare(
+        "UPDATE maestro_productos SET
+             descripcion       = COALESCE(descripcion, :descripcion),
+             presentacion      = COALESCE(presentacion, :presentacion),
+             unidades_por_caja = COALESCE(unidades_por_caja, :uxc)
+         WHERE sku = :sku"
+    );
+
+    $nuevos = 0; $actualizados = 0; $sinCambios = 0; $omitidos = []; $maestroCompletado = 0;
 
     $pdo->beginTransaction();
     try {
@@ -126,6 +148,22 @@ function importarCubicajes($pdo, $rutaArchivo) {
                 2       => $actualizados++,
                 default => $sinCambios++,
             };
+
+            $denominacion = textoLimpio($valor($fila, 'denominacion'), 255);
+            if ($denominacion !== null) {
+                $empaque = empaqueDelNombre($denominacion);
+                $completarMaestro->execute([
+                    ':descripcion'  => $denominacion,
+                    ':presentacion' => $empaque['presentacion'] ?? null,
+                    ':uxc'          => $empaque['unidades_por_caja'] ?? null,
+                    ':sku'          => $sku,
+                ]);
+                // rowCount() en un UPDATE con COALESCE solo cuenta si ALGÚN campo cambió de
+                // verdad: un producto que ya tenía todo cargado da 0, aunque el SKU exista.
+                if ($completarMaestro->rowCount() > 0) {
+                    $maestroCompletado++;
+                }
+            }
         }
         $pdo->commit();
     } catch (PDOException $e) {
@@ -144,9 +182,13 @@ function importarCubicajes($pdo, $rutaArchivo) {
         $mensaje .= ' Se saltaron ' . count($omitidos) . ' fila(s) sin SKU o sin un cubicaje válido: '
                   . implode(', ', array_slice($omitidos, 0, 8)) . (count($omitidos) > 8 ? '…' : '') . '.';
     }
+    if ($maestroCompletado) {
+        $mensaje .= " Además, {$maestroCompletado} producto(s) del maestro que les faltaba la "
+                  . 'descripción o las unidades por caja se completaron con este archivo.';
+    }
 
     return ['exito' => true, 'mensaje' => $mensaje, 'nuevos' => $nuevos, 'actualizados' => $actualizados,
-            'sin_cambios' => $sinCambios, 'omitidos' => count($omitidos)];
+            'sin_cambios' => $sinCambios, 'omitidos' => count($omitidos), 'maestro_completado' => $maestroCompletado];
 }
 
 // =================================================================================================

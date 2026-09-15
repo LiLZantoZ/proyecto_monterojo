@@ -433,6 +433,60 @@ function tsplDeRotulos(array $rotulos) {
  * los de error terminan ofreciendo el PDF como salida: que la impresora esté apagada no puede
  * dejar a nadie sin poder despachar.
  */
+/**
+ * El trabajo pendiente MÁS VIEJO, "reclamado" para el agente que lo pide: pasa de 'pendiente' a
+ * 'reclamado' en la MISMA transacción con la que se lee (SELECT ... FOR UPDATE), para que dos
+ * pedidos seguidos —o dos agentes, si algún día hay más de una impresora remota— nunca se lleven
+ * el mismo trabajo dos veces. Devuelve null si no hay nada pendiente.
+ */
+function reclamarSiguienteTrabajoImpresion($pdo) {
+    $pdo->beginTransaction();
+    try {
+        $fila = $pdo->query(
+            "SELECT id_trabajo, tspl, etiquetas FROM trabajos_impresion_remota
+              WHERE estado = 'pendiente' ORDER BY id_trabajo ASC LIMIT 1 FOR UPDATE"
+        )->fetch();
+
+        if (!$fila) {
+            $pdo->commit();
+            return null;
+        }
+
+        $pdo->prepare("UPDATE trabajos_impresion_remota SET estado = 'reclamado' WHERE id_trabajo = ?")
+            ->execute([$fila['id_trabajo']]);
+        $pdo->commit();
+
+        return $fila;
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log('Error reclamando trabajo de impresión remota: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/** El agente avisa si pudo imprimir el trabajo #$idTrabajo, o por qué no. */
+function confirmarTrabajoImpresion($pdo, $idTrabajo, $ok, $mensajeError = null) {
+    $pdo->prepare(
+        "UPDATE trabajos_impresion_remota
+            SET estado = ?, mensaje_error = ?, fecha_entrega = current_timestamp()
+          WHERE id_trabajo = ? AND estado = 'reclamado'"
+    )->execute([$ok ? 'entregado' : 'error', $mensajeError, (int) $idTrabajo]);
+}
+
+/** Dónde queda el trabajo cuando la impresora está en OTRA PC. Ver reclamarSiguienteTrabajoImpresion(). */
+function encolarTrabajoImpresionRemota($pdo, $tspl, $cantidadEtiquetas) {
+    try {
+        $pdo->prepare(
+            "INSERT INTO trabajos_impresion_remota (tspl, etiquetas, id_usuario) VALUES (?, ?, ?)"
+        )->execute([$tspl, $cantidadEtiquetas, $_SESSION['usuario_id'] ?? null]);
+
+        return (int) $pdo->lastInsertId();
+    } catch (PDOException $e) {
+        error_log('Error encolando impresión remota: ' . $e->getMessage());
+        return null;
+    }
+}
+
 function imprimirRotulosEnEtiquetadora(array $rotulos) {
     $rotulos = normalizarListaDeRotulos($rotulos);
 
@@ -440,6 +494,34 @@ function imprimirRotulosEnEtiquetadora(array $rotulos) {
         return ['ok' => false, 'etiquetas' => 0, 'mensaje' => 'No hay rótulos que imprimir.'];
     }
 
+    // MODO REMOTO (2026-09-15): la impresora está en OTRA PC. Ver IMPRESION_ROTULOS_MODO en
+    // config/config.php y la cola trabajos_impresion_remota. No se usa exec()/PowerShell acá: el
+    // trabajo se deja en la base y lo retira el agente de la otra PC
+    // (scripts/agente_impresion_remota.ps1) por su cuenta, en los próximos segundos.
+    if (IMPRESION_ROTULOS_MODO === 'remota') {
+        global $pdo;
+
+        $idTrabajo = encolarTrabajoImpresionRemota($pdo, tsplDeRotulos($rotulos), count($rotulos));
+
+        if ($idTrabajo === null) {
+            return [
+                'ok' => false, 'etiquetas' => 0,
+                'mensaje' => 'No se pudo dejar el trabajo en la cola de impresión. Mientras tanto '
+                           . 'se puede usar "Descargar PDF".',
+            ];
+        }
+
+        $cantidad = count($rotulos);
+        return [
+            'ok' => true,
+            'etiquetas' => $cantidad,
+            'mensaje' => $cantidad . ($cantidad === 1 ? ' rótulo enviado' : ' rótulos enviados')
+                       . ' a la cola de la impresora remota. Lo imprime en unos segundos la PC '
+                       . 'que la tiene conectada.',
+        ];
+    }
+
+    // MODO LOCAL (el de siempre): la impresora está conectada a ESTE servidor.
     if (!function_exists('exec')) {
         return [
             'ok' => false,

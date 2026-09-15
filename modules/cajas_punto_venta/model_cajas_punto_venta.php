@@ -60,8 +60,16 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $mapa    = mapaMaestro($pdo);
-    $busqueda = isset($filtros['punto']) ? mb_strtolower(trim($filtros['punto'])) : '';
+    $mapa = mapaMaestro($pdo);
+
+    // Varios puntos de venta a la vez: "CARULLA CEDRO BOLIVAR, 4847, exito bello" separado por
+    // comas. Cada término se busca por separado y con que UNO coincida alcanza —es la misma
+    // lógica de "cualquiera de estos", no "todos estos a la vez"—, porque lo normal es pegar una
+    // lista de tiendas concretas a buscar, no describir una tienda con varias palabras sueltas.
+    $terminos = array_filter(array_map(
+        fn($t) => mb_strtolower(trim($t)),
+        explode(',', $filtros['punto'] ?? '')
+    ), fn($t) => $t !== '');
 
     $porCedi = [];
     foreach ($stmt as $fila) {
@@ -70,9 +78,16 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
         $clave = $fila['cedi'] . '|' . $fila['punto_venta'];
         $datos = numeroYNombreDePunto($fila['punto_venta'], $fila['ean_punto_venta'], $fila['direccion_punto_venta']);
 
-        if ($busqueda !== '') {
+        if ($terminos) {
             $donde = mb_strtolower($datos['numero'] . ' ' . $datos['nombre'] . ' ' . $fila['punto_venta']);
-            if (mb_strpos($donde, $busqueda) === false) {
+            $coincide = false;
+            foreach ($terminos as $termino) {
+                if (mb_strpos($donde, $termino) !== false) {
+                    $coincide = true;
+                    break;
+                }
+            }
+            if (!$coincide) {
                 continue;
             }
         }
