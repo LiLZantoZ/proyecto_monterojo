@@ -29,7 +29,7 @@ if (php_sapi_name() !== 'cli') {
     die('Este script solo puede ejecutarse desde la línea de comandos.');
 }
 
-$ruta = __DIR__ . '/../assets/img/monterojo.png';
+$ruta = __DIR__ . '/../public/assets/img/monterojo.png';
 
 if (!file_exists($ruta)) {
     fwrite(STDERR, "No se encontró {$ruta}\n");

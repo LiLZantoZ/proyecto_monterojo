@@ -859,4 +859,4 @@ if ($permisos) {
 }
 
 echo "\nListo. Ahora creá el primer usuario con:\n";
-echo "  php scripts/crear_usuario_admin.php\n";
+echo "  php artisan monterojo:crear-admin\n";
