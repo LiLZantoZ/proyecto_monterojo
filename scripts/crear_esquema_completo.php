@@ -551,6 +551,25 @@ $pdo->exec(
 );
 
 // ----------------------------------------------------------------------------------------------
+// EXCEPCIONES DE ÉXITO DEL MAESTRO (2026-09-23)
+//
+// Un mismo producto (mismo SKU) puede empacarse distinto y ocupar otro volumen según sea para el
+// Éxito o para los demás clientes. El maestro base guarda UN valor por SKU; acá van SOLO las
+// EXCEPCIONES del Éxito: los SKU cuyo empaque (unidades por caja) o cubicaje cambian para el Éxito.
+// Lo que no tenga excepción usa el valor base. Ver model_maestro_exito.php.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS maestro_exito (
+        `sku` varchar(30) NOT NULL,
+        `descripcion` varchar(255) DEFAULT NULL COMMENT 'Solo para mostrar en la pantalla',
+        `unidades_por_caja` int(11) DEFAULT NULL COMMENT 'Empaque para Éxito; null = usar el del maestro base',
+        `cubicaje_m3` decimal(12,7) DEFAULT NULL COMMENT 'Volumen por caja para Éxito; null = usar el de cubicajes',
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`sku`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// ----------------------------------------------------------------------------------------------
 // ALMACENES DEL ÉXITO (2026-09-14): la lista oficial Dependencia → Nombre
 //
 // Con ella cada punto de venta del Éxito se guarda como "DEPENDENCIA - NOMBRE OFICIAL", aunque el
@@ -696,6 +715,79 @@ $pdo->exec(
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
 );
 
+// ----------------------------------------------------------------------------------------------
+// SEGUIMIENTO DE PEDIDOS (2026-09-22): el estado de cada factura/guía en la transportadora.
+//
+// Un tablero que junta en un solo lugar el estado de los despachos, sin importar por qué
+// transportadora salgan (AGV, Proeslog, Solística, entregas propias). Cada fila es una guía o
+// factura con sus fechas y su estado; de dónde salió el dato queda en `fuente` ('manual', 'excel'
+// y, cuando haya acceso oficial, el nombre de la integración).
+//
+// La `clave` es lo que evita duplicados al reimportar un Excel o al sincronizar: se arma con la
+// transportadora, la factura y la guía normalizadas (ver seguimiento_pedidos en el modelo), y es
+// UNIQUE, así que subir dos veces el mismo listado actualiza en vez de duplicar.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS seguimiento_pedidos (
+        `id_pedido` int(11) NOT NULL AUTO_INCREMENT,
+        `clave` varchar(255) NOT NULL COMMENT 'transportadora|factura|guia normalizadas: identifica la fila para no duplicar',
+        `transportadora` varchar(80) NOT NULL,
+        `numero_factura` varchar(60) DEFAULT NULL,
+        `numero_guia` varchar(60) DEFAULT NULL,
+        `estado` varchar(80) DEFAULT NULL COMMENT 'Texto libre: cada transportadora tiene sus propios estados',
+        `detalle` varchar(500) DEFAULT NULL COMMENT 'Descripción de la factura / detalles del pedido',
+        `bodega` varchar(80) DEFAULT NULL,
+        `destino` varchar(160) DEFAULT NULL COMMENT 'Cliente o punto de venta que recibe',
+        `fecha_guia` date DEFAULT NULL,
+        `fecha_despacho` datetime DEFAULT NULL,
+        `fecha_entrega` datetime DEFAULT NULL,
+        `direccion` varchar(255) DEFAULT NULL COMMENT 'SAP facturación: Población - Calle',
+        `nit` varchar(40) DEFAULT NULL COMMENT 'SAP facturación: Nº ident.fis.1',
+        `valor_neto` decimal(16,2) DEFAULT NULL COMMENT 'SAP facturación: suma de Valor neto de la factura',
+        `referencia` varchar(60) DEFAULT NULL COMMENT 'SAP facturación: Referencia',
+        `pedido_cliente` varchar(80) DEFAULT NULL COMMENT 'SAP facturación: Pedido Cliente',
+        `fuente` varchar(40) NOT NULL DEFAULT 'manual',
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha_creacion` timestamp NOT NULL DEFAULT current_timestamp(),
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`id_pedido`),
+        UNIQUE KEY `clave` (`clave`),
+        KEY `transportadora` (`transportadora`),
+        KEY `estado` (`estado`),
+        KEY `fecha_despacho` (`fecha_despacho`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// ----------------------------------------------------------------------------------------------
+// CONSOLIDADO MR (2026-09-24): el export de facturación de SAP renglón por renglón (una fila por
+// producto facturado). Se carga subiendo el Excel "CONSOLIDADO MR"; `factura` no se muestra en la
+// tabla pero es la llave para reemplazar una factura al volver a subirla. Ver model_consolidado_mr.php.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr (
+        `id_linea` int(11) NOT NULL AUTO_INCREMENT,
+        `factura` varchar(30) NOT NULL,
+        `fecha_factura` date DEFAULT NULL,
+        `solicitante` varchar(30) DEFAULT NULL COMMENT 'Solic.',
+        `nombre_cliente` varchar(160) DEFAULT NULL COMMENT 'Nombre 1',
+        `poblacion` varchar(80) DEFAULT NULL,
+        `material` varchar(30) DEFAULT NULL,
+        `texto_material` varchar(255) DEFAULT NULL COMMENT 'Texto breve de material',
+        `cantidad_facturada` decimal(14,3) DEFAULT NULL COMMENT 'Ctd.facturada',
+        `valor_neto` decimal(16,2) DEFAULT NULL,
+        `referencia` varchar(60) DEFAULT NULL,
+        `doc_ventas` varchar(30) DEFAULT NULL COMMENT 'Doc.ventas',
+        `pedido_cliente` varchar(80) DEFAULT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha_carga` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_linea`),
+        KEY `factura` (`factura`),
+        KEY `fecha_factura` (`fecha_factura`),
+        KEY `material` (`material`),
+        KEY `nombre_cliente` (`nombre_cliente`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
 // ==============================================================================================
 // ROLES
 // El id va explícito y no lo elige el AUTO_INCREMENT: así una instalación nueva y una que ya
@@ -704,6 +796,8 @@ $pdo->exec(
 
 $roles = [
     1 => ['Administrador', 'Acceso completo al sistema.'],
+    // Solo mira: el Inicio y el Consolidado MR, sin cargar ni borrar nada y sin editar su perfil.
+    2 => ['Visitante', 'Solo consulta el Inicio y el Consolidado MR.'],
 ];
 
 echo "\n== Roles ==\n";
@@ -728,10 +822,17 @@ $permisos = [
     'modulo_rotulos'      => 'Generar rótulos sueltos, sin que vengan de ningún pedido del sistema.',
     'modulo_cajas_punto_venta' => 'Ver cuántas cajas le corresponden a cada punto de venta de un CEDI.',
     'modulo_ordenes_compra'    => 'Ver las órdenes de compra del Éxito con cajas, volumen, valor y carro, y cargar los cubicajes.',
+    'modulo_seguimiento'       => 'Ver el estado de los pedidos en las transportadoras y registrar entregas.',
+    'modulo_consolidado_mr'    => 'Consultar el Consolidado MR de SAP (facturación por producto).',
+    // Los permisos de ESCRIBIR, aparte de los de ver, para que un rol pueda mirar sin modificar
+    // (el Visitante, 2026-09-28).
+    'consolidado_mr_editar'    => 'Importar y vaciar el Consolidado MR.',
+    'perfil_editar'            => 'Editar el perfil propio (nombre, foto y contraseña).',
 ];
 
 $permisosPorRol = [
-    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos', 'modulo_cajas_punto_venta', 'modulo_ordenes_compra'],
+    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos', 'modulo_cajas_punto_venta', 'modulo_ordenes_compra', 'modulo_seguimiento', 'modulo_consolidado_mr', 'consolidado_mr_editar', 'perfil_editar'],
+    2 => ['modulo_consolidado_mr'],
 ];
 
 if ($permisos) {

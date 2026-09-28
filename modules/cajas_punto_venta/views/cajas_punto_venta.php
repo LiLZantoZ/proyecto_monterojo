@@ -170,21 +170,52 @@ $num = fn($n) => number_format((int) $n, 0, ',', '.');
                              ellos, y una columna de menos obliga a quien recibe a ir contando
                              posiciones para saber si está mirando la casilla correcta. -->
                         <div class="tabla-caja">
-                            <table class="tabla">
+                            <?php // ANCHOS DE COLUMNA (2026-09-21)
+                                  // Van en el colgroup y no en cada <th>, y con table-layout:fixed,
+                                  // por el TOTAL GENERAL de más abajo: esa es otra tabla, sin
+                                  // encabezado, y con el ancho automático cada una repartía sus
+                                  // columnas según su propio contenido. Como el texto "TOTAL
+                                  // GENERAL · 4 CEDI · 44 puntos de venta" es largo, se comía el
+                                  // espacio y sus números quedaban corridos respecto de los de
+                                  // arriba. Con el layout fijo mandan estos anchos y nada más, así
+                                  // que las dos tablas parten las columnas exactamente igual.
+                                  // Los dos colgroup tienen que seguir siendo IDÉNTICOS. ?>
+                            <table class="tabla" style="table-layout: fixed;">
+                                <colgroup>
+                                    <col style="width: 34px;">
+                                    <col style="width: 13%;">
+                                    <col>
+                                    <col style="width: 13%;">
+                                    <col style="width: 17%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 9%;">
+                                    <col style="width: 10%;">
+                                </colgroup>
                                 <thead>
                                     <tr>
-                                        <th style="width: 9%;">Código</th>
+                                        <th class="centro">
+                                            <input type="checkbox" class="chk-todos"
+                                                   title="Seleccionar todos los puntos de venta de este CEDI"
+                                                   aria-label="Seleccionar todos los puntos de venta de este CEDI">
+                                        </th>
+                                        <th>Código</th>
                                         <th>Nombre del almacén</th>
-                                        <th style="width: 12%;" class="num">Cajas<br>producto seco</th>
-                                        <th style="width: 12%;" class="num">Cajas<br>producto refrigerado</th>
-                                        <th style="width: 9%;" class="num">Otros</th>
-                                        <th style="width: 9%;" class="num">Total</th>
-                                        <th style="width: 11%;"></th>
+                                        <th class="num">Cajas<br>producto seco</th>
+                                        <th class="num">Cajas<br>producto refrigerado</th>
+                                        <th class="num">Otros</th>
+                                        <th class="num">Total</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($datos['puntos'] as $clave => $p): ?>
-                                        <tr>
+                                        <tr class="fila-punto">
+                                            <td class="centro">
+                                                <input type="checkbox" class="chk-punto"
+                                                       aria-label="Seleccionar <?php echo $esc($p['nombre'] ?: $p['punto_venta']); ?>"
+                                                       data-cedi="<?php echo $esc($cedi); ?>"
+                                                       data-punto="<?php echo $esc($p['punto_venta']); ?>">
+                                            </td>
                                             <td><?php echo $p['numero'] !== ''
                                                     ? '<strong>' . $esc($p['numero']) . '</strong>'
                                                     : '<span class="dato-faltante">—</span>'; ?></td>
@@ -212,8 +243,14 @@ $num = fn($n) => number_format((int) $n, 0, ',', '.');
                                     <?php endforeach; ?>
                                 </tbody>
                                 <tfoot>
+                                    <!-- colspan="3": la etiqueta ocupa la casilla de selección, el
+                                         código y el nombre. Sin eso la fila tenía una celda MENOS
+                                         que el encabezado —desde que se agregó la columna de los
+                                         tildes— y cada número caía bajo la columna de al lado: las
+                                         cajas aparecían bajo "Nombre del almacén" y el total bajo
+                                         "Otros" (2026-09-21). -->
                                     <tr class="fila-total">
-                                        <td colspan="2">TOTAL <?php echo $esc($cedi); ?></td>
+                                        <td colspan="3">TOTAL <?php echo $esc($cedi); ?></td>
                                         <td class="num"><?php echo $num($t['cajas']); ?></td>
                                         <td class="num"></td>
                                         <td class="num"></td>
@@ -230,16 +267,29 @@ $num = fn($n) => number_format((int) $n, 0, ',', '.');
                     <!-- La suma de todos los CEDI. Va suelta al final y no dentro de un grupo
                          porque no pertenece a ninguno: es lo que sale de la bodega en total. -->
                     <div class="tabla-caja">
-                        <table class="tabla">
+                        <?php // El MISMO colgroup y el mismo table-layout que las tablas de cada
+                              // CEDI: esta no tiene encabezado, y es lo único que hace que sus
+                              // números caigan justo debajo de los de arriba. ?>
+                        <table class="tabla" style="table-layout: fixed;">
+                            <colgroup>
+                                <col style="width: 34px;">
+                                <col style="width: 13%;">
+                                <col>
+                                <col style="width: 13%;">
+                                <col style="width: 17%;">
+                                <col style="width: 8%;">
+                                <col style="width: 9%;">
+                                <col style="width: 10%;">
+                            </colgroup>
                             <tfoot>
                                 <tr class="fila-total fila-total-general">
-                                    <td>TOTAL GENERAL · <?php echo $num(count($porCedi)); ?> CEDI ·
+                                    <td colspan="3">TOTAL GENERAL · <?php echo $num(count($porCedi)); ?> CEDI ·
                                         <?php echo $num($totalGeneral['puntos']); ?> puntos de venta</td>
-                                    <td class="num" style="width: 12%;"><?php echo $num($totalGeneral['cajas']); ?></td>
-                                    <td class="num" style="width: 12%;"></td>
-                                    <td class="num" style="width: 9%;"></td>
-                                    <td class="num" style="width: 9%;"><?php echo $num($totalGeneral['total']); ?></td>
-                                    <td style="width: 11%;"></td>
+                                    <td class="num"><?php echo $num($totalGeneral['cajas']); ?></td>
+                                    <td class="num"></td>
+                                    <td class="num"></td>
+                                    <td class="num"><?php echo $num($totalGeneral['total']); ?></td>
+                                    <td></td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -248,6 +298,33 @@ $num = fn($n) => number_format((int) $n, 0, ',', '.');
             <?php endif; ?>
 
         </div>
+    </div>
+</div>
+
+<!-- BARRA DE SELECCIÓN MÚLTIPLE
+     Igual que en Picking, pero acá lo que se tilda es un PUNTO DE VENTA (una fila), no un pedido
+     entero: en esta pantalla cada fila YA ES un solo destino con sus cajas resueltas. -->
+<div class="barra-seleccion" id="barra-seleccion" hidden>
+    <div class="barra-seleccion-info">
+        <strong id="barra-conteo">0</strong> punto(s) de venta seleccionado(s)
+        <button type="button" class="barra-limpiar" id="btn-limpiar-seleccion">Quitar selección</button>
+    </div>
+
+    <div class="barra-seleccion-acciones">
+        <button type="button" class="btn btn-chico" id="btn-rotulos-masivo">
+            <i class="fa-solid fa-tags"></i> Rótulos
+        </button>
+
+        <!-- Por formulario y no por fetch, para que el navegador la trate como una descarga
+             normal. Los campos ocultos con los puntos tildados los rellena scripts_cajas_punto_venta.js. -->
+        <form action="<?php echo BASE_URL; ?>/cajas-punto-venta/acciones" method="POST" id="form-pdf-seleccion">
+            <?php campoCSRF(); ?>
+            <input type="hidden" name="accion" value="pdf_seleccion">
+            <div id="campos-pdf-seleccion"></div>
+            <button type="submit" class="btn btn-chico btn-primario">
+                <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+            </button>
+        </form>
     </div>
 </div>
 

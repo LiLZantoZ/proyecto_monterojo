@@ -160,9 +160,80 @@ $etiquetaCarro = function (array $o) use ($esc) {
                 <div class="pastillas">
                     <span class="pastilla"><strong><?php echo $num($t['ordenes']); ?></strong> órdenes</span>
                     <span class="pastilla"><strong><?php echo $num($t['cajas']); ?></strong> cajas</span>
+                    <span class="pastilla"><strong><?php echo $num($t['peso_kg']); ?></strong> kg</span>
                     <span class="pastilla"><strong><?php echo $m3($t['m3']); ?></strong> m³</span>
                     <span class="pastilla"><strong><?php echo $plata($t['valor']); ?></strong></span>
                 </div>
+
+                <?php
+                // EL CARRO PARA LLEVARLO TODO JUNTO. El de cada fila dice en qué mandar ESA orden;
+                // éste, en qué sale el camión con el pedido entero, que es lo que se pide cuando se
+                // despacha todo de una vez. Con un filtro puesto, es el carro de lo filtrado.
+                if (!empty($t['carro'])): ?>
+                    <div class="aviso <?php echo $t['carro_viajes'] > 1 ? 'aviso-atencion' : 'aviso-info'; ?>">
+                        <i class="fa-solid fa-truck"></i>
+                        <div>
+                            <?php if ($t['carro_viajes'] > 1): ?>
+                                Todo junto son <strong><?php echo $num($t['peso_kg']); ?> kg</strong> y
+                                <strong><?php echo $m3($t['m3']); ?> m³</strong>, y
+                                <strong>no entra en un solo vehículo</strong>: harían falta
+                                <strong><?php echo $num($t['carro_viajes']); ?> viajes</strong> en
+                                <strong><?php echo $esc($t['carro']); ?></strong>, el más grande de la flota.
+                                La cuenta reparte peso y volumen sin tener en cuenta que una caja no se parte,
+                                así que tomala como el mínimo.
+                            <?php else: ?>
+                                Para llevar <strong>todo junto</strong> —<?php echo $num($t['cajas']); ?> cajas,
+                                <strong><?php echo $num($t['peso_kg']); ?> kg</strong> y
+                                <strong><?php echo $m3($t['m3']); ?> m³</strong>— alcanza con un
+                                <strong><?php echo $esc($t['carro']); ?></strong>.
+                            <?php endif; ?>
+
+                            <?php
+                            // La capacidad del vehículo y cuánto se ocupa: sin esto, el nombre solo
+                            // no dice si va holgado o al límite, que es justo lo que hay que saber
+                            // para decidir si se le puede sumar otra orden.
+                            $cap = $t['carro_capacidad'] ?? null;
+                            if ($cap): ?>
+                                <div class="carro-capacidad">
+                                    <?php foreach ([
+                                        ['Peso',    $num($t['peso_kg']) . ' de ' . $num($cap['peso_kg']) . ' kg', $cap['uso_peso']],
+                                        ['Volumen', $m3($t['m3']) . ' de ' . $num($cap['m3']) . ' m³',            $cap['uso_volumen']],
+                                    ] as [$titulo, $texto, $uso]): ?>
+                                        <div class="carro-medida">
+                                            <div class="carro-medida-texto">
+                                                <span><?php echo $titulo; ?></span>
+                                                <strong><?php echo $texto; ?></strong>
+                                                <?php if ($uso !== null): ?>
+                                                    <span class="carro-porcentaje"><?php echo number_format($uso, 0, ',', '.'); ?>%</span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <?php if ($uso !== null): ?>
+                                                <div class="carro-barra">
+                                                    <?php // Se topa en 100 para que la barra no se salga cuando hacen falta varios viajes. ?>
+                                                    <span style="width: <?php echo min(100, max(0, round($uso))); ?>%"></span>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                    <?php if ($cap['estibas'] > 0): ?>
+                                        <div class="carro-medida">
+                                            <div class="carro-medida-texto">
+                                                <span>Estibas</span>
+                                                <strong>hasta <?php echo $num($cap['estibas']); ?></strong>
+                                                <span class="carro-porcentaje">sin calcular</span>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($t['carro_incompleto'])): ?>
+                                <br>Ojo: hay productos sin cubicaje o sin maestro, así que el peso y el
+                                volumen reales son <strong>mayores</strong> que estos y el vehículo podría
+                                quedar chico.
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <div class="tabla-caja">
                     <table class="tabla tabla-ordenes">
@@ -260,7 +331,27 @@ $etiquetaCarro = function (array $o) use ($esc) {
                                 <td class="num"><?php echo $num($t['peso_kg']); ?></td>
                                 <td class="num"><?php echo $m3($t['m3']); ?></td>
                                 <td class="num"><?php echo $plata($t['valor']); ?></td>
-                                <td></td>
+                                <?php // El carro de la fila TOTAL no es el de una orden: es el que hay
+                                      // que pedir para llevar TODO junto. Por eso puede ser más grande
+                                      // que el de cualquier fila de arriba —24 órdenes que entran cada
+                                      // una en una camioneta, juntas no—. ?>
+                                <td>
+                                    <?php if (!empty($t['carro']) && $t['carro_viajes'] <= 1): ?>
+                                        <span class="etiqueta-estado etiqueta-carro"
+                                              title="El vehículo para llevar las <?php echo $num($t['ordenes']); ?> órdenes juntas: <?php echo $num($t['peso_kg']); ?> kg y <?php echo $m3($t['m3']); ?> m³">
+                                            <?php echo $esc($t['carro']); ?>
+                                        </span>
+                                    <?php elseif (!empty($t['carro'])): ?>
+                                        <span class="etiqueta-estado etiqueta-excede"
+                                              title="Todo junto no entra en un solo vehículo: harían falta <?php echo $num($t['carro_viajes']); ?> viajes en <?php echo $esc($t['carro']); ?>">
+                                            <?php echo $num($t['carro_viajes']); ?> × <?php echo $esc($t['carro']); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($t['carro']) && !empty($t['carro_incompleto'])): ?>
+                                        <i class="fa-solid fa-triangle-exclamation icono-faltante"
+                                           title="Faltan cubicajes o datos del maestro: el peso y el volumen reales son mayores y el vehículo podría quedar chico."></i>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         </tfoot>
                     </table>

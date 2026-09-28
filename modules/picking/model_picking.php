@@ -80,12 +80,15 @@ function filasPicking($pdo, array $filtros = []) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $mapa   = mapaMaestro($pdo);
+    require_once __DIR__ . '/../consolidados/model_maestro_exito.php';
+    $mapa       = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
+    $cedisExito = cedisExito($pdo);
     $patron = isset($filtros['busqueda']) ? mb_strtolower(trim($filtros['busqueda'])) : '';
 
     $filas = [];
     foreach ($stmt as $fila) {
-        $fila = decorarConMaestro($fila, $mapa);
+        $fila = decorarConMaestro($fila, $mapa, $mapaExito, isset($cedisExito[$fila['cedi']]));
 
         if ($patron !== '') {
             $donde = mb_strtolower(

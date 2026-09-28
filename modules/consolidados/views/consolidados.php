@@ -24,6 +24,9 @@ $filtros = [
 
 $porCedi           = $hayPendientes ? consolidadoPorCedi($pdo, $filtros) : [];
 $cedisDisponibles  = $hayPendientes ? cedisPendientes($pdo) : [];
+// De qué cadena es cada CEDI, para decirlo en su cabecera: los del Éxito y los de Cencosud
+// conviven en esta lista y sin esto no hay forma de saber cuál es cuál.
+$cadenasDeCedi     = $hayPendientes ? cadenasPorCedi($pdo) : [];
 $lineasDisponibles = lineasDelMaestro($pdo);
 $sinMaestro        = $hayPendientes ? pluSinMaestro($pdo) : 0;
 
@@ -74,21 +77,30 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                     <?php endif; ?>
                     <?php if (!empty($porCedi)): ?>
                         <!-- Los dos consolidados son el MISMO pedido visto de dos formas:
-                             el interno junta todo lo del CEDI en un total por producto (el
-                             papel del elevador, para bajar de bodega una sola vez), y el
-                             externo lo abre por punto de venta (lo que se entrega o se le
-                             muestra a la cadena). Ver consolidadoExternoPorCedi(). -->
+                             el de ALISTAMIENTO junta todo lo del CEDI en un total por producto
+                             (el papel del elevador, para bajar de bodega una sola vez), y el de
+                             RÓTULOS lo abre por punto de venta (lo que se entrega o se le muestra
+                             a la cadena). Ver consolidadoExternoPorCedi().
+
+                             Hasta el 2026-09-22 se llamaban "interno" y "externo". Se renombraron
+                             a pedido del usuario porque el nombre nuevo dice PARA QUÉ sirve cada
+                             uno, que es lo que hay que saber al elegir cuál imprimir. Las
+                             acciones y los nombres de función siguen diciendo interno/externo: son
+                             identificadores, y cambiarlos rompería los enlaces guardados. -->
                         <a class="btn"
                            href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&<?php echo $filtrosEnUrl; ?>">
-                            <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+                            <i class="fa-solid fa-file-pdf"></i> Consolidado para alistamiento
                         </a>
                         <a class="btn"
                            href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&<?php echo $filtrosEnUrl; ?>">
-                            <i class="fa-solid fa-shop"></i> Consolidado externo
+                            <i class="fa-solid fa-shop"></i> Consolidado para rótulos
                         </a>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-primario" data-abrir="modal-importar">
-                        <i class="fa-solid fa-file-arrow-up"></i> Importar Consolidado
+                    <button type="button" class="btn btn-primario" data-abrir="modal-importar-exito">
+                        <i class="fa-solid fa-store"></i> Consolidado de Éxito
+                    </button>
+                    <button type="button" class="btn" data-abrir="modal-importar-otros">
+                        <i class="fa-solid fa-users"></i> Consolidado de otros clientes
                     </button>
                 </div>
             </header>
@@ -228,7 +240,12 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                                    aria-label="Seleccionar <?php echo htmlspecialchars($cedi); ?>">
                             <i class="fa-solid fa-chevron-right grupo-flecha" aria-hidden="true"></i>
                             <div class="grupo-titulo">
-                                <div class="grupo-nombre"><?php echo htmlspecialchars($cedi); ?></div>
+                                <div class="grupo-nombre">
+                                    <?php echo htmlspecialchars($cedi); ?>
+                                    <?php if (!empty($cadenasDeCedi[$cedi])): ?>
+                                        <span class="cadena-etiqueta"><?php echo htmlspecialchars($cadenasDeCedi[$cedi]); ?></span>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="grupo-resumen">
                                     <?php echo $t['productos']; ?> productos ·
                                     <?php echo number_format($t['unidades'], 0, ',', '.'); ?> unidades ·
@@ -244,11 +261,11 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                             </div>
                             <a class="btn btn-chico"
                                href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
-                                <i class="fa-solid fa-file-pdf"></i> Interno
+                                <i class="fa-solid fa-file-pdf"></i> Alistamiento
                             </a>
                             <a class="btn btn-chico"
                                href="<?php echo BASE_URL; ?>/consolidados/acciones?accion=pdf_externo&cedi=<?php echo urlencode($cedi); ?><?php echo $filtros['linea'] !== '' ? '&linea=' . urlencode($filtros['linea']) : ''; ?>">
-                                <i class="fa-solid fa-shop"></i> Externo
+                                <i class="fa-solid fa-shop"></i> Rótulos
                             </a>
                         </summary>
 
@@ -321,10 +338,10 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
             <div id="campos-seleccion"></div>
 
             <button type="submit" class="btn btn-chico" name="formato" value="interno">
-                <i class="fa-solid fa-file-pdf"></i> Consolidado interno
+                <i class="fa-solid fa-file-pdf"></i> Consolidado para alistamiento
             </button>
             <button type="submit" class="btn btn-chico" name="formato" value="externo">
-                <i class="fa-solid fa-shop"></i> Consolidado externo
+                <i class="fa-solid fa-shop"></i> Consolidado para rótulos
             </button>
             <button type="submit" class="btn btn-chico" name="formato" value="productos"
                     title="Todos los productos de los CEDI seleccionados, sumados en una sola tabla">
@@ -336,44 +353,66 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
 <?php endif; ?>
 
 <!-- MODAL: IMPORTAR EL CONSOLIDADO -->
-<div class="modal-fondo" id="modal-importar">
-    <div class="modal-caja">
-        <div class="modal-cabecera">
-            <h2>Importar Consolidado</h2>
-            <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
-        </div>
-        <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
-              method="POST" enctype="multipart/form-data">
-            <?php campoCSRF(); ?>
-            <input type="hidden" name="accion" value="importar_consolidado">
+<?php
+// Dos entradas para importar: la del Éxito y la de otros clientes. Las dos usan el MISMO import
+// (reconoce el formato solo y clasifica cada línea por su empresa compradora), así que el botón es
+// un punto de entrada claro, no una lógica distinta. Se arma con un include para no repetir el
+// formulario: cambia solo el título, el ícono y el texto de ayuda.
+$modalImportar = function ($id, $titulo, $icono, $ayuda, $canal) { ?>
+    <div class="modal-fondo" id="<?php echo $id; ?>">
+        <div class="modal-caja">
+            <div class="modal-cabecera">
+                <h2><i class="fa-solid <?php echo $icono; ?>"></i> <?php echo $titulo; ?></h2>
+                <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
+            </div>
+            <form action="<?php echo BASE_URL; ?>/consolidados/acciones"
+                  method="POST" enctype="multipart/form-data">
+                <?php campoCSRF(); ?>
+                <input type="hidden" name="accion" value="importar_consolidado">
+                <input type="hidden" name="canal" value="<?php echo $canal; ?>">
 
-            <div class="modal-cuerpo">
-                <div class="campo">
-                    <label for="archivo">Archivo de Excel (.xlsx)</label>
-                    <input type="file" id="archivo" name="archivo" accept=".xlsx,.xls" required>
-                    <span class="ayuda">
-                        Se lee la <strong>primera hoja</strong> del archivo tal como lo manda la cadena.
-                        Las columnas se buscan por su nombre, así que no importa en qué orden vengan.
-                    </span>
-                </div>
+                <div class="modal-cuerpo">
+                    <div class="campo">
+                        <label>Archivo de Excel (.xlsx)</label>
+                        <input type="file" name="archivo" accept=".xlsx,.xls" required>
+                        <span class="ayuda"><?php echo $ayuda; ?></span>
+                    </div>
 
-                <div class="aviso aviso-info" style="margin-bottom: 0;">
-                    <i class="fa-solid fa-circle-info"></i>
-                    <div>
-                        Este archivo se <strong>agrega</strong> a lo que ya está pendiente, no lo
-                        reemplaza: los pedidos que traiga se suman a los que hubiera de otros
-                        archivos, diferenciados por su fecha en Picking y en Consolidados.
+                    <div class="aviso aviso-info" style="margin-bottom: 0;">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <div>
+                            El formato se reconoce solo y <strong>cada línea se clasifica por su empresa
+                            compradora</strong>: las del Éxito usan el empaque/cubicaje de las
+                            <strong>excepciones de Éxito</strong> (si hay), y las demás usan el maestro base.
+                            El archivo se <strong>agrega</strong> a lo pendiente, no lo reemplaza.
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="modal-pie">
-                <button type="button" class="btn" data-cerrar>Cancelar</button>
-                <button type="submit" class="btn btn-primario">Importar</button>
-            </div>
-        </form>
+                <div class="modal-pie">
+                    <button type="button" class="btn" data-cerrar>Cancelar</button>
+                    <button type="submit" class="btn btn-primario">Importar</button>
+                </div>
+            </form>
+        </div>
     </div>
-</div>
+<?php };
+
+$modalImportar(
+    'modal-importar-exito',
+    'Consolidado de Éxito',
+    'fa-store',
+    'El Consolidado que manda el Éxito (o el export de SAP de despachos directos del Éxito). Las columnas se buscan por su nombre, en cualquier orden.',
+    'exito'
+);
+$modalImportar(
+    'modal-importar-otros',
+    'Consolidado de otros clientes',
+    'fa-users',
+    'El Consolidado de otras cadenas (Farmatodo, Cencosud…) o el export de facturación de SAP de clientes directos. Se reconoce solo.',
+    'otros'
+);
+?>
 
 <?php if ($hayQueConfirmar): ?>
 <!-- AVISO: EL ARCHIVO YA ESTABA CARGADO
@@ -382,39 +421,92 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
      respuestas tiene que llegar, o queda ahí colgado. Por eso tampoco lleva `data-cerrar`. -->
 <div class="modal-fondo active" id="modal-duplicado" data-obligatorio>
     <div class="modal-caja">
+        <?php
+        // Dos motivos distintos para preguntar lo mismo: el archivo es IDÉNTICO a uno ya cargado
+        // (carga_previa), o TRAE ÓRDENES que ya están pendientes aunque el archivo sea otro
+        // (ordenes_repetidas) — un Consolidado por zona con parte de las órdenes del completo.
+        $repetidas = $pendiente['ordenes_repetidas'] ?? null;
+        ?>
         <div class="modal-cabecera">
-            <h2><i class="fa-solid fa-triangle-exclamation"></i> Este archivo ya fue subido</h2>
+            <h2>
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <?php echo $repetidas ? 'Estos pedidos ya están cargados' : 'Este archivo ya fue subido'; ?>
+            </h2>
         </div>
 
         <div class="modal-cuerpo">
-            <p class="confirmar-pregunta">
-                <strong><?php echo htmlspecialchars($pendiente['nombre']); ?></strong>
-                tiene exactamente la misma información que el Consolidado que ya está cargado.
-            </p>
+            <?php if ($repetidas): ?>
+                <p class="confirmar-pregunta">
+                    <strong><?php echo htmlspecialchars($pendiente['nombre']); ?></strong>
+                    trae <strong><?php echo (int) $repetidas['ordenes']; ?></strong> orden(es) de compra, y
+                    <strong><?php echo count($repetidas['repetidas']); ?></strong> de ellas ya están cargadas y
+                    sin despachar.
+                </p>
 
-            <div class="pastillas" style="margin-bottom: 16px;">
-                <span class="pastilla">
-                    Cargado como <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_archivo']); ?></strong>
-                </span>
-                <span class="pastilla">
-                    El <strong><?php echo date('d/m/Y \a \l\a\s H:i', strtotime($pendiente['carga_previa']['fecha_carga'])); ?></strong>
-                </span>
-                <?php if (!empty($pendiente['carga_previa']['nombre_usuario'])): ?>
+                <div class="tabla-caja" style="margin-bottom: 16px; max-height: 240px; overflow-y: auto;">
+                    <table class="tabla">
+                        <thead>
+                            <tr>
+                                <th>Orden de compra</th>
+                                <th>Ya cargada en</th>
+                                <th>El</th>
+                                <th style="text-align: right;">Líneas</th>
+                                <th style="text-align: right;">Unidades</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($repetidas['repetidas'] as $r): ?>
+                                <tr>
+                                    <td><strong><?php echo htmlspecialchars($r['orden_compra']); ?></strong></td>
+                                    <td><?php echo htmlspecialchars($r['nombre_archivo']); ?></td>
+                                    <td><?php echo date('d/m/Y H:i', strtotime($r['fecha_carga'])); ?></td>
+                                    <td style="text-align: right;"><?php echo number_format((int) $r['lineas'], 0, ',', '.'); ?></td>
+                                    <td style="text-align: right;"><?php echo number_format((int) $r['unidades'], 0, ',', '.'); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <p class="confirmar-pregunta">
+                    <strong><?php echo htmlspecialchars($pendiente['nombre']); ?></strong>
+                    tiene exactamente la misma información que el Consolidado que ya está cargado.
+                </p>
+
+                <div class="pastillas" style="margin-bottom: 16px;">
                     <span class="pastilla">
-                        Por <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_usuario']); ?></strong>
+                        Cargado como <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_archivo']); ?></strong>
                     </span>
-                <?php endif; ?>
-                <span class="pastilla">
-                    <strong><?php echo number_format((int) $pendiente['carga_previa']['filas'], 0, ',', '.'); ?></strong> líneas
-                </span>
-            </div>
+                    <span class="pastilla">
+                        El <strong><?php echo date('d/m/Y \a \l\a\s H:i', strtotime($pendiente['carga_previa']['fecha_carga'])); ?></strong>
+                    </span>
+                    <?php if (!empty($pendiente['carga_previa']['nombre_usuario'])): ?>
+                        <span class="pastilla">
+                            Por <strong><?php echo htmlspecialchars($pendiente['carga_previa']['nombre_usuario']); ?></strong>
+                        </span>
+                    <?php endif; ?>
+                    <span class="pastilla">
+                        <strong><?php echo number_format((int) $pendiente['carga_previa']['filas'], 0, ',', '.'); ?></strong> líneas
+                    </span>
+                </div>
+            <?php endif; ?>
 
             <div class="aviso aviso-atencion" style="margin-bottom: 0;">
                 <i class="fa-solid fa-triangle-exclamation"></i>
                 <div>
-                    Como los archivos ya no se reemplazan, volver a importarlo <strong>agrega una
-                    segunda copia</strong> de estos mismos pedidos: van a aparecer duplicados en
-                    Picking y en Consolidados, cada uno pidiendo el doble de lo que corresponde.
+                    <?php if ($repetidas): ?>
+                        Como los archivos ya no se reemplazan, subirlo <strong>agrega una segunda copia</strong>
+                        de esos pedidos: van a aparecer duplicados en Picking y en Consolidados, cada uno
+                        pidiendo el doble de lo que corresponde.
+                        <?php if (count($repetidas['repetidas']) < (int) $repetidas['ordenes']): ?>
+                            Las demás órdenes del archivo sí son nuevas, pero subirlo las carga a todas
+                            juntas: no se puede importar solo una parte.
+                        <?php endif; ?>
+                    <?php else: ?>
+                        Como los archivos ya no se reemplazan, volver a importarlo <strong>agrega una
+                        segunda copia</strong> de estos mismos pedidos: van a aparecer duplicados en
+                        Picking y en Consolidados, cada uno pidiendo el doble de lo que corresponde.
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

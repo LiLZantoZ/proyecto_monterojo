@@ -172,3 +172,58 @@ table.tabla-detalle .num {
     width: 16px;
     height: 16px;
 }
+
+/* =========================================
+   CAPACIDAD DEL VEHÍCULO RECOMENDADO
+   =========================================
+   Va dentro del aviso que dice en qué carro entra todo el pedido. El nombre del vehículo solo no
+   alcanza para decidir: lo que se necesita saber es si va holgado o al límite, para ver si todavía
+   se le puede sumar otra orden. Por eso cada medida muestra "lo cargado de lo que aguanta" y una
+   barra que lo dice de un vistazo. */
+.carro-capacidad {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 22px;
+    margin-top: 10px;
+}
+
+.carro-medida {
+    flex: 1 1 200px;
+    min-width: 180px;
+}
+
+.carro-medida-texto {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 0.82rem;
+    margin-bottom: 4px;
+}
+
+.carro-medida-texto > span:first-child {
+    color: var(--texto-suave);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-size: 0.72rem;
+}
+
+.carro-porcentaje {
+    margin-left: auto;
+    color: var(--texto-suave);
+    font-size: 0.76rem;
+}
+
+/* La barra. El fondo es el vehículo entero y lo lleno es lo que va cargado. */
+.carro-barra {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+
+.carro-barra > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--vino, #7a1220);
+}

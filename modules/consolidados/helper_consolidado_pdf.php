@@ -40,8 +40,11 @@ table.datos th {
     background: #111; color: #fff; font-size: 7.5pt; text-transform: uppercase;
     letter-spacing: 0.3pt; padding: 5pt 4pt; text-align: left; border: 0.5pt solid #111;
 }
-table.datos td { padding: 4pt; border: 0.5pt solid #bbb; }
+table.datos td { padding: 5pt 4pt; border: 0.5pt solid #bbb; }
 table.datos tr.par td { background: #f6f4f1; }
+/* La columna Lote se escribe a mano: fondo blanco siempre (aunque la fila sea "par") para que se
+   lea lo escrito, y un pelín más de aire. */
+table.datos td.lote-vacio { background: #fff; }
 
 .num { text-align: right; }
 .centro { text-align: center; }
@@ -80,13 +83,17 @@ function seccionCediPdf($cedi, array $filas, $meta) {
            . 'Productos: ' . $totales['productos'] . '</td>'
            . '</tr></table>';
 
+    // La columna "Lote" va VACÍA a propósito: es para que quien alista escriba a mano el lote o la
+    // fecha de vencimiento de cada producto. Solo existe en el PDF (la vista en pantalla del software
+    // no la tiene). Los anchos se reparten para que quede holgada para escribir sin apretar el resto.
     $html .= '<table class="datos">'
            . '<thead><tr>'
-           . '<th width="9%">PLU</th><th width="9%">SKU</th><th>Descripción</th>'
-           . '<th width="9%" class="num">Unidades</th>'
-           . '<th width="8%" class="num">Cajas</th>'
-           . '<th width="8%" class="num">Saldos</th>'
-           . '<th width="7%" class="centro">Ptos</th>'
+           . '<th width="8%">PLU</th><th width="8%">SKU</th><th>Descripción</th>'
+           . '<th width="8%" class="num">Unidades</th>'
+           . '<th width="7%" class="num">Cajas</th>'
+           . '<th width="7%" class="num">Saldos</th>'
+           . '<th width="6%" class="centro">Ptos</th>'
+           . '<th width="13%" class="centro">Lote</th>'
            . '</tr></thead><tbody>';
 
     // Las filas se pintan alternadas desde PHP porque dompdf no soporta :nth-child.
@@ -108,7 +115,9 @@ function seccionCediPdf($cedi, array $filas, $meta) {
                   .  '<td class="num">' . ((int) $f['saldos'] > 0 ? number_format((int) $f['saldos'], 0, ',', '.') : '') . '</td>';
         }
 
-        $html .= '<td class="centro">' . (int) $f['puntos_venta'] . '</td></tr>';
+        // La celda de Lote queda vacía: se escribe a mano sobre el papel.
+        $html .= '<td class="centro">' . (int) $f['puntos_venta'] . '</td>'
+              .  '<td class="lote-vacio"></td></tr>';
     }
 
     // El peso va en la celda de "Ptos" del renglón de totales: sumar puntos de venta no significa
@@ -123,7 +132,8 @@ function seccionCediPdf($cedi, array $filas, $meta) {
            . '<td class="num">' . number_format($totales['unidades'], 0, ',', '.') . '</td>'
            . '<td class="num">' . number_format($totales['cajas'], 0, ',', '.') . '</td>'
            . '<td class="num">' . number_format($totales['saldos'], 0, ',', '.') . '</td>'
-           . '<td class="num">' . $peso . '</td></tr></table>';
+           . '<td class="num">' . $peso . '</td>'
+           . '<td></td></tr></table>';
 
     if ($totales['sin_maestro'] > 0) {
         $html .= '<div class="nota"><strong>Atención:</strong> ' . $totales['sin_maestro']
@@ -181,5 +191,5 @@ function descargarConsolidadoPdf(array $porCedi, $meta, $nombreArchivo) {
 function nombreArchivoCedi($cedi) {
     $limpio = preg_replace('/[^A-Za-z0-9]+/', '_', (string) $cedi);
     $limpio = trim($limpio, '_');
-    return 'Consolidado_' . ($limpio !== '' ? $limpio : 'CEDI') . '_' . date('Ymd') . '.pdf';
+    return 'Consolidado_alistamiento_' . ($limpio !== '' ? $limpio : 'CEDI') . '_' . date('Ymd') . '.pdf';
 }

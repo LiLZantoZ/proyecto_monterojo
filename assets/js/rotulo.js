@@ -81,10 +81,16 @@
         // El cuarto elemento marca el campo DESTACADO: etiqueta en negrita y valor grande. Es solo
         // para el número del punto de venta, el dato que se busca de lejos cuando las cajas ya
         // están estibadas y solo se ve el canto de la etiqueta.
+        // La orden de compra acompaña a la etiqueta de "Cajas total" y no ocupa renglón propio, por
+        // la misma razón que el SKU: un sexto campo no entra en la etiqueta. Ver helper_rotulos_pdf.php.
+        var etiquetaCajas = r.oc && String(r.oc).trim() !== ''
+            ? 'Cajas total  ·  <span class="rotulo-oc">O/C ' + esc(r.oc) + '</span>'
+            : 'Cajas total';
+
         var campos = [
             ['Punto de venta',    esc(r.pv),                    cuerpoValor(r.pv)],
             ['N° punto de venta', esc(numeroPv || '—'),         cuerpoValor(numeroPv, escalaNumero), true],
-            ['Cajas total',       esc(r.total),                 cuerpoValor(String(r.total), 0.75)],
+            [etiquetaCajas,       esc(r.total),                 cuerpoValor(String(r.total), 0.75)],
             // El SKU acompaña a la etiqueta y no ocupa renglón propio: hay productos que comparten
             // nombre y solo se distinguen por él, pero un renglón para cinco dígitos le robaría
             // altura al nombre, que es lo que se lee.

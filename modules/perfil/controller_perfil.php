@@ -9,8 +9,13 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/auth_guard.php';
+require_once __DIR__ . '/../../config/permisos.php';
 require_once __DIR__ . '/../../config/mensajes.php';
 require_once __DIR__ . '/model_perfil.php';
+
+// Editar el perfil propio pide su permiso (2026-09-28): el rol Visitante entra a mirar y no puede
+// cambiar ni el nombre, ni la foto, ni la contraseña de la cuenta que comparte.
+requierePermiso('perfil_editar', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
 $vistaPerfil = BASE_URL . '/perfil';
 

@@ -207,10 +207,65 @@ define('ROTULO_DIBUJO_ALTO_MM', 95);
 // reserva de DHCP en el router tampoco es una opción hoy porque no hay acceso a él. Mientras esas
 // dos cosas sigan así, no tiene sentido perseguir una IP fija: total cambia solo igual.
 //
-// CUANDO LA IP CAMBIE: actualizar esta línea con la nueva (ipconfig en este PC, "Dirección
-// IPv4"). Las etiquetas que ya estén impresas y pegadas con la IP vieja dejan de abrir su QR; las
-// que se impriman después de actualizar esta línea salen con la nueva.
-define('URL_PUBLICA_ROTULOS', getenv('URL_PUBLICA_ROTULOS') ?: 'http://10.7.12.185/proyecto_monterojo');
+// 2026-09-16: YA NO SE ESCRIBE A MANO. En tres días esta línea se actualizó cuatro veces
+// (192.168.1.13 → 10.7.12.119 → .149 → .185) y ese mismo día la PC ya estaba de nuevo en otra red
+// con 192.168.1.13, otra vez desfasada. Como se decidió a propósito dejar el DHCP y aceptar que la
+// IP cambie, la dirección se averigua sola en cada pedido: ver direccionBaseDeRotulos().
+//
+// Sigue mandando la variable de entorno URL_PUBLICA_ROTULOS si está puesta, que es la forma de
+// fijarla el día que haya un nombre o una IP estable.
+
+// ¿Es una dirección que solo sirve dentro de esta misma máquina? Un QR con 'localhost' apunta al
+// teléfono que lo escanea, no al servidor.
+function esDireccionDeLaMismaMaquina($ip) {
+    return $ip === '' || $ip === '::1' || strncmp($ip, '127.', 4) === 0;
+}
+
+// La IP de esta PC en la red, preguntándole al sistema por qué interfaz saldría el tráfico.
+// El socket UDP no envía NADA: "conectarlo" solo hace que el sistema elija la ruta, y de ahí se
+// lee la IP local. Es lo que hace falta cuando no hay petición web (CLI) o cuando se entró por
+// 'localhost' desde el propio servidor.
+function ipDeEstaPcEnLaRed() {
+    $socket = @stream_socket_client('udp://8.8.8.8:53', $errno, $error, 1);
+    if (!$socket) {
+        return null;
+    }
+
+    $nombre = (string) stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    $ip = strstr($nombre, ':', true) ?: $nombre;
+    return ($ip !== '' && !esDireccionDeLaMismaMaquina($ip)) ? $ip : null;
+}
+
+/**
+ * La dirección base del QR, en este orden:
+ *
+ *   1. URL_PUBLICA_ROTULOS del entorno, si está puesta.
+ *   2. La dirección POR LA QUE ENTRÓ esta petición (SERVER_ADDR). Es la mejor de todas porque es,
+ *      por definición, una dirección que el que está usando el sistema PUEDE alcanzar: si entró
+ *      por el hotspot (192.168.137.1) el QR sale con esa, y si entró por el WiFi de la bodega
+ *      sale con la de esa red. No hay que elegir cuál de las dos es "la buena".
+ *   3. La IP de esta PC en la red (CLI, o si se entró por 'localhost' desde el propio servidor).
+ *   4. Vacía: el rótulo sale SIN QR, que es mejor que uno que no lleva a ninguna parte.
+ */
+function direccionBaseDeRotulos() {
+    $delEntorno = getenv('URL_PUBLICA_ROTULOS');
+    if ($delEntorno !== false && trim($delEntorno) !== '') {
+        return rtrim(trim($delEntorno), '/');
+    }
+
+    $servidor = $_SERVER['SERVER_ADDR'] ?? '';
+    if (!esDireccionDeLaMismaMaquina($servidor)) {
+        return 'http://' . $servidor . BASE_URL;
+    }
+
+    $propia = ipDeEstaPcEnLaRed();
+
+    return $propia === null ? '' : 'http://' . $propia . BASE_URL;
+}
+
+define('URL_PUBLICA_ROTULOS', direccionBaseDeRotulos());
 
 // El nombre EXACTO con el que la impresora aparece en Windows (Configuración > Impresoras).
 // Si no coincide, el sistema lo avisa en pantalla en vez de fallar en silencio.

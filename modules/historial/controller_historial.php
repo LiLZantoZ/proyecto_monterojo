@@ -169,6 +169,30 @@ if ($accion === 'imprimir_rotulos') {
     responderImpresionDeRotulos($cuerpo);   // termina la ejecución
 }
 
+// Restaurar EN LOTE los pedidos tildados en el historial. Cada uno se restaura por separado; se
+// devuelve cuántos se restauraron y cuántos no (por ejemplo, si alguno ya no estaba despachado).
+if ($accion === 'restaurar_masivo') {
+    $pedidos = is_array($cuerpo['pedidos'] ?? null) ? $cuerpo['pedidos'] : [];
+    $limpios = [];
+    foreach ($pedidos as $p) {
+        $idc = (int) ($p['id_carga'] ?? 0);
+        $cd  = trim((string) ($p['cedi'] ?? ''));
+        $oc  = trim((string) ($p['orden_compra'] ?? ''));
+        $pv  = trim((string) ($p['punto_venta'] ?? ''));
+        if ($idc > 0 && $cd !== '' && $oc !== '' && $pv !== '') {
+            $limpios[] = ['id_carga' => $idc, 'cedi' => $cd, 'orden_compra' => $oc, 'punto_venta' => $pv];
+        }
+    }
+    if (!$limpios) {
+        http_response_code(400);
+        echo json_encode(['exito' => false, 'error' => 'No llegó ningún pedido válido para restaurar.']);
+        exit();
+    }
+    $r = restaurarEntregasHistorial($pdo, $limpios);
+    echo json_encode(['exito' => true, 'restaurados' => $r['restaurados'], 'fallidos' => $r['fallidos']]);
+    exit();
+}
+
 if (!in_array($accion, ['restaurar'], true)) {
     http_response_code(400);
     echo json_encode(['exito' => false, 'error' => 'Acción desconocida.']);

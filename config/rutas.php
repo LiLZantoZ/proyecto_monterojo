@@ -33,7 +33,9 @@ return [
     'cajas-punto-venta'         => 'modules/cajas_punto_venta/views/cajas_punto_venta.php',
     'rotulos'                   => 'modules/rotulos/views/rotulos.php',
     'ordenes-compra'            => 'modules/ordenes_compra/views/ordenes_compra.php',
-    'perfil'                    => 'modules/perfil/views/perfil.php',
+    'seguimiento'               => 'modules/seguimiento/views/seguimiento.php',
+    'consolidado-mr'            => 'modules/consolidado_mr/views/consolidado_mr.php',
+    'perfil'                  => 'modules/perfil/views/perfil.php',
 
     // ---------------- Acciones (formularios, descargas y pedidos de las pantallas) ----------------
     'login/entrar'              => 'modules/login/controller/UsuarioController.php',
@@ -47,5 +49,7 @@ return [
     'rotulos/enlaces'           => 'modules/historial/controller_rotulos_enlace.php',
     'rotulos/agente'            => 'modules/historial/controller_agente_impresion.php',
     'ordenes-compra/acciones'   => 'modules/ordenes_compra/controller_ordenes_compra.php',
+    'seguimiento/acciones'      => 'modules/seguimiento/controller_seguimiento.php',
+    'consolidado-mr/acciones'   => 'modules/consolidado_mr/controller_consolidado_mr.php',
     'perfil/acciones'           => 'modules/perfil/controller_perfil.php',
 ];

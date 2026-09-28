@@ -75,6 +75,44 @@ if (($_POST['accion'] ?? '') === 'subir_almacenes' && $_SERVER['REQUEST_METHOD']
     exit();
 }
 
+// El PDF de la planilla, pero SOLO de los puntos de venta tildados en la barra de selección (uno o
+// varios CEDI mezclados). Por POST y no por GET como el de arriba: la lista de puntos puede ser
+// larga para una URL. Comparte hojaCajasPorPuntoPdf() y descargarCajasPorPuntoPdf() con la acción
+// 'pdf' de más abajo, para que las dos plantillas de PDF sean literalmente la misma función.
+if (($_POST['accion'] ?? '') === 'pdf_seleccion' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_once __DIR__ . '/../../config/mensajes.php';
+    validarCSRF();
+
+    // Arreglos paralelos (cedi[] / punto[]) y no una clave ya armada: así el HTML no tiene que
+    // preocuparse por el separador '|', que en teoría podría venir dentro de un nombre de tienda.
+    $cedis  = (array) ($_POST['cedi'] ?? []);
+    $puntos = (array) ($_POST['punto'] ?? []);
+    $claves = [];
+    foreach ($cedis as $i => $c) {
+        if (is_string($c) && isset($puntos[$i]) && is_string($puntos[$i]) && $c !== '' && $puntos[$i] !== '') {
+            $claves[] = $c . '|' . $puntos[$i];
+        }
+    }
+
+    if (!$claves) {
+        guardarMensajeFlashTexto('error', 'Seleccioná al menos un punto de venta para descargar.');
+        header("Location: {$vista}");
+        exit();
+    }
+
+    $porCedi = cajasPorPuntoDeVenta($pdo, ['puntos' => $claves]);
+    if (empty($porCedi)) {
+        header("Location: {$vista}?error=sin_datos");
+        exit();
+    }
+
+    descargarCajasPorPuntoPdf(
+        $porCedi,
+        count($claves) . '_puntos_de_venta_' . date('Ymd') . '.pdf'
+    );
+    // descargarCajasPorPuntoPdf() termina la ejecución.
+}
+
 // El QR y los tokens de los rótulos se mudaron el 2026-09-14 a
 // modules/historial/controller_rotulos_enlace.php, que comparten las cuatro pantallas que muestran
 // rótulos. Acá exigían el permiso de este módulo, y Picking, Historial y Generar rótulos también
@@ -162,37 +200,45 @@ function hojaCajasPorPuntoPdf($cedi, array $datos) {
     return $html;
 }
 
-$paginas = [];
-foreach ($porCedi as $cedi => $datos) {
-    $paginas[] = hojaCajasPorPuntoPdf($cedi, $datos);
+// Arma el PDF de $porCedi (la salida de cajasPorPuntoDeVenta) y lo manda como descarga. No
+// devuelve: termina la ejecución. La usan la acción 'pdf' (todo lo filtrado, o un CEDI) y
+// 'pdf_seleccion' (solo los puntos tildados) — es la MISMA plantilla en los dos casos.
+function descargarCajasPorPuntoPdf(array $porCedi, $nombreArchivo) {
+    $paginas = [];
+    foreach ($porCedi as $cedi => $datos) {
+        $paginas[] = hojaCajasPorPuntoPdf($cedi, $datos);
+    }
+
+    // El salto va ENTRE hojas y no al final de cada una: con un page-break después de la última,
+    // el PDF termina con una página en blanco.
+    $cuerpo = implode('<div style="page-break-before: always;"></div>', $paginas);
+
+    $opciones = new Options();
+    $opciones->set('isRemoteEnabled', false);   // el logo va como data URI; nada sale a la red
+    $opciones->set('defaultFont', 'Helvetica');
+
+    $dompdf = new Dompdf($opciones);
+    $dompdf->loadHtml(
+        '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+        . cssConsolidadoPdf() . '</style></head><body>' . $cuerpo . '</body></html>',
+        'UTF-8'
+    );
+    $dompdf->setPaper('letter', 'portrait');
+    $dompdf->render();
+
+    // Se limpia cualquier salida previa: si algo ya se imprimió, se mezcla con los bytes del PDF y
+    // el archivo llega corrupto.
+    if (ob_get_length()) {
+        ob_end_clean();
+    }
+
+    $dompdf->stream($nombreArchivo, ['Attachment' => true]);
+    exit();
 }
-
-// El salto va ENTRE hojas y no al final de cada una: con un page-break después de la última, el
-// PDF termina con una página en blanco.
-$cuerpo = implode('<div style="page-break-before: always;"></div>', $paginas);
-
-$opciones = new Options();
-$opciones->set('isRemoteEnabled', false);   // el logo va como data URI; nada sale a la red
-$opciones->set('defaultFont', 'Helvetica');
-
-$dompdf = new Dompdf($opciones);
-$dompdf->loadHtml(
-    '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
-    . cssConsolidadoPdf() . '</style></head><body>' . $cuerpo . '</body></html>',
-    'UTF-8'
-);
-$dompdf->setPaper('letter', 'portrait');
-$dompdf->render();
 
 $nombre = $filtros['cedi'] !== ''
     ? 'Cajas_por_punto_' . trim(preg_replace('/[^A-Za-z0-9]+/', '_', $filtros['cedi']), '_') . '_' . date('Ymd') . '.pdf'
     : 'Cajas_por_punto_de_venta_' . date('Ymd') . '.pdf';
 
-// Se limpia cualquier salida previa: si algo ya se imprimió, se mezcla con los bytes del PDF y el
-// archivo llega corrupto.
-if (ob_get_length()) {
-    ob_end_clean();
-}
-
-$dompdf->stream($nombre, ['Attachment' => true]);
-exit();
+descargarCajasPorPuntoPdf($porCedi, $nombre);
+// descargarCajasPorPuntoPdf() termina la ejecución.

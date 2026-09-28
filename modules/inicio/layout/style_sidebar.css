@@ -167,6 +167,12 @@
     background-color: #f3d9d9;
 }
 
+/* Sin permiso para editar el perfil (rol Visitante) la tarjeta no es un enlace: no cambia al pasar
+   el mouse, para no parecer un botón. */
+.sidebar-footer-fijo:hover {
+    background-color: var(--vino-claro);
+}
+
 .sidebar-footer:hover .sidebar-footer-editar {
     opacity: 1;
 }

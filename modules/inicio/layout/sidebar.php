@@ -91,6 +91,20 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             </a>
         <?php endif; ?>
 
+        <?php if (tienePermiso('modulo_seguimiento')): ?>
+            <a href="<?php echo BASE_URL; ?>/seguimiento" class="nav-link">
+                <i class="fa-solid fa-truck-fast"></i>
+                <span>Estado de pedidos</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_consolidado_mr')): ?>
+            <a href="<?php echo BASE_URL; ?>/consolidado-mr" class="nav-link">
+                <i class="fa-solid fa-file-invoice-dollar"></i>
+                <span>Consolidado MR</span>
+            </a>
+        <?php endif; ?>
+
         <?php if (tienePermiso('modulo_historial')): ?>
             <a href="<?php echo BASE_URL; ?>/historial" class="nav-link">
                 <i class="fa-solid fa-clock-rotate-left"></i>
@@ -113,9 +127,18 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
 
     <!-- Lleva a "Mi perfil": es la única forma de editar el nombre, la foto o la contraseña
          propios. Un <a> y no un botón con JS porque es una navegación normal a otra pantalla,
-         no una acción que cambie algo acá mismo. -->
+         no una acción que cambie algo acá mismo.
+
+         Sin el permiso perfil_editar (el rol Visitante) la tarjeta queda igual pero NO es un
+         enlace ni lleva el lápiz: mostrar un botón que después rebota con "acceso denegado"
+         solo confunde. -->
+    <?php $puedeEditarPerfil = tienePermiso('perfil_editar'); ?>
+    <?php if ($puedeEditarPerfil): ?>
     <a class="sidebar-footer" href="<?php echo BASE_URL; ?>/perfil"
        title="Editar mi perfil">
+    <?php else: ?>
+    <div class="sidebar-footer sidebar-footer-fijo">
+    <?php endif; ?>
         <img src="<?php echo htmlspecialchars($imagenRuta); ?>"
              alt="Avatar de <?php echo htmlspecialchars($nombreUsuario); ?>"
              class="user-avatar">
@@ -125,8 +148,12 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             <span class="user-role"><?php echo htmlspecialchars($rolUsuario); ?></span>
         </div>
 
+    <?php if ($puedeEditarPerfil): ?>
         <i class="fa-solid fa-pen sidebar-footer-editar" aria-hidden="true"></i>
     </a>
+    <?php else: ?>
+    </div>
+    <?php endif; ?>
 </aside>
 
 <!-- Las listas de sugerencias con el estilo del sistema, en vez de la del navegador. Va acá porque

@@ -17,13 +17,99 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as FechaExcel;
 
 // Lee la PRIMERA hoja del archivo sin importar cómo se llame. El Consolidado la trae como
 // "Sheet1", pero ese nombre depende de con qué la exportaron y no se puede dar por seguro.
+//
+// SOLO ESA HOJA, NO EL LIBRO ENTERO (2026-09-16)
+// load() a secas carga TODAS las hojas y recién después se descartan las que no se usan. Con un
+// export de la cadena —una hoja y nada más— da lo mismo, pero acá se suben también planillas de
+// trabajo de la bodega: "CONSOLIDADOS PLANILLA LOCALES (15 AGOSTO).xlsx" trae 24 hojas y 9,4
+// millones de celdas, de las cuales la primera —la única que interesa— es el 3,2%. El resto se
+// lo lleva una hoja llamada "UB" con 1.048.576 filas: el máximo de Excel, que es lo que queda
+// cuando alguien le aplica un formato a una columna entera. Cargar todo eso agotaba los 512 MB
+// de memory_limit y el importador moría con un error fatal de PHP —pantalla en blanco, sin
+// mensaje— en vez de decir "a este archivo le faltan estas columnas".
+//
+// listWorksheetNames() lee solo los metadatos del libro (Xlsx y Xls lo resuelven sin abrir las
+// celdas), así que preguntar el nombre de la primera hoja para pedir únicamente esa es barato.
+//
+// PERO NO SIEMPRE ALCANZA CON LA PRIMERA HOJA: hay planillas cuya primera hoja resuelve datos con
+// un VLOOKUP contra OTRA hoja del mismo libro. El Consolidado de Farmatodo es así: sus 310 celdas
+// de SKU y descripción son "=VLOOKUP(Q2,Hoja2!A:C,2,0)". Si se carga solo la primera, esas
+// fórmulas se quedan sin el rango al que apuntan y getCalculatedValue() —en resolverFormulas()—
+// agota la memoria intentando resolverlas. Por eso, cuando se detecta una fórmula que nombra otra
+// hoja, se descarta esa lectura y se vuelve a leer el libro entero, como se hacía siempre.
+//
+// UNA SOLA LECTURA POR ARCHIVO (2026-09-16)
+// El mismo .xlsx se lee TRES veces en una sola importación: el controlador calcula la huella para
+// avisar si el archivo ya estaba cargado, importarConsolidado() la vuelve a calcular —a propósito,
+// para guardar siempre la del archivo que acaba de importar— y después lee las filas. Eso se
+// escribió cuando el Consolidado pesaba 60 KB y la tercera lectura no costaba nada. Con el export
+// de facturación de SAP ya no: medido el 2026-09-16 sobre un archivo de 2,9 MB y 12.395 filas, las
+// tres lecturas llevaban la petición a 496 MB de los 512 de memory_limit y a 74 s de los 120 de
+// max_execution_time —pasaba, pero por nada—. PhpSpreadsheet además no le devuelve al sistema la
+// memoria de cada lectura, así que las tres se acumulan.
+//
+// Se guarda el resultado de la ÚLTIMA lectura y nada más: en una petición se importa un archivo,
+// no diez, y quedarse con todos los leídos cambiaría un problema de memoria por otro.
 function leerPrimeraHoja($rutaArchivo) {
+    static $ultima = ['clave' => null, 'filas' => null];
+
+    // Tamaño y fecha en la clave: si el archivo cambia dentro de la misma petición —o si dos
+    // archivos distintos caen en la misma ruta temporal— se vuelve a leer en vez de servir lo
+    // que había.
+    $clave = realpath($rutaArchivo) . '|' . filesize($rutaArchivo) . '|' . filemtime($rutaArchivo);
+    if ($ultima['clave'] === $clave) {
+        return $ultima['filas'];
+    }
+
+    // Se suelta lo anterior ANTES de leer lo nuevo, para no tener dos archivos en memoria a la vez.
+    $ultima = ['clave' => null, 'filas' => null];
+
+    // Primero el intento barato: solo la primera hoja. Devuelve null si esa hoja tiene fórmulas
+    // que miran a otra, y ahí no queda más que leer el libro completo.
+    $filas = leerHojaCero($rutaArchivo, true);
+    if ($filas === null) {
+        $filas = leerHojaCero($rutaArchivo, false);
+    }
+
+    $ultima = ['clave' => $clave, 'filas' => $filas];
+
+    return $filas;
+}
+
+/**
+ * Lee la hoja 0 y devuelve sus filas con las fórmulas ya resueltas.
+ *
+ * Con $soloLaPrimera en true carga únicamente esa hoja —mucho más barato— y devuelve null si
+ * descubre que no alcanzaba, es decir, si alguna celda es una fórmula que nombra otra hoja
+ * ("=VLOOKUP(Q2,Hoja2!A:C,2,0)"). Se comprueba ANTES de resolver ninguna fórmula, porque
+ * intentar calcular una referencia a una hoja que no se cargó es justamente lo que agota la
+ * memoria.
+ */
+function leerHojaCero($rutaArchivo, $soloLaPrimera) {
     $lector = IOFactory::createReaderForFile($rutaArchivo);
     $lector->setReadDataOnly(true);
-    $libro = $lector->load($rutaArchivo);
-    $hoja  = $libro->getSheet(0);
 
-    $filas = resolverFormulas($hoja, $hoja->toArray(null, false, false, false));
+    if ($soloLaPrimera) {
+        // Si el lector no supiera enumerarlas, se carga el libro completo como antes: es más
+        // lento, pero es el comportamiento que ya funcionaba y no vale la pena fallar por esto.
+        $nombres = $lector->listWorksheetNames($rutaArchivo);
+        if (!$nombres) {
+            return null;
+        }
+        $lector->setLoadSheetsOnly($nombres[0]);
+    }
+
+    $libro  = $lector->load($rutaArchivo);
+    $hoja   = $libro->getSheet(0);
+    $crudas = $hoja->toArray(null, false, false, false);
+
+    if ($soloLaPrimera && hayFormulaHaciaOtraHoja($crudas)) {
+        $libro->disconnectWorksheets();
+        unset($libro, $hoja, $crudas);
+        return null;
+    }
+
+    $filas = resolverFormulas($hoja, $crudas);
 
     // Libera la memoria del libro antes de seguir: con archivos grandes, no hacerlo deja todo
     // el contenido retenido durante el resto de la importación.
@@ -31,6 +117,21 @@ function leerPrimeraHoja($rutaArchivo) {
     unset($libro);
 
     return $filas;
+}
+
+// ¿Alguna celda es una fórmula que nombra otra hoja? El '!' es lo que separa la hoja del rango
+// en una referencia de Excel ("Hoja2!A:C"), y no aparece en una fórmula que solo mire su propia
+// hoja ("=A2*B2").
+function hayFormulaHaciaOtraHoja(array $filas) {
+    foreach ($filas as $fila) {
+        foreach ($fila as $valor) {
+            if (is_string($valor) && isset($valor[0]) && $valor[0] === '=' && strpos($valor, '!') !== false) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -159,6 +260,21 @@ function textoLimpio($valor, $maximo = 255) {
     return $texto === '' ? null : mb_substr($texto, 0, $maximo);
 }
 
+/**
+ * Un código de producto (PLU o SKU) que sirva para identificar algo, o null.
+ *
+ * Igual que textoLimpio(), pero además descarta los CEROS. La matriz de productos que exporta SAP
+ * trae la columna PLU llena de "0" cuando ese dato todavía no está asignado (las 41 filas del
+ * archivo del 2026-09-19 venían así), y un cero no identifica a ningún producto: guardarlo dejaba
+ * decenas de productos con plu = '0', que después se cruzan entre sí al resolver el Consolidado
+ * —productoDelMaestro() busca por PLU— y devuelven cualquier cosa.
+ */
+function codigoLimpio($valor, $maximo = 30) {
+    $texto = textoLimpio($valor, $maximo);
+
+    return ($texto === null || trim($texto, '0') === '') ? null : $texto;
+}
+
 // ---------------------------------------------------------------------------------------------
 // CONSOLIDADO
 //
@@ -201,6 +317,11 @@ function columnasConsolidado() {
         // El nombre del producto en la planilla de Farmatodo, calculado con un BUSCARV. No se guarda
         // aparte: reemplaza a "Descripcion del item" cuando esa viene vacía (ver importarConsolidado).
         'denominacion'                   => 'denominacion',
+        // Otra columna donde puede venir el nombre del producto. El Consolidado del Éxito del
+        // 2026-09-21 trae "Descripcion del item" VACÍA y el nombre acá, con el empaque incluido
+        // ("CHICHARR CARNUDO LIMA LIMÓN MR 90G PX18"). Se trata igual que DENOMINACIÓN: solo se
+        // usa si la columna principal no trae nada (ver importarConsolidado).
+        'codigo item proveedor'          => 'codigo_proveedor',
     ];
 }
 
@@ -258,8 +379,13 @@ function columnasObligatoriasConsolidado() {
 // SAP si ese no alcanza— y devuelve el primer mapeo que tenga las cinco columnas obligatorias, o
 // el del prolijo (aunque le falten) si ninguno las tiene: entre dos mapeos igual de incompletos,
 // da lo mismo cuál se devuelva, porque lo único que hace después quien llama es mirar qué falta.
-function mapaDeConsolidado(array $encabezado) {
+//
+// En $formato queda CUÁL de los dos ganó ('consolidado' o 'sap'). No alcanza con mirar el mapa
+// devuelto: los dos formatos llenan los mismos campos internos, y quien importa necesita saber de
+// qué archivo vinieron para tratar sus rarezas (ver filasFacturadasDeSap).
+function mapaDeConsolidado(array $encabezado, &$formato = null) {
     $obligatorias = columnasObligatoriasConsolidado();
+    $formato = 'consolidado';
 
     $mapa = mapearColumnas($encabezado, columnasConsolidado());
     if (array_diff($obligatorias, array_keys($mapa))) {
@@ -270,11 +396,42 @@ function mapaDeConsolidado(array $encabezado) {
             // columna a los dos campos: mapearColumnas() no puede hacerlo solo, porque
             // asigna cada encabezado a un único campo.
             $mapaSap['sku_item'] = $mapaSap['plu'];
+            $formato = 'sap';
             return $mapaSap;
         }
     }
 
     return $mapa;
+}
+
+// ---------------------------------------------------------------------------------------------
+// LAS FILAS GEMELAS EN CERO DEL EXPORT DE SAP
+//
+// En el export de facturación cada línea facturada viene DOS veces, una por cada lote del que
+// salió la mercadería: la fila del lote que despachó trae la cantidad, y su gemela —la de 'Lote'
+// vacío— viene en CERO con todo lo demás idéntico. Comprobado sobre un archivo real
+// (Consolidado.xlsx, 2026-09-16): de 6.220 líneas facturadas, 6.174 tenían su gemela en cero;
+// ningún grupo traía dos filas con cantidad ni una sola que fuera únicamente cero, y la suma de
+// unidades da 261.739 con ellas o sin ellas.
+//
+// Guardarlas no rompe ningún total —las consultas agrupan por producto, y sumar cero no cambia
+// nada—, pero DISPARA POR ERROR el guardián de "la fila de títulos está corrida", que rechaza un
+// archivo cuando más de la mitad de sus líneas quedan en cero unidades. Ese archivo real pasó por
+// 23 filas de 12.394 (6.174 contra un umbral de 6.197): con un puñado más de lotes vacíos, el
+// próximo export se rechazaría con un mensaje que manda a revisar los títulos del Excel, que es
+// justo donde NO está el problema.
+//
+// Solo se aplica al formato de SAP. En el Consolidado prolijo una línea en cero es un producto
+// cancelado —información real— y además es la señal con la que ese guardián hace su trabajo.
+// ---------------------------------------------------------------------------------------------
+function filasFacturadasDeSap(array $filas, array $mapa) {
+    if (!isset($mapa['unidades'])) {
+        return $filas;
+    }
+
+    return array_values(array_filter($filas, function ($fila) use ($mapa) {
+        return (int) ($fila[$mapa['unidades']] ?? 0) !== 0;
+    }));
 }
 
 // Deja un encabezado comparable: sin tildes, en minúsculas y con los espacios colapsados.
@@ -330,6 +487,226 @@ function mapearColumnas(array $encabezado, array $esperadas) {
     return $mapa;
 }
 
+// ---------------------------------------------------------------------------------------------
+// A CUÁL DE DOS PRODUCTOS GEMELOS APUNTA CADA LÍNEA (2026-09-19)
+//
+// Monterojo vende el mismo producto en DOS presentaciones: "PLÁTANOS VERDES SAL MARINA MR 100G"
+// existe como SKU 36350 de a 18 por caja y como 36351 de a 24. Son dos materiales distintos en
+// SAP, con el mismo nombre y —acá está el problema— el MISMO código de barras, porque el EAN
+// identifica la bolsa que compra el cliente, no la caja en que viene. En el maestro hay 22 EAN así.
+//
+// El Consolidado del Éxito trae una columna SKU que NO viene de la cadena: es un BUSCARV por EAN
+// que se arma en la planilla. Como el EAN es el mismo para los dos gemelos, ese BUSCARV devuelve
+// siempre el mismo, y cuando le toca el que no es, el sistema calcula las cajas con el empaque
+// equivocado. Se ve como SALDOS donde no puede haberlos: un CEDI pidió 1530 unidades de un
+// producto que va de a 24 —63 cajas y 18 sueltas—, cuando de a 18 son 85 cajas justas.
+//
+// LA REGLA: un CEDI pide cajas COMPLETAS (confirmado con el usuario el 2026-09-19). Así que entre
+// dos gemelos, el bueno es aquel cuyo empaque divide exacto lo que se pidió. Sobre el Consolidado
+// del 19-09 eso resolvió los 8 casos, sin ninguno ambiguo.
+//
+// Se decide LÍNEA POR LÍNEA y no por CEDI: dos tiendas del mismo CEDI pueden pedir presentaciones
+// distintas —una pidió 18 y la otra 24 del mismo producto, una caja entera cada una—, y sumadas
+// dan 42, que no es múltiplo de ninguno de los dos empaques. Por CEDI ese caso quedaba sin
+// resolver; por línea, las dos se resuelven bien.
+//
+// Es conservador a propósito: solo toca la línea si el SKU que tiene NO da cajas exactas y hay
+// UN ÚNICO gemelo que sí. Si ninguno da exacto —o si dan varios— se deja como vino y se avisa,
+// porque ahí el empaque no alcanza para decidir y adivinar sería peor que no hacer nada.
+//
+// Devuelve la lista de correcciones hechas, para poder decirlas en el mensaje de la importación.
+// ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// EL EAN Y EL PLU QUE LA CADENA USA PARA CADA PRODUCTO (2026-09-21)
+//
+// El Consolidado trae, por línea, el EAN y el PLU con los que la cadena identifica el producto.
+// Esos dos datos son el PUENTE entre su archivo y el maestro: sin ellos, una línea que no traiga
+// SKU no se puede resolver y el producto aparece como "falta para el Consolidado" aunque esté
+// cargado. Pasó el 2026-09-21 con las mini galletas: el producto existía (SKU 36488) pero sin EAN
+// ni PLU, así que el pedido no lo encontraba.
+//
+// Acá se COMPLETA lo que falte, nunca se pisa lo que ya está. Se anota el EAN y el PLU en el
+// producto al que apunta el SKU de la línea, y solo si ese campo está vacío. No crea productos:
+// el Consolidado no trae las unidades por caja, así que un producto creado desde acá nacería sin
+// el dato que hace falta para convertir a cajas — seguiría figurando como faltante, pero ahora con
+// nombre, que es peor porque parece resuelto (decidido con el usuario).
+//
+// CORRE DESPUÉS de corregirGemelosPorEmpaque() a propósito. La columna SKU de estos archivos es un
+// BUSCARV por EAN armado en la planilla, y cuando un EAN lo comparten dos presentaciones trae la
+// que no es. Esa función ya reescribió esos SKU usando la regla de las cajas completas, así que
+// acá se parte de un SKU verificado. Al revés, se le colgaría el EAN de la cadena al producto
+// equivocado —exactamente el error que estamos arreglando hoy, pero automatizado—.
+//
+// Devuelve lo que completó, para poder decirlo en el mensaje de la importación.
+// ---------------------------------------------------------------------------------------------
+function completarIdentificadoresDelMaestro($pdo, $idCarga) {
+    // El producto al que apunta cada línea se busca primero por SKU. Los Consolidados del Éxito no
+    // traen esa columna —el nombre viene en "Codigo item proveedor" y el SKU no viene—, así que el
+    // otro camino es el NOMBRE COMPLETO, que sí incluye el empaque ("...MR 100G PX20") y por eso
+    // distingue entre las dos presentaciones de un mismo producto. Se exige que haya UN SOLO
+    // producto del maestro con ese nombre: si hay dos, no se toca nada.
+    $porNombre = [];
+    foreach ($pdo->query("SELECT sku, descripcion, unidades_por_caja FROM maestro_productos
+                           WHERE descripcion IS NOT NULL AND descripcion <> ''") as $p) {
+        $porNombre[normalizarDescripcionProducto($p['descripcion'])][] = $p;
+    }
+
+    $lineas = $pdo->prepare(
+        "SELECT l.sku_item, l.descripcion_item, l.ean_item, l.plu, SUM(l.unidades) unidades
+           FROM consolidado_lineas l
+          WHERE l.id_carga = ?
+          GROUP BY l.sku_item, l.descripcion_item, l.ean_item, l.plu"
+    );
+    $lineas->execute([(int) $idCarga]);
+
+    $producto = $pdo->prepare("SELECT sku, descripcion, unidades_por_caja, ean, plu
+                                 FROM maestro_productos WHERE sku = ?");
+
+    // COALESCE + NULLIF: completa el que esté vacío y deja intacto el que ya tenga valor.
+    $completar = $pdo->prepare(
+        "UPDATE maestro_productos
+            SET ean = COALESCE(NULLIF(ean, ''), :ean),
+                plu = COALESCE(NULLIF(plu, ''), :plu)
+          WHERE sku = :sku"
+    );
+
+    $completados = [];
+
+    foreach ($lineas as $l) {
+        $ean = textoLimpio($l['ean_item'], 20);
+        $plu = codigoLimpio($l['plu']);
+
+        // En el Consolidado que sale del export de SAP no hay PLU: ese formato usa la columna
+        // 'Material' para las dos cosas, el PLU y el SKU (ver mapaDeConsolidado). Un PLU igual al
+        // SKU es el número de material de SAP, no el código con el que la cadena pide el producto,
+        // y guardarlo como PLU llenaría el maestro de códigos que ninguna cadena va a mandar.
+        if ($plu !== null && $plu === textoLimpio($l['sku_item'], 30)) {
+            $plu = null;
+        }
+
+        if ($ean === null && $plu === null) {
+            continue;
+        }
+
+        // 1. Por SKU, si la línea lo trae.
+        $destino = null;
+        if (textoLimpio($l['sku_item'], 30) !== null) {
+            $producto->execute([$l['sku_item']]);
+            $destino = $producto->fetch() ?: null;
+        }
+
+        // 2. Si no, por el nombre completo, y solo si es de uno solo.
+        if ($destino === null) {
+            $clave = normalizarDescripcionProducto($l['descripcion_item'] ?? '');
+            if ($clave === '' || count($porNombre[$clave] ?? []) !== 1) {
+                continue;
+            }
+            $producto->execute([$porNombre[$clave][0]['sku']]);
+            $destino = $producto->fetch() ?: null;
+        }
+
+        if ($destino === null) {
+            continue;
+        }
+
+        // Ya los tiene: no hay nada que completar y no se pisa nada.
+        $faltaEan = ($destino['ean'] === null || $destino['ean'] === '') && $ean !== null;
+        $faltaPlu = ($destino['plu'] === null || $destino['plu'] === '') && $plu !== null;
+        if (!$faltaEan && !$faltaPlu) {
+            continue;
+        }
+
+        // Último control, el mismo de siempre: si lo pedido no es un múltiplo del empaque de ese
+        // producto, es que la línea no es suya y estaríamos colgándole el código de la cadena al
+        // producto equivocado —el error que este archivo ya provocó una vez—.
+        $uxc = (int) ($destino['unidades_por_caja'] ?? 0);
+        if ($uxc > 0 && (int) $l['unidades'] % $uxc !== 0) {
+            continue;
+        }
+
+        $completar->execute([
+            ':ean' => $faltaEan ? $ean : null,
+            ':plu' => $faltaPlu ? $plu : null,
+            ':sku' => $destino['sku'],
+        ]);
+
+        if ($completar->rowCount() > 0) {
+            $completados[] = [
+                'sku' => $destino['sku'],
+                'ean' => $faltaEan ? $ean : null,
+                'plu' => $faltaPlu ? $plu : null,
+            ];
+        }
+    }
+
+    return $completados;
+}
+
+function corregirGemelosPorEmpaque($pdo, $idCarga) {
+    // Los EAN que tienen más de un producto y con empaques DISTINTOS: los que no se distinguen.
+    $gemelos = [];
+    foreach ($pdo->query(
+        "SELECT ean, sku, unidades_por_caja FROM maestro_productos
+          WHERE ean IS NOT NULL AND ean <> '' AND unidades_por_caja > 0"
+    ) as $f) {
+        $gemelos[$f['ean']][] = ['sku' => $f['sku'], 'uxc' => (int) $f['unidades_por_caja']];
+    }
+
+    $gemelos = array_filter(
+        $gemelos,
+        fn($g) => count($g) > 1 && count(array_unique(array_column($g, 'uxc'))) > 1
+    );
+
+    if (!$gemelos) {
+        return [];
+    }
+
+    $lineas = $pdo->prepare(
+        "SELECT id_linea, cedi, punto_venta, ean_item, sku_item, unidades
+           FROM consolidado_lineas
+          WHERE id_carga = ? AND despachado = 0 AND unidades > 0
+            AND ean_item IS NOT NULL AND ean_item <> ''"
+    );
+    $lineas->execute([(int) $idCarga]);
+
+    $reescribir = $pdo->prepare("UPDATE consolidado_lineas SET sku_item = ? WHERE id_linea = ?");
+    $corregidas = [];
+
+    foreach ($lineas as $l) {
+        if (!isset($gemelos[$l['ean_item']])) {
+            continue;
+        }
+
+        $unidades = (int) $l['unidades'];
+        $candidatos = $gemelos[$l['ean_item']];
+
+        // ¿El SKU que ya trae da cajas exactas? Entonces no hay nada que decidir.
+        foreach ($candidatos as $c) {
+            if ($c['sku'] === $l['sku_item'] && $unidades % $c['uxc'] === 0) {
+                continue 2;
+            }
+        }
+
+        $sirven = array_values(array_filter($candidatos, fn($c) => $unidades % $c['uxc'] === 0));
+        if (count($sirven) !== 1 || $sirven[0]['sku'] === $l['sku_item']) {
+            continue;   // ninguno o más de uno: el empaque no alcanza para decidir
+        }
+
+        $reescribir->execute([$sirven[0]['sku'], $l['id_linea']]);
+
+        $corregidas[] = [
+            'cedi'     => $l['cedi'],
+            'punto'    => $l['punto_venta'],
+            'unidades' => $unidades,
+            'de'       => $l['sku_item'],
+            'a'        => $sirven[0]['sku'],
+            'uxc'      => $sirven[0]['uxc'],
+        ];
+    }
+
+    return $corregidas;
+}
+
 /**
  * Huella del CONTENIDO de un archivo Consolidado: un SHA-256 que identifica lo que trae, no el
  * archivo.
@@ -353,9 +730,15 @@ function huellaDelConsolidado($rutaArchivo) {
     // mapaDeConsolidado(): si el formato prolijo no alcanza, prueba el del export de SAP. Sin
     // esto, un Consolidado de ese formato nunca calcularía huella y el aviso de "esto ya está
     // cargado" jamás dispararía para él.
-    $mapa = mapaDeConsolidado(array_shift($filas));
+    $mapa = mapaDeConsolidado(array_shift($filas), $formato);
     if (array_diff(columnasObligatoriasConsolidado(), array_keys($mapa))) {
         return null;
+    }
+
+    // Las gemelas en cero del export de SAP no se importan (ver filasFacturadasDeSap), así que
+    // tampoco cuentan acá: esta función promete el hash de lo que REALMENTE se guarda.
+    if ($formato === 'sap') {
+        $filas = filasFacturadasDeSap($filas, $mapa);
     }
 
     $lineas = [];
@@ -419,6 +802,64 @@ function cargaConLaMismaHuella($pdo, $huella) {
 }
 
 /**
+ * Las órdenes de compra que trae el archivo y que YA están cargadas y sin despachar.
+ *
+ * POR QUÉ NO ALCANZA CON LA HUELLA (2026-09-18)
+ * cargaConLaMismaHuella() solo reconoce el MISMO archivo, entero. No reconoce un archivo que sea un
+ * PEDAZO de otro ya cargado, y eso es exactamente lo que pasó: se subió el Consolidado completo de
+ * una cadena y después "bogota crosdoking.xlsx", que traía tres de sus quince órdenes. Las huellas
+ * eran distintas —una tiene 15 órdenes y la otra 3—, no saltó ningún aviso, y esos tres pedidos
+ * quedaron cargados dos veces. Picking los mostró por duplicado, pidiendo el doble de cajas.
+ *
+ * Se compara por ORDEN DE COMPRA y no por línea: es el número con el que la cadena identifica el
+ * pedido, y si ese número ya está pendiente es el mismo pedido aunque el archivo traiga las líneas
+ * partidas, en otro orden o con alguna cantidad corregida.
+ *
+ * Solo mira lo PENDIENTE: una orden ya despachada que vuelve a aparecer es un pedido nuevo que
+ * reusa el número, no un duplicado de nada vivo (el mismo criterio que cargaConLaMismaHuella).
+ *
+ * Devuelve ['ordenes' => cuántas trae el archivo, 'repetidas' => [...]] o null si el archivo no se
+ * puede leer como Consolidado —de eso ya avisa la importación, con mejor detalle que acá—.
+ */
+function ordenesYaPendientes($pdo, $rutaArchivo) {
+    $filas = leerPrimeraHoja($rutaArchivo);
+    if (count($filas) < 2) {
+        return null;
+    }
+
+    $mapa = mapaDeConsolidado(array_shift($filas));
+    if (!isset($mapa['orden_compra'])) {
+        return null;
+    }
+
+    $ordenes = [];
+    foreach ($filas as $fila) {
+        $oc = textoLimpio($fila[$mapa['orden_compra']] ?? null, 40);
+        if ($oc !== null) {
+            $ordenes[$oc] = true;
+        }
+    }
+
+    if (!$ordenes) {
+        return null;
+    }
+
+    $marcas = implode(',', array_fill(0, count($ordenes), '?'));
+    $stmt = $pdo->prepare(
+        "SELECT l.orden_compra, COUNT(*) AS lineas, SUM(l.unidades) AS unidades,
+                MIN(c.nombre_archivo) AS nombre_archivo, MIN(c.fecha_carga) AS fecha_carga
+           FROM consolidado_lineas l
+           JOIN consolidado_cargas c ON c.id_carga = l.id_carga
+          WHERE l.despachado = 0 AND l.orden_compra IN ($marcas)
+          GROUP BY l.orden_compra
+          ORDER BY l.orden_compra"
+    );
+    $stmt->execute(array_keys($ordenes));
+
+    return ['ordenes' => count($ordenes), 'repetidas' => $stmt->fetchAll()];
+}
+
+/**
  * Importa el archivo Consolidado. Se AGREGA a lo que ya está pendiente —no lo reemplaza—: cada
  * carga queda con su propio id_carga y su propia fecha, y Picking/Consolidados muestran los
  * pendientes de TODAS las cargas juntos, diferenciados por esa fecha (decidido con el usuario el
@@ -452,7 +893,7 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
     // mapaDeConsolidado() prueba el formato prolijo y, si no alcanza, el del export de SAP (ver
     // columnasConsolidadoSap()): es el otro formato válido de Consolidado, para los despachos
     // directos que no pasan por un CEDI de cadena.
-    $mapa = mapaDeConsolidado($encabezado);
+    $mapa = mapaDeConsolidado($encabezado, $formato);
 
     // Sin estas cinco no hay nada que guardar, en NINGUNO de los dos formatos. Se avisa cuál
     // falta en vez de un "formato incorrecto" genérico, que obliga a adivinar qué tiene de malo
@@ -480,6 +921,16 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
             'filas'   => 0,
             'id_carga' => null,
         ];
+    }
+
+    // Las filas gemelas en cero del export de SAP se descartan ANTES que cualquier otra cosa:
+    // si no, el guardián de "títulos corridos" de más abajo las cuenta como si el archivo
+    // estuviera mal armado y lo rechaza. Ver filasFacturadasDeSap().
+    $gemelasEnCero = 0;
+    if ($formato === 'sap') {
+        $antesDeFiltrar = count($filas);
+        $filas = filasFacturadasDeSap($filas, $mapa);
+        $gemelasEnCero = $antesDeFiltrar - count($filas);
     }
 
     // ------------------------------------------------------------------------------------------
@@ -510,6 +961,11 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
 
     $ajustes = [];
 
+    if ($gemelasEnCero) {
+        $ajustes[] = "se descartaron {$gemelasEnCero} fila(s) en 0 unidades que el export de SAP "
+                   . 'repite por lote (la cantidad va en su fila gemela)';
+    }
+
     if ($columnaVacia('unidades') && !$columnaVacia('cantidad_total')) {
         // Solo si cada orden va a una única tienda: es lo que hace que "Cantidad Total" sea la de
         // esa tienda y no la suma de varias.
@@ -538,9 +994,17 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
         $ajustes[] = 'las unidades se tomaron de "Cantidad Total", porque "Cantidad Pto Vta" venía vacía y cada orden va a una sola tienda';
     }
 
-    if ($columnaVacia('descripcion_item') && !$columnaVacia('denominacion')) {
-        $mapa['descripcion_item'] = $mapa['denominacion'];
-        $ajustes[] = 'la descripción se tomó de "DENOMINACIÓN"';
+    // El nombre del producto puede venir en tres columnas según quién exporte el archivo, y en
+    // cada una de ellas la principal llega vacía. Se prueban en orden y se usa la primera que
+    // traiga algo; si "Descripcion del item" viene llena, no se toca nada.
+    if ($columnaVacia('descripcion_item')) {
+        foreach (['denominacion' => 'DENOMINACIÓN', 'codigo_proveedor' => 'Codigo item proveedor'] as $campo => $titulo) {
+            if (!$columnaVacia($campo)) {
+                $mapa['descripcion_item'] = $mapa[$campo];
+                $ajustes[] = 'la descripción se tomó de "' . $titulo . '"';
+                break;
+            }
+        }
     }
 
     $valor = function (array $fila, $campo) use ($mapa) {
@@ -614,6 +1078,53 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
         }
     }
 
+    // ------------------------------------------------------------------------------------------
+    // ¿LAS CANTIDADES DE LAS TIENDAS SUMAN LA CANTIDAD TOTAL DE LA ORDEN? (2026-09-18)
+    //
+    // El archivo trae las dos cosas: cuánto le toca a cada tienda ("Cantidad Pto Vta") y cuánto
+    // lleva la orden entera de ese producto ("Cantidad Total"). Si las dos están, tienen que dar
+    // lo mismo, y cuando no dan es que una celda está mal.
+    //
+    // Vino de un caso real (Consolidado Cencosud 18-09-2026.xlsx): una tienda pedía 11.112
+    // unidades de un producto cuya orden entera eran 736. Nada falló —el archivo entró, dijo "518
+    // líneas importadas"— y Picking mandó a preparar 11.064 unidades que no existían. Se descubrió
+    // de casualidad, comparando contra otro archivo que traía la misma orden bien.
+    //
+    // AVISA, NO RECHAZA: los archivos reales traen diferencias chicas —en el mismo Cencosud había
+    // seis, de -12 a +20 unidades— que son del pedido y no errores de carga. Rechazar por eso
+    // dejaría a la bodega sin poder trabajar. Lo que hace falta es que la diferencia se VEA, sobre
+    // todo la grande, y que quien importa decida.
+    //
+    // No corre cuando las unidades SE TOMARON de "Cantidad Total" (el caso Farmatodo de más
+    // arriba): ahí las dos columnas son la misma y la comprobación se cumpliría sola sin mirar nada.
+    // ------------------------------------------------------------------------------------------
+    $descuadres = [];
+
+    if (isset($mapa['cantidad_total'], $mapa['unidades']) && $mapa['unidades'] !== $mapa['cantidad_total']) {
+        $sumaPorGrupo = [];
+        foreach ($filas as $fila) {
+            $plu = textoLimpio($valor($fila, 'plu'), 30);
+            $oc  = textoLimpio($valor($fila, 'orden_compra'), 40);
+            if ($plu === null || $oc === null) { continue; }
+            $clave = $oc . '|' . $plu;
+            $sumaPorGrupo[$clave] = ($sumaPorGrupo[$clave] ?? 0) + (int) $valor($fila, 'unidades');
+        }
+
+        foreach ($totalesPorGrupo as $clave => $total) {
+            $suma = $sumaPorGrupo[$clave] ?? 0;
+            if ($total > 0 && $suma !== $total) {
+                [$oc, $plu] = explode('|', $clave, 2);
+                $descuadres[] = [
+                    'orden' => $oc, 'plu' => $plu, 'suma' => $suma,
+                    'total' => $total, 'diferencia' => $suma - $total,
+                ];
+            }
+        }
+
+        // El peor primero: si hay que mirar uno solo, que sea el que más unidades mueve.
+        usort($descuadres, fn($a, $b) => abs($b['diferencia']) <=> abs($a['diferencia']));
+    }
+
     $pdo->beginTransaction();
     try {
         // NO se borra nada de lo que ya había —ni pendiente ni despachado—. Esta carga se suma
@@ -681,6 +1192,15 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
         $pdo->prepare("UPDATE consolidado_cargas SET filas = ? WHERE id_carga = ?")->execute([$guardadas, $idCarga]);
         $pdo->commit();
 
+        // ANTES de completarPluDelMaestro(): si una línea apunta al gemelo equivocado, ese cruce
+        // le colgaría el PLU de la cadena al producto que no es, y el error quedaría guardado en
+        // el maestro en vez de solo en esta carga. Ver corregirGemelosPorEmpaque().
+        $gemelosCorregidos = corregirGemelosPorEmpaque($pdo, $idCarga);
+
+        // Con los SKU ya verificados, se le anotan al maestro el EAN y el PLU que usa la cadena,
+        // donde falten. Ver completarIdentificadoresDelMaestro() para por qué va en este orden.
+        $identificadores = completarIdentificadoresDelMaestro($pdo, $idCarga);
+
         // El Consolidado nuevo puede traer productos que el maestro todavía no tenía asociados a
         // un PLU. Se cruza acá, apenas termina la importación, para que nadie tenga que acordarse
         // de hacerlo desde la pantalla del maestro.
@@ -705,7 +1225,45 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
                       . (count($almacenes['sin_lista']) > 5 ? '…' : '') . '.';
         }
 
-        return ['exito' => true, 'mensaje' => $mensaje, 'filas' => $guardadas, 'id_carga' => $idCarga];
+        // Lo que el archivo le enseñó al maestro. Se dice porque es un cambio en el catálogo, no
+        // en esta carga: a partir de ahora ese producto se va a encontrar por su EAN y su PLU.
+        if ($identificadores) {
+            $ej = $identificadores[0];
+            $mensaje .= ' ' . count($identificadores) . ' producto(s) del maestro tomaron del archivo '
+                      . 'el EAN o el PLU que les faltaba (por ejemplo, el SKU ' . $ej['sku']
+                      . ($ej['ean'] !== null ? ' ← EAN ' . $ej['ean'] : '')
+                      . ($ej['plu'] !== null ? ' ← PLU ' . $ej['plu'] : '') . ').';
+        }
+
+        // Las líneas que quedaron apuntando al otro gemelo: se dice cuántas y con un ejemplo, para
+        // que quien importa sepa que el sistema tomó una decisión y cuál fue.
+        if ($gemelosCorregidos) {
+            $ej = $gemelosCorregidos[0];
+            $mensaje .= ' ' . count($gemelosCorregidos) . ' línea(s) apuntaban a la presentación '
+                      . 'equivocada del producto y se corrigieron para que den cajas completas '
+                      . "(por ejemplo, {$ej['unidades']} unidades en {$ej['cedi']}: del SKU {$ej['de']} "
+                      . "al {$ej['a']}, que va de a {$ej['uxc']} por caja).";
+        }
+
+        // El descuadre se dice con el caso PEOR adentro, con orden, producto y los dos números:
+        // "hay 7 diferencias" sin decir cuál obliga a abrir el Excel y buscarlas a mano, que es
+        // justo lo que nadie va a hacer con el camión esperando.
+        if ($descuadres) {
+            $peor = $descuadres[0];
+            $mensaje .= ' OJO: en ' . count($descuadres) . ' orden(es) la suma de las tiendas no da la '
+                      . '"Cantidad Total" del pedido. La mayor diferencia es de '
+                      . sprintf('%+d', $peor['diferencia']) . ' unidades en la orden ' . $peor['orden']
+                      . ', producto ' . $peor['plu'] . ' (las tiendas suman ' . number_format($peor['suma'], 0, ',', '.')
+                      . ' y el pedido dice ' . number_format($peor['total'], 0, ',', '.') . ').';
+        }
+
+        return [
+            'exito'      => true,
+            'mensaje'    => $mensaje,
+            'filas'      => $guardadas,
+            'id_carga'   => $idCarga,
+            'descuadres' => $descuadres,
+        ];
 
     } catch (PDOException $e) {
         $pdo->rollBack();
@@ -768,6 +1326,32 @@ function empaqueDelNombre($descripcion) {
     }
     // PX20 -> paca por 20
     if (preg_match('/\bPX\s*(\d+)\s*$/', $texto, $m)) {
+        return ['presentacion' => 'PX' . $m[1], 'unidades_por_caja' => (int) $m[1]];
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // EL MISMO EMPAQUE, ESCRITO COMO LO TRAE "Texto breve de material" (2026-09-18)
+    //
+    // El export de SAP nombra cada material de DOS formas: "Denominación" usa PX20 / BX6x16, y
+    // "Texto breve de material" usa CAJ X20 / BOL X6X18. Son el mismo empaque escrito distinto:
+    // comprobado material por material sobre un export real (107 materiales), los dos formatos dan
+    // el MISMO número de unidades en 102, y en los 5 restantes uno de los dos simplemente no traía
+    // empaque. La presentación se guarda normalizada a PX/BX para que el maestro tenga un solo
+    // vocabulario, venga el nombre de donde venga.
+    //
+    // Van DESPUÉS de PX/BX a propósito: si el nombre trae los dos, manda el de siempre. Eso además
+    // evita la única trampa encontrada —dos materiales cuyo texto breve viene abreviado y perdió un
+    // espacio: "MINI GALL FRUT ROJO UAU 30G BT CAJ X1108", que se leería como 1108 cuando su
+    // Denominación dice PX108, o sea 108—. Por eso el número se acota a tres dígitos: los empaques
+    // reales del catálogo van de 12 a 120, y el único valor de cuatro cifras visto es ese error.
+    // ------------------------------------------------------------------------------------------
+
+    // BOL X6X18 == BX6x18: el segundo número, igual que arriba.
+    if (preg_match('/\bBOL\s*X\s*(\d{1,3})\s*X\s*(\d{1,3})\s*$/', $texto, $m)) {
+        return ['presentacion' => 'BX' . $m[1] . 'x' . $m[2], 'unidades_por_caja' => (int) $m[2]];
+    }
+    // CAJ X20 == PX20
+    if (preg_match('/\bCAJ\s*X\s*(\d{1,3})\s*$/', $texto, $m)) {
         return ['presentacion' => 'PX' . $m[1], 'unidades_por_caja' => (int) $m[1]];
     }
 
@@ -1037,6 +1621,12 @@ function columnasMaestro() {
         'descripcion'       => 'descripcion',
         'descripcion del item' => 'descripcion',
         'nombre producto'   => 'descripcion',
+        // Como lo titula la matriz de productos que exporta SAP, y también el Consolidado de
+        // Farmatodo. Sin esta línea el nombre se ignoraba EN SILENCIO: el archivo entraba, decía
+        // "N productos", y los que eran nuevos quedaban creados sin descripción —en el maestro se
+        // veían como una fila en blanco y parecía que el sistema los hubiera borrado— (2026-09-19).
+        'denominacion'      => 'descripcion',
+        'denominacion del item' => 'descripcion',
         'unidades por caja' => 'unidades_por_caja',
         'und por caja'      => 'unidades_por_caja',
         'unidades x caja'   => 'unidades_por_caja',
@@ -1113,7 +1703,8 @@ function importarMaestro($pdo, $rutaArchivo) {
     $eanRaros   = 0;
 
     foreach ($filas as $fila) {
-        if (textoLimpio($valor($fila, 'sku'), 30) === null && textoLimpio($valor($fila, 'plu'), 30) === null) {
+        // codigoLimpio() y no textoLimpio(): un PLU en cero es "todavía no tiene PLU", no un PLU.
+        if (codigoLimpio($valor($fila, 'sku')) === null && codigoLimpio($valor($fila, 'plu')) === null) {
             continue;
         }
 
@@ -1162,8 +1753,8 @@ function importarMaestro($pdo, $rutaArchivo) {
     $productos = [];
 
     foreach ($filas as $fila) {
-        $sku = textoLimpio($valor($fila, 'sku'), 30);
-        $plu = textoLimpio($valor($fila, 'plu'), 30);
+        $sku = codigoLimpio($valor($fila, 'sku'));
+        $plu = codigoLimpio($valor($fila, 'plu'));
 
         if ($sku === null && $plu === null) {
             continue;
@@ -1202,6 +1793,56 @@ function importarMaestro($pdo, $rutaArchivo) {
 
     if (!$productos) {
         return ['exito' => false, 'mensaje' => 'El archivo no traía ningún producto.', 'filas' => 0];
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // UN NOMBRE NUEVO QUE CONTRADICE EL EMPAQUE YA CARGADO (2026-09-19)
+    //
+    // El nombre del producto LLEVA ADENTRO su empaque ("...MR 100G PX24" son 24 por caja, ver
+    // empaqueDelNombre). Este importador acepta el nombre pero NO toca unidades_por_caja, así que
+    // un nombre que diga otro empaque deja el maestro contradiciéndose: la etiqueta diría "CAJ
+    // X18" y el sistema seguiría calculando de a 24. Con eso, las cajas de un pedido salen mal.
+    //
+    // Pasó de verdad: una matriz de productos traía "PLÁTAN VERDES SAL MARINA MR 100G CAJ X18"
+    // para un material que en el export de facturación de SAP es CAJ X24, y otra fila le ponía a
+    // un SKU el nombre de un producto completamente distinto. Ninguna de las dos se notaba: el
+    // archivo entraba diciendo "9 actualizados".
+    //
+    // Ante la duda NO se pisa el nombre y se avisa cuál es. Cambiar el empaque de un producto es
+    // una decisión de catálogo —hay que corregir el archivo o el empaque, según cuál esté mal— y
+    // no algo que deba pasar de callado al subir una planilla. El resto del archivo entra normal.
+    // ------------------------------------------------------------------------------------------
+    $contradicen = [];
+    $empaqueGuardado = $pdo->prepare("SELECT unidades_por_caja FROM maestro_productos WHERE sku = ?");
+
+    foreach ($productos as $clave => $prod) {
+        if ($prod['sku'] === null || $prod['descripcion'] === null) {
+            continue;
+        }
+
+        // Si el archivo trae unidades por caja, manda ese valor y no hay contradicción posible:
+        // los dos datos vienen del mismo archivo y se guardan juntos.
+        if ($prod['uxc'] !== null) {
+            continue;
+        }
+
+        $delNombre = empaqueDelNombre($prod['descripcion']);
+        if ($delNombre === null) {
+            continue;
+        }
+
+        $empaqueGuardado->execute([$prod['sku']]);
+        $actual = $empaqueGuardado->fetch(PDO::FETCH_COLUMN);
+
+        if ($actual !== false && $actual !== null && (int) $actual !== $delNombre['unidades_por_caja']) {
+            $contradicen[] = [
+                'sku'      => $prod['sku'],
+                'nombre'   => $prod['descripcion'],
+                'del_nombre' => $delNombre['unidades_por_caja'],
+                'guardado' => (int) $actual,
+            ];
+            $productos[$clave]['descripcion'] = null;   // se deja el nombre que ya estaba
+        }
     }
 
     // COALESCE con VALUES(): una columna que el archivo no traiga deja el valor que ya había. Sin
@@ -1312,8 +1953,20 @@ function importarMaestro($pdo, $rutaArchivo) {
     // qué revisar.
     // ---------------------------------------------------------------------------------------
     if (!$creados && !$actualizados) {
-        $mensaje = 'El archivo se leyó bien (' . count($productos) . ' producto(s)) pero no cambió '
-                 . 'ningún dato: lo que trae ya es lo que estaba guardado.';
+        // Si lo único que traía de nuevo eran nombres que contradicen el empaque guardado, el
+        // motivo es ESE y no "ya estaba todo igual": sin decirlo, quien sube el archivo lo vuelve
+        // a subir pensando que no se leyó.
+        $mensaje = $contradicen
+            ? 'El archivo se leyó bien (' . count($productos) . ' producto(s)) y no se cambió nada porque '
+              . count($contradicen) . ' de sus nombres dicen un empaque DISTINTO del que ya está cargado.'
+            : 'El archivo se leyó bien (' . count($productos) . ' producto(s)) pero no cambió '
+              . 'ningún dato: lo que trae ya es lo que estaba guardado.';
+
+        foreach (array_slice($contradicen, 0, 4) as $c) {
+            $mensaje .= " SKU {$c['sku']}: el archivo dice {$c['del_nombre']} por caja y el maestro"
+                      . " tiene {$c['guardado']}.";
+        }
+
         if ($noEncontrados > 0) {
             $mensaje .= " Además, {$noEncontrados} fila(s) traían solo PLU y ese producto no está"
                       . ' en el maestro.';
@@ -1332,6 +1985,21 @@ function importarMaestro($pdo, $rutaArchivo) {
     if ($sinCambios > 0)   { $partes[] = "{$sinCambios} ya estaba(n) igual"; }
 
     $mensaje = 'Maestro actualizado: ' . implode(', ', $partes);
+
+    // Los nombres que decían otro empaque que el guardado: no se pisaron, y hay que decir cuáles
+    // son y en qué se contradicen, o nadie va a saber qué revisar. Ver el comentario de arriba.
+    if ($contradicen) {
+        $detalle = [];
+        foreach (array_slice($contradicen, 0, 4) as $c) {
+            $detalle[] = "SKU {$c['sku']} (el nombre nuevo dice {$c['del_nombre']} por caja y el "
+                       . "maestro tiene {$c['guardado']})";
+        }
+
+        $mensaje .= '. OJO: ' . count($contradicen) . ' nombre(s) del archivo dicen un empaque '
+                  . 'DISTINTO del que ya está cargado, así que se dejaron como estaban: '
+                  . implode('; ', $detalle) . (count($contradicen) > 4 ? '; …' : '')
+                  . '. Revisá cuál de los dos está bien y corregí el archivo o el empaque';
+    }
     if ($noEncontrados > 0) {
         $mensaje .= ". {$noEncontrados} fila(s) traían solo PLU y ese producto todavía no está en el"
                   . ' maestro: cargá primero el export de SAP, o agregales la columna SKU';

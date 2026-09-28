@@ -93,7 +93,18 @@ switch ($accion) {
         $huella = huellaDelConsolidado($archivo['tmp_name']);
         $cargaPrevia = cargaConLaMismaHuella($pdo, $huella);
 
-        if ($cargaPrevia) {
+        // Si no es el mismo archivo, todavía puede ser un PEDAZO de uno ya cargado: un Consolidado
+        // por zona con tres de las quince órdenes del completo. La huella no lo ve —son archivos
+        // distintos— pero las órdenes repetidas sí. Ver ordenesYaPendientes().
+        $ordenesRepetidas = null;
+        if (!$cargaPrevia) {
+            $yaPendientes = ordenesYaPendientes($pdo, $archivo['tmp_name']);
+            if ($yaPendientes !== null && $yaPendientes['repetidas']) {
+                $ordenesRepetidas = $yaPendientes;
+            }
+        }
+
+        if ($cargaPrevia || $ordenesRepetidas) {
             descartarImportacionPendiente();   // por si había otro esperando de antes
 
             $destino = carpetaImportacionesPendientes() . '/consolidado_' . bin2hex(random_bytes(8)) . '.xlsx';
@@ -105,9 +116,10 @@ switch ($accion) {
             }
 
             $_SESSION['importacion_pendiente'] = [
-                'ruta'         => $destino,
-                'nombre'       => $archivo['name'],
-                'carga_previa' => $cargaPrevia,
+                'ruta'              => $destino,
+                'nombre'            => $archivo['name'],
+                'carga_previa'      => $cargaPrevia,
+                'ordenes_repetidas' => $ordenesRepetidas,
             ];
 
             header("Location: {$vistaConsolidados}?confirmar=duplicado");
@@ -210,6 +222,40 @@ switch ($accion) {
         exit();
 
     // -----------------------------------------------------------------------------------------
+    // EXCEPCIONES DE ÉXITO DEL MAESTRO: subir el Excel de SKU con empaque/cubicaje propios del Éxito.
+    // -----------------------------------------------------------------------------------------
+    case 'importar_maestro_exito':
+        requierePermiso('modulo_maestro', $vistaMaestro);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: {$vistaMaestro}?ver=exito");
+            exit();
+        }
+
+        require_once __DIR__ . '/model_maestro_exito.php';
+        $archivo = archivoExcelSubidoOSalir($vistaMaestro . '?ver=exito');
+
+        $resultado = importarMaestroExito($pdo, $archivo['tmp_name']);
+        guardarMensajeFlashTexto($resultado['exito'] ? 'exito' : 'error', $resultado['mensaje']);
+
+        header("Location: {$vistaMaestro}?ver=exito");
+        exit();
+
+    // Borrar una o varias excepciones de Éxito (por SKU).
+    case 'eliminar_excepcion_exito':
+        requierePermiso('modulo_maestro', $vistaMaestro);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') { header("Location: {$vistaMaestro}?ver=exito"); exit(); }
+
+        require_once __DIR__ . '/model_maestro_exito.php';
+        $skus = is_array($_POST['skus'] ?? null) ? $_POST['skus'] : array_filter([$_POST['sku'] ?? '']);
+        $n = eliminarExcepcionesExito($pdo, $skus);
+        guardarMensajeFlashTexto($n > 0 ? 'exito' : 'error',
+            $n > 0 ? "{$n} excepción(es) eliminada(s)." : 'No se eliminó ninguna excepción.');
+
+        header("Location: {$vistaMaestro}?ver=exito");
+        exit();
+
+    // -----------------------------------------------------------------------------------------
     // DESCARGAS DE LOS CEDI SELECCIONADOS (barra de abajo de Consolidados)
     //
     // Por POST y no por GET como las de un solo CEDI: la lista de nombres elegidos puede ser larga
@@ -263,7 +309,7 @@ switch ($accion) {
                 exit();
             }
             require_once __DIR__ . '/helper_consolidado_externo_pdf.php';
-            $nombre = count($cedis) === 1 ? nombreArchivoCediExterno($cedis[0]) : 'Consolidado_externo_' . $varios;
+            $nombre = count($cedis) === 1 ? nombreArchivoCediExterno($cedis[0]) : 'Consolidado_rotulos_' . $varios;
             descargarConsolidadoExternoPdf($porCedi, $meta, $nombre);
         }
 
@@ -273,7 +319,7 @@ switch ($accion) {
             exit();
         }
         require_once __DIR__ . '/helper_consolidado_pdf.php';
-        $nombre = count($cedis) === 1 ? nombreArchivoCedi($cedis[0]) : 'Consolidado_' . $varios;
+        $nombre = count($cedis) === 1 ? nombreArchivoCedi($cedis[0]) : 'Consolidado_alistamiento_' . $varios;
         descargarConsolidadoPdf($porCedi, $meta, $nombre);
         // Las tres funciones de descarga terminan la ejecución.
 
@@ -305,7 +351,7 @@ switch ($accion) {
 
         $nombre = $filtros['cedi'] !== ''
             ? nombreArchivoCediExterno($filtros['cedi'])
-            : 'Consolidado_externo_todos_los_CEDI_' . date('Ymd') . '.pdf';
+            : 'Consolidado_rotulos_todos_los_CEDI_' . date('Ymd') . '.pdf';
 
         descargarConsolidadoExternoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
         // descargarConsolidadoExternoPdf() termina la ejecución.
@@ -329,7 +375,7 @@ switch ($accion) {
 
         $nombre = $filtros['cedi'] !== ''
             ? nombreArchivoCedi($filtros['cedi'])
-            : 'Consolidado_todos_los_CEDI_' . date('Ymd') . '.pdf';
+            : 'Consolidado_alistamiento_todos_los_CEDI_' . date('Ymd') . '.pdf';
 
         // $meta ya no es "la carga vigente" (puede haber varias pendientes): se le pasa la última
         // importada solo como referencia de "emitido" en el encabezado del PDF, no como el alcance

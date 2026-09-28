@@ -34,12 +34,15 @@ function filasHistorial($pdo, array $filtros = []) {
 
     $stmt = $pdo->query($sql);
 
-    $mapa   = mapaMaestro($pdo);
+    require_once __DIR__ . '/../consolidados/model_maestro_exito.php';
+    $mapa       = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
+    $cedisExito = cedisExito($pdo);
     $patron = isset($filtros['busqueda']) ? mb_strtolower(trim($filtros['busqueda'])) : '';
 
     $filas = [];
     foreach ($stmt as $fila) {
-        $fila = decorarConMaestro($fila, $mapa);
+        $fila = decorarConMaestro($fila, $mapa, $mapaExito, isset($cedisExito[$fila['cedi']]));
 
         if ($patron !== '') {
             $donde = mb_strtolower(implode(' ', [
@@ -324,4 +327,27 @@ function restaurarEntregaHistorial($pdo, $idCarga, $cedi, $ordenCompra, $puntoVe
         error_log('Error restaurando entrega del historial: ' . $e->getMessage());
         return ['exito' => false, 'mensaje' => 'No se pudo restaurar. Inténtalo de nuevo.'];
     }
+}
+
+/**
+ * Restaura VARIAS entregas de una (la selección del historial). Cada una se restaura por separado
+ * con restaurarEntregaHistorial(); si alguna ya no estaba despachada, no cuenta como restaurada
+ * pero tampoco frena a las demás. Devuelve cuántas se restauraron y cuántas no.
+ *
+ * $pedidos: lista de ['id_carga'=>int, 'cedi'=>string, 'orden_compra'=>string, 'punto_venta'=>string].
+ */
+function restaurarEntregasHistorial($pdo, array $pedidos) {
+    $restaurados = 0;
+    $fallidos    = 0;
+    foreach ($pedidos as $p) {
+        $r = restaurarEntregaHistorial(
+            $pdo,
+            (int) ($p['id_carga'] ?? 0),
+            (string) ($p['cedi'] ?? ''),
+            (string) ($p['orden_compra'] ?? ''),
+            (string) ($p['punto_venta'] ?? '')
+        );
+        if ($r['exito']) { $restaurados++; } else { $fallidos++; }
+    }
+    return ['restaurados' => $restaurados, 'fallidos' => $fallidos];
 }

@@ -55,7 +55,7 @@ function seccionCediExternoPdf($cedi, array $datos, $meta) {
     if ($logo !== '') {
         $html .= '<td width="60"><img src="' . $logo . '" class="logo"></td>';
     }
-    $html .= '<td><div class="titulo">Consolidado externo</div>'
+    $html .= '<td><div class="titulo">Consolidado para rótulos</div>'
            . '<div class="cedi">' . $esc($cedi) . '</div></td>'
            . '<td class="meta">Emitido: ' . date('d/m/Y H:i') . '<br>'
            . 'Archivo: ' . $esc($meta['nombre_archivo'] ?? '') . '<br>'
@@ -186,5 +186,5 @@ function descargarConsolidadoExternoPdf(array $porCedi, $meta, $nombreArchivo) {
 // diciendo que es el externo: quien lo baja termina con los dos en la misma carpeta.
 function nombreArchivoCediExterno($cedi) {
     $limpio = trim(preg_replace('/[^A-Za-z0-9]+/', '_', (string) $cedi), '_');
-    return 'Consolidado_externo_' . ($limpio !== '' ? $limpio : 'CEDI') . '_' . date('Ymd') . '.pdf';
+    return 'Consolidado_rotulos_' . ($limpio !== '' ? $limpio : 'CEDI') . '_' . date('Ymd') . '.pdf';
 }

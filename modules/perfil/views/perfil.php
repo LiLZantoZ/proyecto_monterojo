@@ -1,12 +1,15 @@
 <?php
 // modules/perfil/views/perfil.php
-// "Mi perfil": lo único que cualquier usuario puede cambiar de su propia cuenta. No hay
-// requierePermiso() —solo auth_guard.php, estar logueado— porque no es un módulo de gestión
-// sobre otros, es editarse a uno mismo.
+// "Mi perfil": lo único que un usuario puede cambiar de su propia cuenta. Pide el permiso
+// perfil_editar (2026-09-28): lo tiene el Administrador, no el Visitante, que entra a mirar con
+// una cuenta compartida y no tiene por qué poder cambiarle el nombre o la contraseña.
 
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../config/auth_guard.php';
+require_once __DIR__ . '/../../../config/permisos.php';
 require_once __DIR__ . '/../model_perfil.php';
+
+requierePermiso('perfil_editar', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
 $usuario = obtenerUsuarioPerfil($pdo, $_SESSION['usuario_id']);
 

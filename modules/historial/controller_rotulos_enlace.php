@@ -37,6 +37,22 @@ if (!$puedeVerRotulos) {
 // apunte a donde quiera. Es de lectura y sin efectos, así que no lleva CSRF.
 // -------------------------------------------------------------------------------------------
 if (($_GET['accion'] ?? '') === 'qr') {
+    // Se suelta la sesión apenas se comprobó el permiso, ANTES de ponerse a generar la imagen.
+    //
+    // PHP mantiene la sesión bloqueada en exclusiva mientras dura la petición, así que dos
+    // peticiones del mismo usuario no corren a la vez: la segunda espera a que la primera
+    // termine. Y la vista previa de un lote pide UN QR POR RÓTULO, cada uno en su propio <img>:
+    // con trescientos rótulos son trescientas peticiones que el navegador manda en paralelo y el
+    // servidor atiende de a una. Puestas en fila detrás de algo lento —el PDF de ese mismo lote,
+    // por ejemplo— la última esperaba tanto que se pasaba de max_execution_time y moría a medio
+    // dibujar el QR (pasó el 2026-09-18: "Maximum execution time exceeded" en MaskUtil.php).
+    //
+    // Acá abajo no se escribe nada en la sesión, solo se lee $_GET y se devuelve un PNG, así que
+    // cerrarla no pierde nada: lo que ya está en $_SESSION se sigue pudiendo leer.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+
     $token = trim($_GET['t'] ?? '');
 
     if (!preg_match('/^[0-9A-Za-z]{1,16}$/', $token)) {

@@ -1,0 +1,43 @@
+/* modules/consolidado_mr/layouts/consolidado_mr.css
+   Lo propio del Consolidado MR. La grilla, los totales y la paginación vienen de seguimiento.css,
+   para que esta tabla tenga las mismas celdas que las de Estado de pedidos. */
+
+/* El texto del material es la columna más larga: se le da un mínimo para que no quede en tres
+   renglones y se deja partir de línea. */
+.tabla-mr .celda-producto { min-width: 190px; }
+/* Igual con el cliente: angosto, "CADENA COMERCIAL OXXO - EJE CAF." ocupaba cuatro renglones. */
+.tabla-mr .celda-cliente { min-width: 170px; }
+
+/* Son 11 columnas: los encabezados largos ("Ctd. facturada", "Fecha factura") parten de línea en vez
+   de ensanchar su columna. Hace falta el selector completo para ganarle al nowrap de th.num. */
+table.tabla.tabla-mr > thead > tr > th { white-space: normal; }
+
+/* SUBTOTAL POR FACTURA: cierra el bloque de renglones de cada factura con su Valor neto sumado.
+   Más suave que el TOTAL general del pie (que sigue siendo el más destacado), pero bien distinto de
+   un renglón común, y con una línea más gruesa abajo para separar una factura de la siguiente. */
+.tabla-mr tbody tr.fila-subtotal > td {
+    background: var(--crema, #faf6f0);
+    border-bottom: 2px solid #d9cfc2;
+    font-weight: 600;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+.tabla-mr tbody tr.fila-subtotal:hover > td { background: var(--crema, #faf6f0); }
+.tabla-mr .subtotal-etiqueta { text-align: right; font-size: .82rem; }
+.tabla-mr .subtotal-etiqueta strong { color: var(--vino, #7a1220); }
+.tabla-mr .subtotal-nota { font-weight: 500; font-size: .8rem; color: var(--texto-suave, #6b7580); }
+.tabla-mr .subtotal-monto { color: var(--vino, #7a1220); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Aviso de factura partida entre dos páginas. */
+.tabla-mr tbody tr.fila-continua > td {
+    background: #fbfaf8;
+    color: var(--texto-suave, #6b7580);
+    font-size: .8rem;
+    font-style: italic;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+.tabla-mr tbody tr.fila-continua i { margin-right: 6px; }
+
+/* Los botones del encabezado: el de "Vaciar" va dentro de un form, que no tiene que romper la fila. */
+.modulo-acciones form { display: inline-flex; margin: 0; }

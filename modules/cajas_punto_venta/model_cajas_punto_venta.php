@@ -60,7 +60,10 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $mapa = mapaMaestro($pdo);
+    require_once __DIR__ . '/../consolidados/model_maestro_exito.php';
+    $mapa       = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
+    $cedisExito = cedisExito($pdo);
 
     // Varios puntos de venta a la vez: "CARULLA CEDRO BOLIVAR, 4847, exito bello" separado por
     // comas. Cada término se busca por separado y con que UNO coincida alcanza —es la misma
@@ -71,11 +74,23 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
         explode(',', $filtros['punto'] ?? '')
     ), fn($t) => $t !== '');
 
+    // Los puntos de venta TILDADOS en la barra de selección: acá no es "que coincida el texto",
+    // es "que sea exactamente uno de estos" (mismo criterio que 'cedis' en Consolidados). La
+    // clave es cedi|punto_venta, tal cual la arma este mismo bucle un poco más abajo.
+    $soloEstos = !empty($filtros['puntos']) && is_array($filtros['puntos'])
+        ? array_flip($filtros['puntos'])
+        : null;
+
     $porCedi = [];
     foreach ($stmt as $fila) {
-        $fila = decorarConMaestro($fila, $mapa);
+        $fila = decorarConMaestro($fila, $mapa, $mapaExito, isset($cedisExito[$fila['cedi']]));
 
         $clave = $fila['cedi'] . '|' . $fila['punto_venta'];
+
+        if ($soloEstos !== null && !isset($soloEstos[$clave])) {
+            continue;
+        }
+
         $datos = numeroYNombreDePunto($fila['punto_venta'], $fila['ean_punto_venta'], $fila['direccion_punto_venta']);
 
         if ($terminos) {

@@ -41,6 +41,8 @@ $porCedi  = agruparPorCedi($entregas);
 $cedisDisponibles  = cedisPendientes($pdo);
 $hayPendientes     = !empty($cedisDisponibles);
 $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
+// De qué cadena es cada CEDI, para decirlo en su cabecera. Ver cadenasPorCedi().
+$cadenasDeCedi     = cadenasPorCedi($pdo);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -165,6 +167,9 @@ $puntosDisponibles = puntosDeVenta($pdo, $filtros['cedi']);
                             <div class="grupo-titulo">
                                 <div class="grupo-nombre">
                                     <?php echo htmlspecialchars($cedi); ?>
+                                    <?php if (!empty($cadenasDeCedi[$cedi])): ?>
+                                        <span class="cadena-etiqueta"><?php echo htmlspecialchars($cadenasDeCedi[$cedi]); ?></span>
+                                    <?php endif; ?>
                                     <span class="grupo-conteo"><?php echo $tc['pedidos']; ?> pedidos</span>
                                 </div>
                                 <div class="grupo-resumen">

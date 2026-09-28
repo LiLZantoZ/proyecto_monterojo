@@ -78,16 +78,71 @@ function importarCubicajes($pdo, $rutaArchivo) {
         return ['exito' => false, 'mensaje' => 'El archivo no tiene filas de datos.'];
     }
 
-    $mapa = mapearColumnas(array_shift($filas), [
+    $encabezado = array_shift($filas);
+
+    $mapa = mapearColumnas($encabezado, [
         'sku'               => 'sku',
         'ean'               => 'ean',
         'denominacion'      => 'denominacion',
         'descripcion'       => 'denominacion',
+        'desc.componente'   => 'denominacion',
+        'desc componente'   => 'denominacion',
         'tipo caja'         => 'tipo_caja',
         'tipo de caja'      => 'tipo_caja',
         'cubicaje por caja' => 'cubicaje',
         'cubicaje'          => 'cubicaje',
     ]);
+
+    // ------------------------------------------------------------------------------------------
+    // CUÁL DE LAS COLUMNAS "CUBICAJE" ES LA DEL VOLUMEN (2026-09-21)
+    //
+    // Hay dos planillas en uso y los títulos no alcanzan para distinguirlas:
+    //
+    //   "cubicajes por cajas.xlsx"          CUBICAJE POR CAJA = 0,0576   <- son m³
+    //   "EMBALAJE Y TIPO DE CAJAS.xlsx"     CUBICAJE POR CAJA = 8        <- son unidades por caja
+    //                                       CUBICAJE          = 0,06048  <- acá están los m³
+    //
+    // O sea que "CUBICAJE POR CAJA" significa una cosa en un archivo y la otra en el otro, y la
+    // segunda planilla además trae las dos. mapearColumnas() se queda con la primera que coincide,
+    // así que leía las unidades por caja como si fueran metros cúbicos: de ahí salieron 221
+    // cubicajes falsos y los camiones imposibles de la pantalla de órdenes.
+    //
+    // Se elige POR EL VALOR y no por el título: de las columnas que se llaman "cubicaje" algo, la
+    // buena es aquella cuyos números parecen un volumen (menores que 1 m³ por caja). Es el mismo
+    // criterio que usa el guardián de más abajo para rechazar un archivo entero.
+    //
+    // La otra columna no se tira: si trae unidades por caja sirve para completar el maestro.
+    // ------------------------------------------------------------------------------------------
+    $columnasCubicaje = [];
+    foreach ($encabezado as $i => $titulo) {
+        if (strpos(normalizarEncabezado($titulo), 'cubicaje') !== false) {
+            $columnasCubicaje[] = $i;
+        }
+    }
+
+    $mapa['unidades_por_caja'] = null;
+
+    if (count($columnasCubicaje) > 1) {
+        $mejor = null;
+        $mejorChicos = -1;
+
+        foreach ($columnasCubicaje as $i) {
+            $chicos = 0;
+            foreach ($filas as $fila) {
+                $v = numeroDesdeExcel($fila[$i] ?? null, 7);
+                if ($v !== null && $v > 0 && $v < 1) { $chicos++; }
+            }
+            if ($chicos > $mejorChicos) { $mejorChicos = $chicos; $mejor = $i; }
+        }
+
+        if ($mejor !== null) {
+            $mapa['cubicaje'] = $mejor;
+            // La otra columna de "cubicaje", si trae enteros, son las unidades por caja.
+            foreach ($columnasCubicaje as $i) {
+                if ($i !== $mejor) { $mapa['unidades_por_caja'] = $i; break; }
+            }
+        }
+    }
 
     $faltan = array_diff(['sku', 'cubicaje'], array_keys($mapa));
     if ($faltan) {
@@ -99,6 +154,52 @@ function importarCubicajes($pdo, $rutaArchivo) {
     }
 
     $valor = fn(array $fila, $campo) => isset($mapa[$campo]) ? ($fila[$mapa[$campo]] ?? null) : null;
+
+    // ------------------------------------------------------------------------------------------
+    // ¿LA COLUMNA DEL CUBICAJE TRAE METROS CÚBICOS? (2026-09-21)
+    //
+    // Pasó de verdad: se subió una planilla cuya columna "cubicaje por caja" traía las UNIDADES
+    // POR CAJA (12, 24, 120…) en vez del volumen (0,0576). El archivo entró sin una queja, y a
+    // partir de ahí cada orden mostró un volumen igual a sus unidades: una orden de 20 cajas decía
+    // 292 m³ y la pantalla recomendaba "no entra en un vehículo" para tres cajas de pasabocas.
+    //
+    // Una caja de este catálogo mide entre 0,006 y 0,08 m³. Un metro cúbico POR CAJA ya sería una
+    // caja del tamaño de una estiba entera, y el camión más grande de la flota lleva 90 m³: si la
+    // mayoría de las filas dicen 1 o más, la columna no es volumen.
+    //
+    // Se RECHAZA en vez de avisar, al revés que otras comprobaciones: un cubicaje mal no se nota
+    // mirando la pantalla —los números existen y se ven razonables— y de él salen los vehículos
+    // que se piden. Mejor no cargar nada que cargar un volumen que nadie va a poder desmentir.
+    // ------------------------------------------------------------------------------------------
+    $conDato = 0;
+    $grandes = 0;
+    $ejemplo = null;
+
+    foreach ($filas as $fila) {
+        $c = numeroDesdeExcel($valor($fila, 'cubicaje'), 7);
+        if ($c === null || $c <= 0) {
+            continue;
+        }
+        $conDato++;
+        if ($c >= 1) {
+            $grandes++;
+            if ($ejemplo === null) {
+                $ejemplo = ['sku' => textoLimpio($valor($fila, 'sku'), 30), 'valor' => $c];
+            }
+        }
+    }
+
+    if ($conDato > 0 && $grandes > $conDato / 2) {
+        return [
+            'exito'   => false,
+            'mensaje' => "La columna del cubicaje no trae metros cúbicos: {$grandes} de {$conDato} filas "
+                       . 'dicen 1 m³ o más POR CAJA'
+                       . ($ejemplo ? " (por ejemplo, el SKU {$ejemplo['sku']} dice {$ejemplo['valor']})" : '')
+                       . '. Una caja de este catálogo mide entre 0,006 y 0,08 m³, y el camión más grande '
+                       . 'lleva 90 m³. Suele pasar cuando la columna trae las UNIDADES POR CAJA en vez '
+                       . 'del volumen. No se cargó nada: revisá el archivo y volvé a subirlo.',
+        ];
+    }
 
     $guardar = $pdo->prepare(
         "INSERT INTO cubicajes (sku, ean, denominacion, tipo_caja, cubicaje_m3)
@@ -152,10 +253,24 @@ function importarCubicajes($pdo, $rutaArchivo) {
             $denominacion = textoLimpio($valor($fila, 'denominacion'), 255);
             if ($denominacion !== null) {
                 $empaque = empaqueDelNombre($denominacion);
+
+                // Las unidades por caja salen del nombre ("...PX24") y, si el archivo trae además
+                // una columna con ese número —la segunda "cubicaje" de EMBALAJE Y TIPO DE CAJAS—,
+                // manda la columna: es un dato puesto a mano, no deducido de cómo se escribió el
+                // nombre. Solo se acepta un entero razonable, por lo mismo que en el maestro.
+                $uxc = $empaque['unidades_por_caja'] ?? null;
+                if ($mapa['unidades_por_caja'] !== null) {
+                    $delArchivo = numeroDesdeExcel($fila[$mapa['unidades_por_caja']] ?? null, 0);
+                    if ($delArchivo !== null && $delArchivo >= 1 && $delArchivo <= 10000
+                        && (float) $delArchivo === floor((float) $delArchivo)) {
+                        $uxc = (int) $delArchivo;
+                    }
+                }
+
                 $completarMaestro->execute([
                     ':descripcion'  => $denominacion,
                     ':presentacion' => $empaque['presentacion'] ?? null,
-                    ':uxc'          => $empaque['unidades_por_caja'] ?? null,
+                    ':uxc'          => $uxc,
                     ':sku'          => $sku,
                 ]);
                 // rowCount() en un UPDATE con COALESCE solo cuenta si ALGÚN campo cambió de
@@ -227,6 +342,39 @@ function vehiculoParaCarga($pesoKg, $m3, array $flota) {
         }
     }
     return null;
+}
+
+/**
+ * El vehículo para llevar TODO lo que hay en pantalla de una sola vez.
+ *
+ * El carro de cada fila responde "¿en qué mando esta orden?", que es lo que se pide cuando se
+ * despacha una sola. Pero cuando el camión sale con todo el pedido del día, lo que hace falta es
+ * el vehículo que aguante la SUMA: 24 órdenes de tres cajas entran cada una en una camioneta, y
+ * juntas no (pedido del usuario, 2026-09-21).
+ *
+ * Si no hay ninguno que aguante todo, devuelve el más grande de la flota y cuántos viajes harían
+ * falta. Es una cota OPTIMISTA —reparte peso y volumen como si la carga fuera líquida, sin contar
+ * que una caja no se parte— pero dice lo que importa: que con uno no alcanza y por cuánto.
+ *
+ * Devuelve ['vehiculo' => fila de la flota, 'viajes' => int] o null si no hay flota cargada.
+ */
+function vehiculoParaTodo($pesoKg, $m3, array $flota) {
+    if (!$flota) {
+        return null;
+    }
+
+    $entra = vehiculoParaCarga($pesoKg, $m3, $flota);
+    if ($entra !== null) {
+        return ['vehiculo' => $entra, 'viajes' => 1];
+    }
+
+    // El más grande es el último: la flota viene ordenada de menor a mayor capacidad.
+    $mayor = end($flota);
+
+    $porPeso    = (float) $mayor['peso_kg'] > 0 ? $pesoKg / (float) $mayor['peso_kg'] : 0;
+    $porVolumen = (float) $mayor['m3']      > 0 ? $m3     / (float) $mayor['m3']      : 0;
+
+    return ['vehiculo' => $mayor, 'viajes' => max(1, (int) ceil(max($porPeso, $porVolumen)))];
 }
 
 /**
@@ -303,15 +451,23 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
          ORDER BY l.orden_compra, l.id_carga"
     );
 
+    require_once __DIR__ . '/../consolidados/model_maestro_exito.php';
     $maestro   = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
     $cubicajes = mapaCubicajes($pdo);
+    // Órdenes de compra es SOLO del Éxito (la consulta ya filtra con condicionPedidoExito). Así que
+    // acá el empaque Y el cubicaje se toman de la excepción de Éxito cuando existe: se pisa el
+    // cubicaje base con el propio del Éxito antes de calcular los m³.
+    foreach ($mapaExito as $skuExc => $exc) {
+        if ($exc['cubicaje_m3'] !== null) { $cubicajes[$skuExc] = (float) $exc['cubicaje_m3']; }
+    }
     $flota     = vehiculos($pdo);
 
     $ordenes = [];
     $sinCubicaje = [];           // sku/plu => descripción, para el aviso general
 
     foreach ($stmt as $fila) {
-        $l = decorarConMaestro($fila, $maestro);
+        $l = decorarConMaestro($fila, $maestro, $mapaExito, true);
 
         $clave = $l['id_carga'] . '|' . $l['orden_compra'];
         if (!isset($ordenes[$clave])) {
@@ -387,9 +543,35 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
 
     ksort($sinCubicaje, SORT_NATURAL);
 
+    $totales = totalesDeOrdenes($ordenes);
+
+    // El vehículo para llevarlo TODO junto, que es otra pregunta que la de cada fila. Se calcula
+    // sobre lo que se está viendo: si hay un filtro puesto, es el carro de lo filtrado.
+    $todo = vehiculoParaTodo($totales['peso_kg'], $totales['m3'], $flota);
+    $totales['carro']        = $todo['vehiculo']['nombre'] ?? null;
+    $totales['carro_viajes'] = $todo['viajes'] ?? 0;
+
+    // La capacidad del vehículo y cuánto de ella se usa, para poder decir "464 de 2.500 kg" en vez
+    // de solo el nombre: es lo que permite ver de un vistazo si sobra lugar para sumarle algo o si
+    // va al límite. Los porcentajes son sobre UN vehículo, aunque hagan falta varios viajes.
+    $totales['carro_capacidad'] = null;
+    if ($todo !== null) {
+        $v = $todo['vehiculo'];
+        $totales['carro_capacidad'] = [
+            'peso_kg'     => (float) $v['peso_kg'],
+            'm3'          => (float) $v['m3'],
+            'estibas'     => (int) $v['estibas'],
+            'uso_peso'    => (float) $v['peso_kg'] > 0 ? $totales['peso_kg'] / (float) $v['peso_kg'] * 100 : null,
+            'uso_volumen' => (float) $v['m3']      > 0 ? $totales['m3']      / (float) $v['m3']      * 100 : null,
+        ];
+    }
+    // Igual que en cada orden: si faltan cubicajes o maestros, el peso y el volumen reales son
+    // MAYORES que los calculados y el vehículo elegido podría quedar chico.
+    $totales['carro_incompleto'] = $totales['sin_cubicaje'] > 0 || $totales['sin_maestro'] > 0;
+
     return [
         'ordenes'      => array_values($ordenes),
-        'totales'      => totalesDeOrdenes($ordenes),
+        'totales'      => $totales,
         'sin_cubicaje' => $sinCubicaje,
         'hay_flota'    => (bool) $flota,
     ];

@@ -10,15 +10,27 @@ require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../config/auth_guard.php';
 require_once __DIR__ . '/../../../config/permisos.php';
 require_once __DIR__ . '/../model_consolidados.php';
+require_once __DIR__ . '/../model_maestro_exito.php';
 
 requierePermiso('modulo_maestro', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
 $busqueda = trim($_GET['q'] ?? '');
 // 'faltantes' muestra solo los productos del Consolidado cargado que no se pueden convertir a
 // cajas: es la lista de lo que hay que conseguir, que es para lo que se entra a esta pantalla.
+// 'exito' muestra las EXCEPCIONES de Éxito (SKU con empaque/cubicaje propios del Éxito).
 $soloFaltantes = ($_GET['ver'] ?? '') === 'faltantes';
+$verExito      = ($_GET['ver'] ?? '') === 'exito';
 
-if ($soloFaltantes) {
+$excepciones  = [];
+$resumenExito = ['total' => 0, 'con_unidades' => 0, 'con_cubicaje' => 0, 'actualizado' => null];
+if ($verExito) {
+    $excepciones  = listaMaestroExito($pdo, $busqueda);
+    $resumenExito = resumenMaestroExito($pdo) ?: $resumenExito;
+}
+
+if ($verExito) {
+    $productos = [];   // esta vista usa $excepciones, no $productos
+} elseif ($soloFaltantes) {
     // La resolución del maestro mira EAN y PLU, así que la lista de faltantes se arma con la
     // misma función y no con un LEFT JOIN por PLU, que daría un resultado distinto al de las
     // pantallas de Consolidados y Picking.
@@ -97,14 +109,124 @@ $faltantes    = pluSinMaestro($pdo);
                     <a class="btn" href="<?php echo BASE_URL; ?>/consolidados">
                         <i class="fa-solid fa-arrow-left"></i> Volver a Consolidados
                     </a>
-                    <button type="button" class="btn" data-abrir="modal-maestro">
-                        <i class="fa-solid fa-table-list"></i> Cargar planilla
-                    </button>
-                    <button type="button" class="btn btn-primario" data-abrir="modal-sap">
-                        <i class="fa-solid fa-file-arrow-up"></i> Cargar desde SAP
-                    </button>
+                    <?php if ($verExito): ?>
+                        <button type="button" class="btn btn-primario" data-abrir="modal-exito">
+                            <i class="fa-solid fa-file-arrow-up"></i> Cargar excepciones de Éxito
+                        </button>
+                    <?php else: ?>
+                        <button type="button" class="btn" data-abrir="modal-maestro">
+                            <i class="fa-solid fa-table-list"></i> Cargar planilla
+                        </button>
+                        <button type="button" class="btn btn-primario" data-abrir="modal-sap">
+                            <i class="fa-solid fa-file-arrow-up"></i> Cargar desde SAP
+                        </button>
+                    <?php endif; ?>
                 </div>
             </header>
+
+            <?php // Pestañas: el maestro base (todos los clientes) y las excepciones propias del Éxito. ?>
+            <div class="pestanas-maestro">
+                <a class="pestana-maestro<?php echo !$verExito ? ' activa' : ''; ?>" href="<?php echo BASE_URL; ?>/maestro">
+                    <i class="fa-solid fa-boxes-stacked"></i> Maestro base <span class="pestana-nota">(otros clientes)</span>
+                </a>
+                <a class="pestana-maestro<?php echo $verExito ? ' activa' : ''; ?>" href="<?php echo BASE_URL; ?>/maestro?ver=exito">
+                    <i class="fa-solid fa-store"></i> Excepciones de Éxito <span class="pestana-conteo"><?php echo (int) $resumenExito['total']; ?></span>
+                </a>
+            </div>
+
+            <?php if ($verExito): ?>
+                <div class="pastillas">
+                    <span class="pastilla">Excepciones <strong><?php echo number_format((int) $resumenExito['total'], 0, ',', '.'); ?></strong></span>
+                    <span class="pastilla">Con empaque propio <strong><?php echo number_format((int) $resumenExito['con_unidades'], 0, ',', '.'); ?></strong></span>
+                    <span class="pastilla">Con cubicaje propio <strong><?php echo number_format((int) $resumenExito['con_cubicaje'], 0, ',', '.'); ?></strong></span>
+                </div>
+
+                <div class="aviso aviso-info">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <div>
+                        Solo van acá los productos cuyo <strong>empaque</strong> (unidades por caja) o
+                        <strong>cubicaje</strong> cambian para el <strong>Éxito</strong>. El resto usa el
+                        maestro base. Cada línea de un pedido del Éxito toma la excepción si existe para su
+                        SKU; los pedidos de otros clientes usan siempre el base.
+                    </div>
+                </div>
+
+                <div class="filtros">
+                    <form class="filtro" method="GET" style="flex: 1;">
+                        <input type="hidden" name="ver" value="exito">
+                        <label for="q">Buscar por SKU o descripción</label>
+                        <input type="text" name="q" id="q" value="<?php echo htmlspecialchars($busqueda); ?>"
+                               placeholder="Ej. 36373 o «lima limón»">
+                    </form>
+                </div>
+
+                <div class="tabla-caja">
+                    <table class="tabla">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Descripción</th>
+                                <th class="num">Uds. por caja (Éxito)</th>
+                                <th class="num">Cubicaje m³ (Éxito)</th>
+                                <th class="centro">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($excepciones)): ?>
+                                <tr><td colspan="5"><p class="tabla-vacia">
+                                    <?php echo $busqueda !== ''
+                                        ? 'Ninguna excepción coincide con «' . htmlspecialchars($busqueda) . '».'
+                                        : 'Todavía no hay excepciones de Éxito. Cargá el Excel con «Cargar excepciones de Éxito».'; ?>
+                                </p></td></tr>
+                            <?php else: ?>
+                                <?php foreach ($excepciones as $e): ?>
+                                    <?php
+                                    $desc  = $e['descripcion'] ?? $e['descripcion_base'];
+                                    $uBase = $e['unidades_base'] !== null ? (int) $e['unidades_base'] : null;
+                                    $cBase = $e['cubicaje_base'] !== null ? (float) $e['cubicaje_base'] : null;
+                                    ?>
+                                    <tr>
+                                        <td><strong><?php echo htmlspecialchars($e['sku']); ?></strong></td>
+                                        <td><?php echo $desc !== null ? htmlspecialchars($desc) : '<span class="sin-dato">—</span>'; ?></td>
+                                        <td class="num">
+                                            <?php if ($e['unidades_por_caja'] !== null): ?>
+                                                <strong><?php echo (int) $e['unidades_por_caja']; ?></strong>
+                                                <?php if ($uBase !== null && $uBase !== (int) $e['unidades_por_caja']): ?>
+                                                    <div class="sub-dato">base: <?php echo $uBase; ?></div>
+                                                <?php endif; ?>
+                                            <?php else: ?>
+                                                <span class="sin-dato">usa base<?php echo $uBase !== null ? ' (' . $uBase . ')' : ''; ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="num">
+                                            <?php if ($e['cubicaje_m3'] !== null): ?>
+                                                <strong><?php echo number_format((float) $e['cubicaje_m3'], 5, ',', '.'); ?></strong>
+                                                <?php if ($cBase !== null && abs($cBase - (float) $e['cubicaje_m3']) > 0.0000001): ?>
+                                                    <div class="sub-dato">base: <?php echo number_format($cBase, 5, ',', '.'); ?></div>
+                                                <?php endif; ?>
+                                            <?php else: ?>
+                                                <span class="sin-dato">usa base<?php echo $cBase !== null ? ' (' . number_format($cBase, 5, ',', '.') . ')' : ''; ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="centro">
+                                            <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST"
+                                                  onsubmit="return confirm('¿Quitar la excepción de Éxito del SKU <?php echo htmlspecialchars($e['sku']); ?>?');" style="display:inline;">
+                                                <?php campoCSRF(); ?>
+                                                <input type="hidden" name="accion" value="eliminar_excepcion_exito">
+                                                <input type="hidden" name="sku" value="<?php echo htmlspecialchars($e['sku']); ?>">
+                                                <button type="submit" class="btn btn-chico" title="Quitar excepción">
+                                                    <i class="fa-solid fa-trash-can"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+            <?php else: ?>
 
             <div class="pastillas">
                 <span class="pastilla">Productos <strong><?php echo number_format($totalMaestro, 0, ',', '.'); ?></strong></span>
@@ -227,9 +349,13 @@ $faltantes    = pluSinMaestro($pdo);
                 </table>
             </div>
 
+            <?php endif; // fin del if/else: vista Éxito vs maestro base ?>
+
         </div>
     </div>
 </div>
+
+<?php include ROOT_PATH . '/modules/consolidados/views/maestro_modal_exito.php'; ?>
 
 <!-- MODAL: CARGAR DESDE SAP -->
 <div class="modal-fondo" id="modal-sap">

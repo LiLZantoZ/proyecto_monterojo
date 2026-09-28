@@ -206,6 +206,72 @@
         });
     });
 
+    // ---- Restaurar EN LOTE los pedidos tildados (mismo modal, misma acción por lote) ----
+    function enviarRestaurarMasivo(pedidos, callback) {
+        fetch(BASE_URL + '/historial/acciones', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                accion:     'restaurar_masivo',
+                csrf_token: CSRF_TOKEN,
+                pedidos:    pedidos
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(callback)
+        .catch(function () {
+            callback({ exito: false, error: 'No se pudo conectar con el servidor para restaurar.' });
+        });
+    }
+
+    function mostrarConfirmarRestaurarMasivo(pedidos) {
+        restaurarCuerpo.innerHTML =
+            '<p class="confirmar-pregunta">¿Restaurar los ' + pedidos.length + ' pedido(s) seleccionado(s)?</p>' +
+            '<div class="aviso aviso-info" style="margin-bottom:0;">' +
+            '<i class="fa-solid fa-circle-info"></i>' +
+            '<div>Todos vuelven a aparecer como pendientes en Picking y en Consolidados.</div></div>';
+
+        restaurarPie.innerHTML = '';
+        var btnCancelar  = botonModal('Cancelar', 'btn');
+        var btnConfirmar = botonModal('Restaurar ' + pedidos.length, 'btn btn-primario', 'fa-rotate-left');
+
+        btnCancelar.addEventListener('click', function () { modalRestaurar.classList.remove('active'); });
+
+        btnConfirmar.addEventListener('click', function () {
+            btnConfirmar.disabled = true;
+            btnCancelar.disabled = true;
+            btnConfirmar.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Restaurando...';
+
+            enviarRestaurarMasivo(pedidos, function (resp) {
+                if (!resp.exito) {
+                    mostrarErrorRestaurar(resp.error || 'No se pudo restaurar. Inténtalo de nuevo.');
+                    return;
+                }
+                window.location.reload();
+            });
+        });
+
+        restaurarPie.appendChild(btnCancelar);
+        restaurarPie.appendChild(btnConfirmar);
+        modalRestaurar.classList.add('active');
+    }
+
+    document.getElementById('btn-restaurar-masivo')?.addEventListener('click', function () {
+        var marcadas = pedidosSeleccionados();
+        if (!marcadas.length) { return; }
+
+        var pedidos = marcadas.map(function (chk) {
+            return {
+                id_carga:     chk.dataset.carga,
+                cedi:         chk.dataset.cedi,
+                orden_compra: chk.dataset.oc,
+                punto_venta:  chk.dataset.pv
+            };
+        });
+
+        mostrarConfirmarRestaurarMasivo(pedidos);
+    });
+
     // =============================================================================
     // RÓTULOS (igual que Picking, apuntando a controller_historial.php para el código de barras)
     // =============================================================================

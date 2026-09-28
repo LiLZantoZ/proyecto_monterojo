@@ -110,6 +110,17 @@
     color: #444444;
 }
 
+/* La orden de compra vive dentro de la etiqueta de "Cajas total", pero más grande y en negro: es un
+   número que se teclea y se compara contra la planilla, y al gris de 2,4mm costaba leerlo. Tiene
+   que coincidir con .rotulo-oc de helper_rotulos_pdf.php; en la etiquetadora, ese pedazo pasa de la
+   fuente 2 a la 3 (ver helper_rotulos_tspl.php). */
+.rotulo-oc {
+    font-size: 3mm;
+    font-weight: 700;
+    color: #000000;
+    letter-spacing: 0.2mm;
+}
+
 /* El cuerpo de letra NO se fija acá: lo calcula el JavaScript según cuán largo sea cada texto y lo
    escribe en el style del elemento (ver cuerpoValor() en los scripts_*.js, que es la copia exacta
    de cuerpoValorPdf() en PHP). Es el equivalente de lo que hace la etiquetadora eligiendo entre

@@ -84,15 +84,54 @@ function unicoProductoDe(array $candidatos, $descripcion) {
     }
 
     $buscada = normalizarDescripcionProducto($descripcion);
-    if ($buscada === '') {
-        return null;
+
+    if ($buscada !== '') {
+        $coinciden = array_values(array_filter($candidatos, function ($p) use ($buscada) {
+            return normalizarDescripcionProducto($p['descripcion']) === $buscada;
+        }));
+
+        if (count($coinciden) === 1) {
+            return $coinciden[0];
+        }
     }
 
-    $coinciden = array_values(array_filter($candidatos, function ($p) use ($buscada) {
-        return normalizarDescripcionProducto($p['descripcion']) === $buscada;
-    }));
+    // ------------------------------------------------------------------------------------------
+    // VARIOS CANDIDATOS QUE DAN EL MISMO RESULTADO (2026-09-21)
+    //
+    // Hasta acá, dos productos con el mismo EAN o el mismo PLU dejaban la línea sin resolver. Eso
+    // está bien cuando son empaques distintos —18 por caja contra 24 cambia las cajas del pedido—,
+    // pero no cuando son el MISMO producto cargado dos veces con nombres distintos: SAP tiene
+    // materiales que se renombraron o que existen por duplicado para una cadena, como 36339
+    // "PAPAS CHICKEN TENDERS MR 100G PX12" y 36341 "PAPAS NUGGET POLLOMIEL MR ÉXIT 100G PX12",
+    // que comparten EAN, PLU, unidades por caja y hasta el cubicaje. Ahí la línea quedaba en
+    // "falta para el Consolidado" sin que hubiera nada que cargar: el dato ya estaba, dos veces.
+    //
+    // De un producto, las cuentas solo usan las unidades por caja y el peso por unidad (ver
+    // decorarConMaestro). Si TODOS los candidatos coinciden en esos dos, da igual cuál se elija:
+    // las cajas, los saldos y el peso salen idénticos. Lo único que cambia es el nombre que se
+    // muestra, y para eso se toma el del SKU más chico —criterio fijo, para que la misma línea no
+    // se vea de una forma hoy y de otra mañana—.
+    //
+    // Si difieren en algo que SÍ cambia las cuentas, se sigue devolviendo null: ahí elegir por
+    // nosotros sería inventar cuántas cajas salen.
+    // ------------------------------------------------------------------------------------------
+    $medida = function ($p) {
+        return [
+            $p['unidades_por_caja'] === null ? null : (int) $p['unidades_por_caja'],
+            $p['peso_unidad_kg']    === null ? null : (float) $p['peso_unidad_kg'],
+        ];
+    };
 
-    return count($coinciden) === 1 ? $coinciden[0] : null;
+    $primera = $medida($candidatos[0]);
+    foreach ($candidatos as $p) {
+        if ($medida($p) !== $primera) {
+            return null;
+        }
+    }
+
+    usort($candidatos, fn($a, $b) => strcmp((string) $a['sku'], (string) $b['sku']));
+
+    return $candidatos[0];
 }
 
 // Deja una descripción comparable: sin tildes, sin mayúsculas y sin espacios de más. Los archivos
@@ -147,6 +186,67 @@ function productoDelMaestro(array $mapa, $ean, $plu, $sku = null, $descripcion =
  *   · Si no lo sabe —todo lo importado antes de guardar el comprador—, se usa la regla de antes: un
  *     CEDI cuyas tiendas traen EAN. Así lo que ya estaba cargado se sigue viendo exactamente igual.
  */
+/**
+ * El nombre corto de la cadena que compró, a partir de la razón social del Consolidado.
+ *
+ * Monterojo despacha a varias cadenas y TODAS entregan igual: a una plataforma que después reparte
+ * a sus tiendas. En pantalla eso hacía que "13 - CEDI CARIBE" (Éxito) y "Plataforma Cross Docking
+ * Bogota" (Cencosud) quedaran mezclados en la misma lista alfabética de CEDI, sin nada que dijera
+ * de quién es cada uno (reportado el 2026-09-18, con un archivo de Cencosud).
+ *
+ * Se busca por PEDAZO del nombre y no por igualdad: la misma cadena se escribe distinto entre
+ * exportaciones ("ALMACENES EXITO S.A", "Almacenes Éxito S.A.S"). Sin tildes y sin mayúsculas, por
+ * lo mismo. Una cadena que no esté en la lista no se pierde: se muestra su razón social recortada,
+ * que es mejor que no decir nada.
+ */
+function cadenaDeLaEmpresa($empresa) {
+    $texto = trim((string) $empresa);
+    if ($texto === '') {
+        return '';
+    }
+
+    $comparable = mb_strtolower($texto, 'UTF-8');
+    $comparable = strtr($comparable, ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
+
+    $conocidas = [
+        'exito'     => 'Éxito',
+        'cencosud'  => 'Cencosud',
+        'farmatodo' => 'Farmatodo',
+        'olimpica'  => 'Olímpica',
+        'makro'     => 'Makro',
+    ];
+
+    foreach ($conocidas as $pedazo => $nombre) {
+        if (mb_strpos($comparable, $pedazo) !== false) {
+            return $nombre;
+        }
+    }
+
+    return mb_substr($texto, 0, 24);
+}
+
+/**
+ * [nombre del CEDI => cadena a la que pertenece], para poder mostrarlo al lado del CEDI.
+ *
+ * Un CEDI es de una sola cadena, así que MAX() sobre el grupo devuelve el único valor que hay. Se
+ * arma como una consulta aparte y no sumando la columna a las consultas de cada pantalla porque
+ * esas agrupan por producto o por pedido, y acá hace falta una fila por CEDI y nada más.
+ */
+function cadenasPorCedi($pdo) {
+    $mapa = [];
+
+    $sql = "SELECT cedi, MAX(empresa_compradora) AS empresa
+            FROM consolidado_lineas
+            WHERE empresa_compradora IS NOT NULL AND empresa_compradora <> ''
+            GROUP BY cedi";
+
+    foreach ($pdo->query($sql) as $fila) {
+        $mapa[$fila['cedi']] = cadenaDeLaEmpresa($fila['empresa']);
+    }
+
+    return $mapa;
+}
+
 function condicionPedidoExito($alias = 'l') {
     return "({$alias}.empresa_compradora LIKE '%exito%'
              OR ({$alias}.empresa_compradora IS NULL
@@ -155,7 +255,32 @@ function condicionPedidoExito($alias = 'l') {
                                AND x.ean_punto_venta IS NOT NULL AND x.ean_punto_venta <> '')))";
 }
 
-function decorarConMaestro(array $linea, array $mapa) {
+/**
+ * El conjunto de CEDI que son del Éxito, como [cedi => true]. Un CEDI es de una sola cadena, así que
+ * el canal se decide por CEDI: las pantallas MIXTAS (Consolidado, Picking, Historial) miran acá para
+ * saber a qué líneas aplicarles las excepciones de Éxito. Una sola consulta (DISTINCT cedi), no la
+ * condición por fila.
+ */
+function cedisExito($pdo) {
+    $set = [];
+    foreach ($pdo->query("SELECT DISTINCT cedi FROM consolidado_lineas l WHERE " . condicionPedidoExito('l')) as $f) {
+        $set[(string) $f['cedi']] = true;
+    }
+    return $set;
+}
+
+/**
+ * Junta una línea con su producto del maestro y le calcula el desglose en cajas/saldos/peso.
+ *
+ * EXCEPCIONES DE ÉXITO (2026-09-23): un mismo SKU puede empacarse distinto para el Éxito. Si la línea
+ * es de un pedido del Éxito ($esExito) y hay una excepción con "unidades por caja" propias para ese
+ * SKU (en $mapaExito, ver model_maestro_exito.php), se usa ESE empaque en vez del base. Todo lo demás
+ * usa el base. Sin $mapaExito (o sin excepción para el SKU) se comporta igual que siempre.
+ *
+ * $esExito: true/false si el que llama ya sabe (las pantallas solo-Éxito pasan true); null = deducir
+ * de la empresa compradora de la propia línea, si la trae.
+ */
+function decorarConMaestro(array $linea, array $mapa, array $mapaExito = [], $esExito = null) {
     $producto = productoDelMaestro(
         $mapa,
         $linea['ean_item'] ?? null,
@@ -164,13 +289,30 @@ function decorarConMaestro(array $linea, array $mapa) {
         $linea['descripcion_item'] ?? null
     );
 
-    $linea['sku']               = $producto['sku'] ?? null;
+    $sku             = $producto['sku'] ?? null;
+    $unidadesPorCaja = $producto['unidades_por_caja'] ?? null;
+
+    // ¿Es una línea del Éxito? Si no lo dijeron, se deduce de la empresa compradora de la línea.
+    if ($esExito === null) {
+        $emp = mb_strtolower((string) ($linea['empresa_compradora'] ?? ''), 'UTF-8');
+        $emp = strtr($emp, ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u']);
+        $esExito = ($emp !== '' && mb_strpos($emp, 'exito') !== false);
+    }
+
+    // El empaque propio del Éxito pisa al base solo si la línea es del Éxito y hay excepción de
+    // "unidades por caja" para ese SKU. El cubicaje y el peso no se tocan acá (el cubicaje vive en
+    // Órdenes de compra; el peso por unidad no depende del empaque).
+    if ($esExito && $sku !== null && isset($mapaExito[$sku]) && $mapaExito[$sku]['unidades_por_caja'] !== null) {
+        $unidadesPorCaja = (int) $mapaExito[$sku]['unidades_por_caja'];
+    }
+
+    $linea['sku']               = $sku;
     $linea['descripcion']       = $producto['descripcion'] ?? null;
-    $linea['unidades_por_caja'] = $producto['unidades_por_caja'] ?? null;
+    $linea['unidades_por_caja'] = $unidadesPorCaja;
     $linea['presentacion']      = $producto['presentacion'] ?? null;
     $linea['linea']             = $producto['linea'] ?? null;
 
-    $linea += desglosarCajas($linea['unidades'], $linea['unidades_por_caja']);
+    $linea += desglosarCajas($linea['unidades'], $unidadesPorCaja);
 
     // Peso total de lo pedido. Es null —y no cero— cuando el producto no tiene peso cargado, por
     // el mismo motivo que las cajas: cero significaría que no pesa nada.
@@ -297,14 +439,17 @@ function consolidadoPorCedi($pdo, array $filtros = []) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $mapa   = mapaMaestro($pdo);
+    require_once __DIR__ . '/model_maestro_exito.php';
+    $mapa       = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
+    $cedisExito = cedisExito($pdo);   // a qué CEDI aplicar el empaque propio del Éxito
     $patron = isset($filtros['plu']) ? mb_strtolower(trim($filtros['plu'])) : '';
 
     // Se agrupa por CEDI acá y no en la vista: el PDF necesita exactamente la misma agrupación, y
     // con la lógica en la vista habría que repetirla —y mantenerla— en los dos lados.
     $porCedi = [];
     foreach ($stmt as $fila) {
-        $fila = decorarConMaestro($fila, $mapa);
+        $fila = decorarConMaestro($fila, $mapa, $mapaExito, isset($cedisExito[$fila['cedi']]));
 
         if (!empty($filtros['linea']) && $fila['linea'] !== $filtros['linea']) {
             continue;
@@ -493,12 +638,15 @@ function consolidadoExternoPorCedi($pdo, array $filtros = []) {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
-    $mapa   = mapaMaestro($pdo);
+    require_once __DIR__ . '/model_maestro_exito.php';
+    $mapa       = mapaMaestro($pdo);
+    $mapaExito  = mapaMaestroExito($pdo);
+    $cedisExito = cedisExito($pdo);
     $patron = isset($filtros['plu']) ? mb_strtolower(trim($filtros['plu'])) : '';
 
     $porCedi = [];
     foreach ($stmt as $fila) {
-        $fila = decorarConMaestro($fila, $mapa);
+        $fila = decorarConMaestro($fila, $mapa, $mapaExito, isset($cedisExito[$fila['cedi']]));
 
         if (!empty($filtros['linea']) && $fila['linea'] !== $filtros['linea']) {
             continue;

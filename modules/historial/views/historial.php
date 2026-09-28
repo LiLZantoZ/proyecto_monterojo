@@ -349,6 +349,10 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
                 <i class="fa-solid fa-print"></i> Imprimir hojas
             </button>
         </form>
+
+        <button type="button" class="btn btn-chico" id="btn-restaurar-masivo">
+            <i class="fa-solid fa-rotate-left"></i> Restaurar
+        </button>
     </div>
 </div>
 

@@ -92,6 +92,11 @@ body  { margin: 0; font-family: Helvetica, Arial, sans-serif; color: #000; }
     text-transform: uppercase; color: #444;
 }
 
+/* La orden de compra, dentro de la etiqueta de "Cajas total" pero más grande y en negro: es un
+   número que se compara contra la planilla, y al gris de 2,4mm no se leía. Las medidas son las
+   mismas de 04-rotulo.css, y el equivalente en la etiquetadora es pasar ese pedazo a la fuente 3. */
+.rotulo-oc { font-size: 3mm; font-weight: bold; color: #000; letter-spacing: 0.2mm; }
+
 /* La etiqueta del campo DESTACADO: más grande, en negrita y en negro. Junto con el valor enorme
    es lo que hace que el número del punto de venta se encuentre de un vistazo entre los cinco
    renglones — es el dato que se busca cuando las cajas ya están estibadas y solo se ve el canto
@@ -165,9 +170,22 @@ function qrRotuloDataUri($enlace) {
         return '';
     }
 
+    // 165 px y no 320 (2026-09-18). El QR se imprime a 13mm, así que 165 px son 322 DPI en el
+    // papel: más que los 300 de una impresora de oficina y bastante más que los 203 de la
+    // etiquetadora. Con 320 se estaban generando 625 DPI que ninguna impresora aprovecha.
+    //
+    // No es un detalle estético, es LO QUE HACÍA QUE EL PDF SE COLGARA: dompdf decodifica cada
+    // imagen distinta que encuentra, y el QR es distinto en cada rótulo (el logo no, por eso no
+    // pesa: lo cachea). Medido con 60 rótulos, el render pasó de 4,7 s a 2,5 s solo con este
+    // cambio. Un lote grande se iba de los 120 s de max_execution_time y el usuario recibía una
+    // pantalla con el PDF a medio escribir y un "Maximum execution time exceeded" al final.
+    //
+    // 165 = 33 módulos x 5 px exactos. Que sea múltiplo importa: con un tamaño que no divide
+    // justo, unos módulos salen de 4 px y otros de 5, y los bordes irregulares le cuestan al
+    // lector del celular.
     $qr = new Endroid\QrCode\QrCode(
         data: $enlace,
-        size: 320,
+        size: 165,
         margin: 0,
         errorCorrectionLevel: Endroid\QrCode\ErrorCorrectionLevel::Low
     );
@@ -199,8 +217,18 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
         ? 'Producto  ·  SKU ' . $esc($sku)
         : 'Producto';
 
-    // La orden de compra salió de la etiqueta el 2026-09-12: ya va en la planilla, y en la caja lo
-    // que se mira es a qué tienda va. En su lugar entró el NÚMERO del punto de venta, destacado.
+    // La orden de compra había salido de la etiqueta el 2026-09-12 para darle el renglón al NÚMERO
+    // del punto de venta. Volvió el 2026-09-18 a pedido del usuario, pero NO como renglón propio:
+    // acompaña a la etiqueta de "Cajas total", igual que el SKU acompaña a la de "Producto". Un
+    // sexto campo no entra —el rótulo cierra la página con 1,5mm de holgura (ver .rotulo-campo)— y
+    // pasarse significa una SEGUNDA hoja, que en la etiquetadora es una etiqueta en blanco.
+    // La O/C va en un cuerpo más grande, en negrita y en negro dentro de la etiqueta: es un número
+    // que se teclea y se compara contra la planilla, y al gris de 2,4mm de las etiquetas costaba
+    // leerlo. Lo que crece es SOLO ese pedazo; "Cajas total" se queda como las demás etiquetas.
+    $etiquetaCajas = trim((string) $oc) !== ''
+        ? 'Cajas total  ·  <span class="rotulo-oc">O/C ' . $esc($oc) . '</span>'
+        : 'Cajas total';
+
     // El número del punto de venta va al 2,3 cuando es corto. Si la tienda viene identificada por
     // su EAN de 13 dígitos, a ese tamaño medía unos 91mm en un renglón de 85 y salía cortado; ahí va
     // a dos tercios, la misma proporción que usa la etiquetadora (el triple o el doble).
@@ -210,7 +238,7 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
         ['Punto de venta',    $esc($pv),                        cuerpoValorPdf($pv),        false],
         ['N° punto de venta', $esc($numeroPv !== '' ? $numeroPv : '—'),
                                                                 cuerpoValorPdf($numeroPv, $escalaNumero), true],
-        ['Cajas total',       (int) $total,                     cuerpoValorPdf((string) $total, 0.75), false],
+        [$etiquetaCajas,      (int) $total,                     cuerpoValorPdf((string) $total, 0.75), false],
         [$etiquetaProducto,   $nombreProducto,                  cuerpoValorPdf($producto, 0.70), false],
         ['CEDI',              $esc($cedi !== '' ? $cedi : '-'), cuerpoValorPdf($cedi, 0.75), false],
     ];
@@ -336,6 +364,18 @@ function descargarRotulosPdf(array $entregas, $nombreArchivo) {
  * armado por fuera no pueda pedir diez mil páginas ni meter texto sin límite.
  */
 function descargarRotulosPdfDeLista(array $rotulos, $nombreArchivo) {
+    // Un lote grande de rótulos tarda más que los 120 segundos de max_execution_time del php.ini,
+    // y cuando se pasaba el navegador recibía el PDF a medio escribir con un "Maximum execution
+    // time exceeded" pegado al final: ni PDF ni mensaje de error, una pantalla de basura (pasó el
+    // 2026-09-18 bajando rótulos desde Picking).
+    //
+    // Los 120 segundos están bien como techo para una PANTALLA, que si tarda tanto es que algo se
+    // colgó; pero esto es una descarga que la persona pidió y está esperando, y su duración crece
+    // con la cantidad de rótulos. Medido después de achicar el QR (ver qrRotuloDataUri): 500
+    // rótulos —el máximo que deja ROTULOS_MAXIMO_POR_TRABAJO— tardan unos 56 s. Los 300 de acá
+    // dejan margen de sobra para una máquina más lenta sin volver ilimitado el tiempo.
+    @set_time_limit(300);
+
     // El recorte de largos, los topes y el descarte de rótulos sin punto de venta salen del helper
     // compartido, el mismo que usa la impresión directa en la etiquetadora (ver
     // helper_rotulos_lista.php): el PDF y el papel que sale de la TSC tienen que decir lo mismo.
