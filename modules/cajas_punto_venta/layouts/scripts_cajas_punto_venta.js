@@ -156,6 +156,8 @@
                     // "CEDI: 149" en grande (ver assets/js/rotulo.js).
                     numero_cedi: boton.dataset.numeroCedi || '',
                     producto:  f.producto,
+                    // La orden de compra de ESTE producto: sale en el rótulo junto a "Cajas total".
+                    oc:        f.oc || '',
                     sku:       f.sku,
                     ean:       f.ean,
                     numero:    numero++,
@@ -225,6 +227,7 @@
                         cedi:        boton.dataset.cedi,
                         numero_cedi: boton.dataset.numeroCedi || '',
                         producto:    f.producto,
+                        oc:          f.oc || '',
                         sku:         f.sku,
                         ean:         f.ean,
                         numero:      numero++,

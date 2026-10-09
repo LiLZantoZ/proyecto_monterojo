@@ -306,8 +306,19 @@ function decorarConMaestro(array $linea, array $mapa, array $mapaExito = [], $es
         $unidadesPorCaja = (int) $mapaExito[$sku]['unidades_por_caja'];
     }
 
+    // EL EMPAQUE QUE TRAJO EL PROPIO ARCHIVO DE LA LÍNEA (2026-10-02). Si la línea se importó con la
+    // hoja de productos de su Excel, sus cajas se calculan con lo que decía ESE archivo —y se muestra
+    // el nombre que le daba—, aunque después la maestra haya cambiado con el Excel de otra cadena que
+    // nombra distinto el mismo SKU. Ver actualizarMaestroConLaTablaDeProductos() en el importador.
+    $uxcHoja = (int) ($linea['unidades_por_caja_hoja'] ?? 0);
+    if ($uxcHoja > 0) {
+        $unidadesPorCaja = $uxcHoja;
+    }
+
     $linea['sku']               = $sku;
-    $linea['descripcion']       = $producto['descripcion'] ?? null;
+    $linea['descripcion']       = ($uxcHoja > 0 && !empty($linea['descripcion_item']))
+        ? $linea['descripcion_item']
+        : ($producto['descripcion'] ?? null);
     $linea['unidades_por_caja'] = $unidadesPorCaja;
     $linea['presentacion']      = $producto['presentacion'] ?? null;
     $linea['linea']             = $producto['linea'] ?? null;
@@ -430,6 +441,7 @@ function consolidadoPorCedi($pdo, array $filtros = []) {
     filtroDeCedis($filtros, $where, $params);
 
     $sql = "SELECT l.cedi, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
+                   MAX(l.unidades_por_caja_hoja) AS unidades_por_caja_hoja,
                    SUM(l.unidades) AS unidades,
                    COUNT(DISTINCT l.punto_venta) AS puntos_venta
             FROM consolidado_lineas l
@@ -629,6 +641,7 @@ function consolidadoExternoPorCedi($pdo, array $filtros = []) {
     // que cuelga todo lo demás.
     $sql = "SELECT l.cedi, l.punto_venta, l.ean_punto_venta, l.direccion_punto_venta,
                    l.orden_compra, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
+                   MAX(l.unidades_por_caja_hoja) AS unidades_por_caja_hoja,
                    SUM(l.unidades) AS unidades
             FROM consolidado_lineas l
             WHERE " . implode(' AND ', $where) . "
@@ -680,7 +693,13 @@ function consolidadoExternoPorCedi($pdo, array $filtros = []) {
             // La orden de compra y el EAN de la tienda son los mismos en todas sus líneas; se
             // suben al nivel del punto de venta para que el PDF no tenga que ir a buscarlos a la
             // primera fila.
-            $pv['orden_compra']    = $pv['filas'][0]['orden_compra'] ?? null;
+            // TODAS las órdenes de compra de la tienda (2026-10-08, pedido del usuario): una misma tienda
+            // puede venir en varias O/C en el mismo archivo (Jumbo Las Vegas: 93-581674 y 93-581698), y
+            // mostrar solo la primera escondía las demás.
+            $pv['ordenes_compra']  = array_values(array_unique(array_filter(array_map(
+                fn($f) => trim((string) ($f['orden_compra'] ?? '')), $pv['filas']), fn($oc) => $oc !== '')));
+            sort($pv['ordenes_compra'], SORT_NATURAL);
+            $pv['orden_compra']    = $pv['ordenes_compra'] ? implode(', ', $pv['ordenes_compra']) : null;
             $pv['ean_punto_venta'] = $pv['filas'][0]['ean_punto_venta'] ?? null;
             $pv['direccion']       = $pv['filas'][0]['direccion_punto_venta'] ?? null;
 
@@ -737,4 +756,61 @@ function pluSinMaestro($pdo) {
     }
 
     return $faltan;
+}
+
+// ---------------------------------------------------------------------------------------------
+// ELIMINAR TODOS LOS CONSOLIDADOS (2026-09-28)
+//
+// Borra TODO lo cargado desde los Consolidados: los archivos (consolidado_cargas) y todas sus
+// líneas (consolidado_lineas), tanto las pendientes como las ya despachadas. Es decir: deja vacíos
+// Consolidados, Picking, Cajas por punto de venta, Órdenes de compra y el Historial de pedidos, y
+// con las líneas se van también las asignaciones de personal y el registro de quién despachó.
+//
+// Lo pidió el usuario para empezar de cero sin que quede historial. Por eso la pantalla lo esconde
+// detrás de un modal que explica el efecto y pide la contraseña de quien lo hace (ver la acción
+// 'eliminar_todo' del controlador): no hay forma de deshacerlo.
+//
+// NO toca: el maestro de productos y sus excepciones, los cubicajes, la lista de almacenes del
+// Éxito, el personal, el Estado de pedidos, el Consolidado MR ni los enlaces de los QR de los
+// rótulos ya impresos (guardan su propio dato, y una caja que ya está en camino tiene que seguir
+// pudiendo escanearse).
+//
+// Devuelve ['exito'=>bool, 'cargas'=>int, 'lineas'=>int, 'despachadas'=>int].
+// ---------------------------------------------------------------------------------------------
+
+/** Cuánto se borraría: para el aviso del modal, antes de confirmar. */
+function resumenParaEliminarTodo($pdo) {
+    $fila = $pdo->query(
+        "SELECT (SELECT COUNT(*) FROM consolidado_cargas) AS cargas,
+                COUNT(*) AS lineas,
+                COALESCE(SUM(despachado = 1), 0) AS lineas_despachadas,
+                COUNT(DISTINCT CASE WHEN despachado = 0 THEN CONCAT(id_carga, '|', cedi, '|', orden_compra, '|', punto_venta) END) AS pedidos_pendientes,
+                COUNT(DISTINCT CASE WHEN despachado = 1 THEN CONCAT(id_carga, '|', cedi, '|', orden_compra, '|', punto_venta) END) AS pedidos_despachados
+           FROM consolidado_lineas"
+    )->fetch(PDO::FETCH_ASSOC);
+
+    return array_map('intval', $fila);
+}
+
+function eliminarTodosLosConsolidados($pdo) {
+    $antes = resumenParaEliminarTodo($pdo);
+
+    $pdo->beginTransaction();
+    try {
+        // Primero las líneas: tienen la clave foránea hacia las cargas.
+        $pdo->exec("DELETE FROM consolidado_lineas");
+        $pdo->exec("DELETE FROM consolidado_cargas");
+        $pdo->commit();
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log('Error eliminando todos los consolidados: ' . $e->getMessage());
+        return ['exito' => false, 'cargas' => 0, 'lineas' => 0, 'despachadas' => 0];
+    }
+
+    return [
+        'exito'       => true,
+        'cargas'      => $antes['cargas'],
+        'lineas'      => $antes['lineas'],
+        'despachadas' => $antes['pedidos_despachados'],
+    ];
 }

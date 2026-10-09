@@ -90,7 +90,7 @@ function htmlPickingPdf(array $entrega, $meta) {
     if ($logo !== '') {
         $html .= '<td width="60"><img src="' . $logo . '" class="logo"></td>';
     }
-    $html .= '<td><div class="titulo">Hoja de alistamiento</div>'
+    $html .= '<td><div class="titulo">Hoja para rotular</div>'
            . '<div class="tienda">' . $esc($entrega['punto_venta']) . '</div></td>'
            . '<td class="meta">Emitido: ' . date('d/m/Y H:i') . '<br>'
            // La entrega trae su propio archivo (ver agruparPorEntrega en model_picking.php) desde

@@ -1,0 +1,68 @@
+/* modules/pedidos/layouts/pedidos.css
+   Pedidos (2026-10-06): las tarjetas de las cargas, las columnas de disponibilidad y los anchos de
+   la tabla. La grilla, las pastillas, los filtros y la paginación vienen de seguimiento.css. */
+
+/* Las cuatro cargas (pedidos, inventarios y la base): qué se subió por última vez. */
+.cargas-pedidos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 16px 0 6px;
+}
+.carga-pedidos {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border: 1px solid var(--borde, #e6e0d8);
+    border-radius: 12px;
+    background: var(--blanco, #fff);
+}
+.carga-pedidos > i { font-size: 1.25rem; color: var(--vino, #7a1220); margin-top: 2px; }
+.carga-pedidos strong { display: block; font-size: 0.92rem; }
+.carga-pedidos span { display: block; font-size: 0.82rem; color: var(--texto, #2b2b2b); }
+.carga-pedidos small { display: block; font-size: 0.72rem; color: var(--texto-suave, #6b7580); margin-top: 2px; }
+.carga-pedidos.carga-falta { border-style: dashed; background: #fdf8f1; }
+.carga-pedidos.carga-falta > i { color: #c98a00; }
+
+/* La tabla: ancha como la hoja C1; las columnas de lo que hay y lo que alcanza, resaltadas. */
+.tabla-pedidos { min-width: 2300px; }
+.tabla-pedidos .celda-producto { min-width: 240px; }
+.tabla-pedidos .celda-cliente { min-width: 200px; }
+.tabla-pedidos th.col-dispo { background: #3a1016; }
+.tabla-pedidos td.col-dispo { background: #fbf6f2; }
+.tabla-pedidos .chip-estado { white-space: nowrap; }
+
+/* El rojo de "Agotado" (las demás pastillas de color vienen de seguimiento.css). */
+.estado-rojo { background: #fdecea; color: #b3261e; border: 1px solid #f1b0aa; }
+.pastillas-filtro .pastilla.estado-rojo.activa { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179,38,30,0.22); }
+.pastilla-estado.estado-rojo::before { background: #b3261e; }
+
+/* Qué inventario hay que subir (2026-10-06): una tarjeta por sede, con su color según el estado. */
+.recomendacion-pedidos { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid var(--borde, #e6e0d8); border-radius: 12px; background: #fffdf8; }
+.recomendacion-titulo { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; }
+.recomendacion-titulo i { color: #c98a00; margin-right: 4px; }
+.recomendacion-sedes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.recomendacion-sede { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; font-size: 0.85rem; border: 1px solid transparent; }
+.recomendacion-sede > div { flex: 1; }
+.recomendacion-sede > i { font-size: 1.1rem; }
+.recomendacion-sede.rec-falta { background: #fdecea; border-color: #f1b0aa; color: #8c1d16; }
+.recomendacion-sede.rec-viejo { background: #fef6e7; border-color: #f0d9a8; color: #8a5a00; }
+.recomendacion-sede.rec-al_dia { background: #e6f4ea; border-color: #b6ddc0; color: #1b5e20; }
+.recomendacion-sede.rec-no_hace_falta { background: #f3f1ee; border-color: #e3ded6; color: #6b7580; }
+/* Por producto (2026-10-06): la diferencia negativa (falta producto), en rojo. */
+.tabla-productos-pedidos .celda-producto { min-width: 260px; }
+.tabla-productos-pedidos td.celda-falta { color: #b3261e; background: #fdf3f2; }
+
+/* El aviso de que faltan los clientes y las ciudades: va primero y se tiene que ver. */
+.aviso-falta-base { margin-top: 14px; }
+.aviso-peligro { background: #fdecea; border-left-color: #b3261e; color: #8c1d16; }
+
+/* Vaciar la tabla (2026-10-06): una casilla por cada cosa que se puede borrar. */
+.vaciar-opciones { display: grid; gap: 8px; }
+.vaciar-opcion { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid #e3e6ea; border-radius: 8px; cursor: pointer; }
+.vaciar-opcion:has(input:checked) { border-color: #c0392b; background: #fdf3f2; }
+.vaciar-opcion input { margin-top: 3px; }
+.vaciar-opcion span { display: flex; flex-direction: column; gap: 2px; }
+.vaciar-opcion small { color: #6b7280; }
+.vaciar-opcion.vaciar-vacia { opacity: .55; cursor: default; }

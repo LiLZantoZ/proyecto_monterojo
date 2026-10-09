@@ -126,6 +126,29 @@ $hero = imagenDeMarca('bienvenida.jpg');
             <?php endif; ?>
 
             <?php
+            // NUESTRA OPERACIÓN (2026-10-07): tres fotos de la bodega. Una que no esté en disco
+            // simplemente no aparece (imagenDeMarca devuelve null); sin ninguna, no hay galería.
+            $fotosOperacion = array_filter([
+                ['bodega_racks.jpg',  'fa-solid fa-warehouse',       'Almacenamiento en racks'],
+                ['bodega_cedi.jpg',   'fa-solid fa-boxes-stacked',   'Estibas listas por CEDI'],
+                ['bodega_muelle.jpg', 'fa-solid fa-truck-ramp-box',  'Despacho en el muelle'],
+            ], fn($f) => imagenDeMarca($f[0]) !== null);
+            ?>
+            <?php if ($fotosOperacion): ?>
+                <section class="galeria-operacion" aria-label="Nuestra operación">
+                    <h2 class="galeria-operacion-titulo">Nuestra operación</h2>
+                    <div class="galeria-operacion-fotos">
+                        <?php foreach ($fotosOperacion as [$archivo, $icono, $texto]): ?>
+                            <figure class="galeria-foto">
+                                <img src="<?php echo imagenDeMarca($archivo); ?>" alt="<?php echo htmlspecialchars($texto); ?>" loading="lazy">
+                                <figcaption><i class="<?php echo $icono; ?>"></i> <?php echo htmlspecialchars($texto); ?></figcaption>
+                            </figure>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endif; ?>
+
+            <?php
             // La galería de sabores está OCULTA por pedido del usuario (2026-09-05), no borrada.
             // Los archivos siguen ahí —layout/portafolio_sabores.php y layout/sabores_lista.php—
             // así que para volver a mostrarla basta con descomentar la línea de abajo.

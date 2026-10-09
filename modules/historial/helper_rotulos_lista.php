@@ -109,7 +109,7 @@ function numeroDeCedi($cedi) {
  *
  * La cuenta se hace en PUNTOS DE LA ETIQUETADORA porque es el más estricto de los tres rótulos: sus
  * letras tienen ancho fijo y no se achican solas. El número va con la fuente 4 (24 puntos de ancho)
- * al triple, o al doble si tiene más de 6 caracteres; el CEDI con la fuente 3 (16 puntos) al doble;
+ * al doble (al triple hasta el rollo de 100x80, 2026-09-29); el CEDI con la fuente 3 (16 puntos) al doble;
  * entre los dos, 4mm de aire; y el renglón útil mide 680 puntos (95mm menos 5mm de margen por lado).
  *
  * Con los datos reales: una tienda de 3 o 4 dígitos entra al lado del número; una identificada por
@@ -119,7 +119,7 @@ function numeroDeCedi($cedi) {
  */
 function cediVaAlLadoDelNumero($numeroPv, $numeroCedi) {
     $largoNumero = mb_strlen((string) $numeroPv);
-    $anchoNumero = $largoNumero * 24 * ($largoNumero <= 6 ? 3 : 2);
+    $anchoNumero = $largoNumero * 24 * 2;
     $anchoCedi   = mb_strlen('CEDI: ' . $numeroCedi) * 16 * 2;
 
     return $anchoNumero + 4 * 8 + $anchoCedi <= 680;

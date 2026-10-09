@@ -145,7 +145,10 @@ function hojaCajasPorPuntoPdf($cedi, array $datos) {
     if ($logo !== '') {
         $html .= '<td width="60"><img src="' . $logo . '" class="logo"></td>';
     }
-    $html .= '<td><div class="titulo">Cajas por punto de venta</div>'
+    $html .= '<td><div class="titulo">Cajas por punto de venta '
+           // "(Cargue)" al lado del título, en negrita y al DOBLE de su tamaño (15pt → 30pt), como lo
+           // pidió el usuario el 2026-09-28: es la planilla del cargue y tiene que leerse de lejos.
+           . '<span style="font-size: 30pt; font-weight: bold; vertical-align: middle;">(Cargue)</span></div>'
            . '<div class="cedi">' . $esc($cedi) . '</div></td>'
            . '<td class="meta">Emitido: ' . date('d/m/Y H:i') . '<br>'
            . 'Puntos de venta: ' . $num($t['puntos']) . '<br>'

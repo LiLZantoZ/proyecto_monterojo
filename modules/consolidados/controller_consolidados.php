@@ -383,6 +383,49 @@ switch ($accion) {
         descargarConsolidadoPdf($porCedi, cargaVigente($pdo) ?? [], $nombre);
         // descargarConsolidadoPdf() termina la ejecución.
 
+    // -----------------------------------------------------------------------------------------
+    // ELIMINAR TODOS LOS CONSOLIDADOS (y el historial de pedidos). Ver eliminarTodosLosConsolidados().
+    //
+    // Pide dos cosas: el permiso consolidados_eliminar_todo y la CONTRASEÑA de quien lo hace, que
+    // se verifica contra la base en este momento. La contraseña es la última barrera de algo que no
+    // se puede deshacer: un clic sin querer, o alguien que encontró la sesión abierta, no alcanzan.
+    // -----------------------------------------------------------------------------------------
+    case 'eliminar_todo':
+        requierePermiso('consolidados_eliminar_todo', $vistaConsolidados);
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        $contrasena = (string) ($_POST['contrasena'] ?? '');
+        $stmt = $pdo->prepare("SELECT contrasena_usuario FROM usuarios WHERE id_usuario = ? AND estado = 'Activo'");
+        $stmt->execute([$_SESSION['usuario_id'] ?? 0]);
+        $hash = $stmt->fetchColumn();
+
+        if ($contrasena === '' || !$hash || !password_verify($contrasena, $hash)) {
+            // Un segundo de espera en cada intento fallido: no molesta a quien se equivocó una vez y
+            // hace inútil probar contraseñas en cadena desde una sesión abierta.
+            sleep(1);
+            guardarMensajeFlashTexto('error', 'La contraseña no es correcta. No se borró nada.');
+            header("Location: {$vistaConsolidados}");
+            exit();
+        }
+
+        descartarImportacionPendiente();   // un archivo esperando confirmación ya no tiene sentido
+        $r = eliminarTodosLosConsolidados($pdo);
+
+        if (!$r['exito']) {
+            guardarMensajeFlashTexto('error', 'No se pudieron eliminar los consolidados. No se borró nada; intentalo de nuevo.');
+        } else {
+            guardarMensajeFlashTexto('exito', 'Se eliminaron todos los consolidados: '
+                . $r['cargas'] . ' archivo(s), ' . number_format($r['lineas'], 0, ',', '.') . ' línea(s) y '
+                . $r['despachadas'] . ' pedido(s) del historial. El sistema quedó sin pedidos.');
+        }
+
+        header("Location: {$vistaConsolidados}");
+        exit();
+
     default:
         header("Location: {$vistaConsolidados}");
         exit();

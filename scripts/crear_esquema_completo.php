@@ -570,6 +570,48 @@ $pdo->exec(
 );
 
 // ----------------------------------------------------------------------------------------------
+// LA HOJA DE PRODUCTOS DEL EXCEL MANDA (2026-10-02)
+//
+// Pedido del usuario: la hoja de productos que trae el Excel del Consolidado (EAN, SKU,
+// DENOMINACIÓN) reescribe la maestra y completa lo que le falte. Como las cadenas nombran distinto
+// el mismo SKU (el Éxito pide el 36366 de a 8 y Cencosud lo nombra de a 16), cada línea guarda
+// además las unidades por caja que le dio SU archivo: así, subir el Excel de otra cadena cambia la
+// maestra pero no le cambia las cajas a lo que ya estaba cargado. NULL = la línea no trajo hoja y
+// usa la maestra, como siempre.
+//
+// maestro_cambios es el registro de lo que cada archivo le cambió a la maestra, para poder ver
+// cuándo cambió un producto y volverlo atrás.
+// ----------------------------------------------------------------------------------------------
+$tieneEmpaqueHoja = $pdo->query(
+    "SELECT COUNT(*) FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'consolidado_lineas'
+       AND COLUMN_NAME = 'unidades_por_caja_hoja'"
+)->fetchColumn();
+
+if (!$tieneEmpaqueHoja) {
+    echo "\n== Migración: consolidado_lineas.unidades_por_caja_hoja ==\n";
+    $pdo->exec(
+        "ALTER TABLE consolidado_lineas
+         ADD COLUMN `unidades_por_caja_hoja` int(11) DEFAULT NULL COMMENT 'Unidades por caja que dice el nombre del producto en la hoja de productos del Excel de esta carga. NULL = usar la maestra'"
+    );
+    echo "   Columna agregada.\n";
+}
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS maestro_cambios (
+        `id_cambio` int(11) NOT NULL AUTO_INCREMENT,
+        `sku` varchar(30) NOT NULL,
+        `campo` varchar(30) NOT NULL COMMENT 'descripcion, unidades_por_caja, ean o producto nuevo',
+        `antes` varchar(255) DEFAULT NULL,
+        `despues` varchar(255) DEFAULT NULL,
+        `origen` varchar(255) DEFAULT NULL COMMENT 'Archivo que hizo el cambio',
+        `fecha` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_cambio`),
+        KEY `sku` (`sku`),
+        KEY `fecha` (`fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+// ----------------------------------------------------------------------------------------------
 // ALMACENES DEL ÉXITO (2026-09-14): la lista oficial Dependencia → Nombre
 //
 // Con ella cada punto de venta del Éxito se guarda como "DEPENDENCIA - NOMBRE OFICIAL", aunque el
@@ -738,9 +780,11 @@ $pdo->exec(
         `detalle` varchar(500) DEFAULT NULL COMMENT 'Descripción de la factura / detalles del pedido',
         `bodega` varchar(80) DEFAULT NULL,
         `destino` varchar(160) DEFAULT NULL COMMENT 'Cliente o punto de venta que recibe',
+        `ciudad_destino` varchar(80) DEFAULT NULL COMMENT 'Ciudad a la que va el envío, según la transportadora',
         `fecha_guia` date DEFAULT NULL,
         `fecha_despacho` datetime DEFAULT NULL,
         `fecha_entrega` datetime DEFAULT NULL,
+        `fecha_estado` datetime DEFAULT NULL COMMENT 'Desde cuándo está en ese estado (Proeslog: fechaestadoguia)',
         `direccion` varchar(255) DEFAULT NULL COMMENT 'SAP facturación: Población - Calle',
         `nit` varchar(40) DEFAULT NULL COMMENT 'SAP facturación: Nº ident.fis.1',
         `valor_neto` decimal(16,2) DEFAULT NULL COMMENT 'SAP facturación: suma de Valor neto de la factura',
@@ -757,6 +801,11 @@ $pdo->exec(
         KEY `fecha_despacho` (`fecha_despacho`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
 );
+
+// La ciudad de destino (2026-10-05), para las instalaciones que ya tenían la tabla.
+$pdo->exec("ALTER TABLE seguimiento_pedidos ADD COLUMN IF NOT EXISTS `ciudad_destino` varchar(80) DEFAULT NULL COMMENT 'Ciudad a la que va el envío, según la transportadora' AFTER `destino`");
+// La fecha del estado (2026-10-02), para las instalaciones que ya tenían la tabla.
+$pdo->exec("ALTER TABLE seguimiento_pedidos ADD COLUMN IF NOT EXISTS `fecha_estado` datetime DEFAULT NULL COMMENT 'Desde cuándo está en ese estado (Proeslog: fechaestadoguia)' AFTER `fecha_entrega`");
 
 // ----------------------------------------------------------------------------------------------
 // CONSOLIDADO MR (2026-09-24): el export de facturación de SAP renglón por renglón (una fila por
@@ -778,6 +827,7 @@ $pdo->exec(
         `referencia` varchar(60) DEFAULT NULL,
         `doc_ventas` varchar(30) DEFAULT NULL COMMENT 'Doc.ventas',
         `pedido_cliente` varchar(80) DEFAULT NULL,
+        `anulado` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = el renglón trae X en Anulado./An.: la factura está anulada',
         `id_usuario` int(11) DEFAULT NULL,
         `fecha_carga` timestamp NOT NULL DEFAULT current_timestamp(),
         PRIMARY KEY (`id_linea`),
@@ -787,6 +837,402 @@ $pdo->exec(
         KEY `nombre_cliente` (`nombre_cliente`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
 );
+
+// ----------------------------------------------------------------------------------------------
+// CONSOLIDADO MR: TRANSPORTADOR Y FACTURAS NO PAGADAS (2026-10-02)
+//
+// consolidado_mr_envios: el transportador que se le pone a mano a una factura que no tiene guía en
+// el consolidado de las transportadoras (casi siempre INTERNO). Va en tabla aparte y no en
+// consolidado_mr porque esa se reemplaza cada vez que se vuelve a subir la factura.
+//
+// consolidado_mr_cartera: el listado de facturas no pagadas que se sube en su propia pestaña, y si
+// ya se pagaron. `clave` es el número normalizado (ver claveFacturaMr) para no duplicar al volver
+// a subir el listado; `factura_sap` es el cruce con el Consolidado MR, cuando se encuentra.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_envios (
+        `factura` varchar(30) NOT NULL COMMENT 'Factura de SAP, la llave del Consolidado MR',
+        `transportadora` varchar(80) NOT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`factura`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// consolidado_mr_estados_manuales (2026-10-07): el estado y la fecha de entrega puestos a mano a una
+// factura. Mandan sobre el reporte de la transportadora; vacíos, la fila se borra.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_estados_manuales (
+        `factura` varchar(30) NOT NULL COMMENT 'Factura de SAP, la llave del Consolidado MR',
+        `estado` varchar(80) DEFAULT NULL,
+        `fecha_entrega` date DEFAULT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha_actualizacion` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`factura`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_cartera (
+        `id_cartera` int(11) NOT NULL AUTO_INCREMENT,
+        `clave` varchar(60) NOT NULL COMMENT 'Número de factura normalizado, para no duplicar',
+        `factura` varchar(60) NOT NULL COMMENT 'Como se muestra: la Referencia del Consolidado MR si cruzó',
+        `factura_sap` varchar(30) DEFAULT NULL COMMENT 'Cruce con consolidado_mr.factura',
+        `cliente` varchar(160) DEFAULT NULL,
+        `valor` decimal(16,2) DEFAULT NULL COMMENT 'Valor o saldo que trae el archivo',
+        `fecha_factura` date DEFAULT NULL,
+        `fecha_vencimiento` date DEFAULT NULL,
+        `pagada` tinyint(1) NOT NULL DEFAULT 0,
+        `fecha_pago` datetime DEFAULT NULL,
+        `pagada_por` int(11) DEFAULT NULL,
+        `id_usuario` int(11) DEFAULT NULL COMMENT 'Quién la subió',
+        `fecha_carga` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_cartera`),
+        UNIQUE KEY `clave` (`clave`),
+        KEY `factura_sap` (`factura_sap`),
+        KEY `pagada` (`pagada`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+// ----------------------------------------------------------------------------------------------
+// RESPONSABLE DE EMPAQUE (2026-10-05): quién alistó y despachó cada factura del Consolidado MR. Lo
+// enlaza la bodega en "Enlazar facturas" (factura + cédula del operario). Una fila por factura de
+// SAP; el nombre y la cédula se guardan como estaban al enlazar, aunque después cambien en Personal.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_responsables (
+        `factura` varchar(30) NOT NULL COMMENT 'Factura de SAP, la llave del Consolidado MR',
+        `referencia` varchar(60) DEFAULT NULL COMMENT 'NU… al momento de enlazar, para mostrar',
+        `id_personal` int(11) DEFAULT NULL,
+        `documento` varchar(20) NOT NULL,
+        `nombre` varchar(120) NOT NULL,
+        `cajas` smallint(5) unsigned DEFAULT NULL COMMENT 'Número de cajas del pedido, escrito al enlazar',
+        `id_usuario` int(11) DEFAULT NULL COMMENT 'Quién registró el enlace',
+        `fecha_enlace` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`factura`),
+        KEY `id_personal` (`id_personal`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+// El número de cajas del pedido (2026-10-05), para las bases que ya tenían la tabla.
+$pdo->exec("ALTER TABLE consolidado_mr_responsables ADD COLUMN IF NOT EXISTS `cajas` smallint(5) unsigned DEFAULT NULL COMMENT 'Número de cajas del pedido, escrito al enlazar' AFTER `nombre`");
+
+// ----------------------------------------------------------------------------------------------
+// FACTURAS DE CONTADO (2026-10-05): la X de "Anulado." del Consolidado MR marca las facturas de
+// contado (no son anuladas). consolidado_mr_contado guarda el Sí/No actual de cada factura que alguna
+// vez fue de contado (y si vino del archivo o lo marcó alguien); el historial, cada cambio.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_contado (
+        `factura` varchar(30) NOT NULL COMMENT 'Factura de SAP, la llave del Consolidado MR',
+        `referencia` varchar(60) DEFAULT NULL COMMENT 'NU… para mostrar',
+        `de_contado` tinyint(1) NOT NULL COMMENT '1 = de contado, 0 = no (se conserva para la trazabilidad)',
+        `origen` enum('archivo','manual','comparativa') NOT NULL COMMENT 'manual = lo eligió alguien; comparativa = el archivo de Subir comparativa; archivo = (ya no se usa)',
+        `id_usuario` int(11) DEFAULT NULL COMMENT 'Quién hizo el último cambio',
+        `fecha_cambio` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        `fecha_registro` timestamp NOT NULL DEFAULT current_timestamp() COMMENT 'La primera vez que se marcó',
+        PRIMARY KEY (`factura`),
+        KEY `de_contado` (`de_contado`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS consolidado_mr_contado_historial (
+        `id_cambio` int(11) NOT NULL AUTO_INCREMENT,
+        `factura` varchar(30) NOT NULL,
+        `de_contado` tinyint(1) NOT NULL,
+        `origen` enum('archivo','manual','comparativa') NOT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_cambio`),
+        KEY `factura` (`factura`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+);
+
+// Para las bases que ya tenían estas tablas (2026-10-05): la X de anulada en cada renglón y la
+// comparativa como origen del "de contado".
+$pdo->exec("ALTER TABLE consolidado_mr ADD COLUMN IF NOT EXISTS `anulado` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1 = el renglón trae X en Anulado./An.: la factura está anulada' AFTER `pedido_cliente`");
+$pdo->exec("ALTER TABLE consolidado_mr_contado MODIFY `origen` enum('archivo','manual','comparativa') NOT NULL");
+$pdo->exec("ALTER TABLE consolidado_mr_contado_historial MODIFY `origen` enum('archivo','manual','comparativa') NOT NULL");
+
+// ----------------------------------------------------------------------------------------------
+// PEDIDOS (2026-10-06): los pedidos de los clientes contra el inventario de cada sede. La base (BD
+// Clientes, CIUDADES, OBSERVACIONES e INVENTARIO del Excel PEDIDOS MONTEROJO), los renglones del
+// archivo PEDIDOS, los inventarios de Bogotá y Copacabana y la última carga de cada archivo.
+// ----------------------------------------------------------------------------------------------
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_clientes (
+        `deudor` varchar(20) NOT NULL COMMENT 'Código del cliente en SAP (Solicitante del pedido)',
+        `nombre` varchar(160) DEFAULT NULL,
+        `poblacion` varchar(80) DEFAULT NULL COMMENT 'La ciudad: sale la columna CIUDAD del pedido',
+        PRIMARY KEY (`deudor`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Hoja BD Clientes del archivo PEDIDOS MONTEROJO'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_ciudades (
+        `ciudad` varchar(80) NOT NULL COMMENT 'En mayúsculas y sin tildes, para comparar',
+        `sede` varchar(20) NOT NULL COMMENT 'Quién la atiende: BOGOTA o COPACABANA',
+        PRIMARY KEY (`ciudad`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Hoja CIUDADES del archivo PEDIDOS MONTEROJO'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_observaciones (
+        `deudor` varchar(20) NOT NULL,
+        `observacion` varchar(255) NOT NULL COMMENT 'Ej. SALE DESDE COPACABANA',
+        PRIMARY KEY (`deudor`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Hoja OBSERVACIONES del archivo PEDIDOS MONTEROJO'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_productos (
+        `material` varchar(30) NOT NULL,
+        `texto` varchar(255) DEFAULT NULL,
+        `centro` varchar(60) DEFAULT NULL COMMENT 'La columna Monterojo del pedido',
+        PRIMARY KEY (`material`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Hoja INVENTARIO (columnas I:K) del archivo PEDIDOS MONTEROJO'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_lineas (
+        `id_linea` int(11) NOT NULL AUTO_INCREMENT,
+        `numero_pedido` varchar(80) DEFAULT NULL COMMENT 'Nº de pedido (la orden de compra del cliente)',
+        `fecha_documento` date DEFAULT NULL,
+        `clase_doc` varchar(10) DEFAULT NULL,
+        `documento` varchar(30) DEFAULT NULL COMMENT 'Documento comercial de SAP',
+        `creado_por` varchar(40) DEFAULT NULL,
+        `solicitante` varchar(20) DEFAULT NULL COMMENT 'Código del cliente',
+        `nombre` varchar(160) DEFAULT NULL,
+        `moneda` varchar(5) DEFAULT NULL,
+        `material` varchar(30) DEFAULT NULL,
+        `denominacion` varchar(255) DEFAULT NULL,
+        `cantidad` decimal(14,3) DEFAULT NULL,
+        `precio_neto` decimal(16,2) DEFAULT NULL,
+        `total` decimal(16,2) DEFAULT NULL,
+        `motivo_rechazo` varchar(80) DEFAULT NULL,
+        `creado_el` date DEFAULT NULL,
+        `hora` time DEFAULT NULL,
+        `observaciones` varchar(255) DEFAULT NULL,
+        `condicion_pago` varchar(80) DEFAULT NULL,
+        PRIMARY KEY (`id_linea`),
+        KEY `documento` (`documento`),
+        KEY `material` (`material`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='El archivo PEDIDOS: lo que piden los clientes'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_inventario (
+        `sede` varchar(20) NOT NULL COMMENT 'BOGOTA o COPACABANA',
+        `material` varchar(30) NOT NULL,
+        `texto` varchar(255) DEFAULT NULL,
+        `libre` decimal(14,3) NOT NULL DEFAULT 0 COMMENT 'Libre utilización (sumada entre lotes)',
+        `bloqueado` decimal(14,3) NOT NULL DEFAULT 0,
+        `calidad` decimal(14,3) NOT NULL DEFAULT 0 COMMENT 'En control de calidad',
+        PRIMARY KEY (`sede`, `material`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Los archivos INVENTARIO BOGOTA e INVENTARIO COPA'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS pedidos_cargas (
+        `tipo` varchar(30) NOT NULL COMMENT 'base, pedidos, inventario_BOGOTA, inventario_COPACABANA',
+        `archivo` varchar(255) DEFAULT NULL,
+        `detalle` varchar(255) DEFAULT NULL,
+        `id_usuario` int(11) DEFAULT NULL,
+        `fecha` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+        PRIMARY KEY (`tipo`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='La última carga de cada archivo del módulo Pedidos'"
+);
+
+// EL ASISTENTE (MonteBot, 2026-10-07, traído de Nutrium): la conversación de cada persona y lo que cuesta
+// cada llamada a Claude (de ahí sale el freno de presupuesto). El costo se guarda ya calculado: los
+// precios cambian, y recalcular el histórico con la tarifa de hoy daría un número que nunca se pagó.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS chatbot_mensajes (
+        `id_mensaje` int(11) NOT NULL AUTO_INCREMENT,
+        `id_usuario` int(11) NOT NULL,
+        `rol` enum('user','assistant') NOT NULL,
+        `mensaje` text NOT NULL,
+        `fecha` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_mensaje`),
+        KEY `idx_usuario_fecha` (`id_usuario`, `fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Asistente: la conversación de cada persona'"
+);
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS chatbot_uso (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `id_usuario` int(11) DEFAULT NULL,
+        `modelo` varchar(60) NOT NULL,
+        `tokens_entrada` int(11) NOT NULL DEFAULT 0,
+        `tokens_salida` int(11) NOT NULL DEFAULT 0,
+        `costo_usd` decimal(12,6) NOT NULL DEFAULT 0,
+        `fecha` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `idx_fecha` (`fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Asistente: tokens y costo de cada llamada'"
+);
+
+// TRAZABILIDAD Y RENDIMIENTO (2026-10-06, del sistema de bodega): cada acción del sistema, con quién
+// la hizo y lo que el sistema le contestó. La llena sola el enrutador (config/actividad.php).
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS historial_actividades (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `id_usuario` int(11) DEFAULT NULL COMMENT 'NULL en un intento fallido de inicio de sesión',
+        `modulo` varchar(60) NOT NULL,
+        `accion` varchar(150) NOT NULL,
+        `detalle` text DEFAULT NULL COMMENT 'Lo que el sistema le contestó: el mensaje de la pantalla, el error o el archivo',
+        `resultado` varchar(10) NOT NULL DEFAULT '' COMMENT 'exito, error o vacío',
+        `ruta` varchar(80) DEFAULT NULL,
+        `ip` varchar(45) DEFAULT NULL,
+        `fecha_hora` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `idx_fecha_hora` (`fecha_hora`),
+        KEY `idx_usuario_fecha` (`id_usuario`, `fecha_hora`),
+        KEY `idx_modulo` (`modulo`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Trazabilidad: cada acción del sistema'"
+);
+
+// ADMINISTRAR PRODUCTOS (2026-10-06, del sistema de bodega): cada producto físico de la bodega
+// (SKU + lote + vencimiento, con su estado). Una estiba de Posiciones apunta a uno; los que no
+// están en ninguna posición salen "Sin ubicar".
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS productos (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `sku` varchar(30) NOT NULL,
+        `producto` varchar(255) DEFAULT NULL COMMENT 'La descripción del SKU (maestro o lista de Monterojo)',
+        `lote` varchar(60) NOT NULL,
+        `fecha_vencimiento` date DEFAULT NULL,
+        `estado` varchar(30) NOT NULL DEFAULT 'Disponible' COMMENT 'Disponible, Bloqueado, En Control De Calidad o Defectuoso',
+        `origen` varchar(30) NOT NULL DEFAULT 'administrar_productos' COMMENT 'administrar_productos o posiciones',
+        `id_usuario_registro` int(11) DEFAULT NULL,
+        `creado_el` timestamp NOT NULL DEFAULT current_timestamp(),
+        `actualizado_el` datetime DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        KEY `sku_lote_vence` (`sku`, `lote`, `fecha_vencimiento`),
+        KEY `fecha_vencimiento` (`fecha_vencimiento`),
+        KEY `creado_el` (`creado_el`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Administrar Productos: los productos físicos de la bodega'"
+);
+
+// KARDEX (2026-10-06): las entradas y salidas de estibas de las posiciones, por SKU.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS movimientos (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `fecha_hora` datetime NOT NULL DEFAULT current_timestamp(),
+        `id_usuario` int(11) DEFAULT NULL,
+        `tipo` varchar(20) NOT NULL COMMENT 'Ingreso, Salida o Picking',
+        `id_posicion` int(11) DEFAULT NULL,
+        `ubicacion` varchar(20) DEFAULT NULL,
+        `id_producto` int(11) DEFAULT NULL,
+        `sku` varchar(30) NOT NULL,
+        `lote` varchar(60) DEFAULT NULL,
+        `fecha_vencimiento` date DEFAULT NULL,
+        `cantidad_cajas` int(11) DEFAULT NULL,
+        `estiba_completa` tinyint(1) NOT NULL DEFAULT 0,
+        `observaciones` varchar(500) DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        KEY `sku_fecha` (`sku`, `fecha_hora`),
+        KEY `fecha_hora` (`fecha_hora`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Kardex: entradas y salidas de estibas'"
+);
+
+// FORMATO CONCILIADOR (2026-10-06, del sistema de bodega): lo que sale de producción, estiba por
+// estiba. Cada registro da cupo para ubicar UNA estiba de ese SKU + lote + vencimiento en Posiciones.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS formato_conciliador (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `fecha` date NOT NULL,
+        `sku` varchar(30) NOT NULL,
+        `descripcion` varchar(255) DEFAULT NULL,
+        `lote` varchar(60) NOT NULL,
+        `fecha_vencimiento` date DEFAULT NULL,
+        `cajas` int(11) NOT NULL DEFAULT 0,
+        `saldos` int(11) NOT NULL DEFAULT 0 COMMENT 'Unidades que no completan una caja',
+        `unidades_por_caja` int(11) DEFAULT NULL COMMENT 'Del maestro de productos cuando se registró',
+        `cantidad` int(11) DEFAULT NULL COMMENT 'Total de unidades: cajas × unidades por caja + saldos',
+        `responsable` varchar(120) DEFAULT NULL,
+        `codigo_responsable` int(11) DEFAULT NULL,
+        `turno` tinyint(3) unsigned DEFAULT NULL COMMENT '1: 05:30-12:30, 2: 12:30-21:00, 3: 21:00-05:30',
+        `novedades` varchar(255) DEFAULT NULL,
+        `estado` varchar(30) DEFAULT NULL COMMENT 'Disponible, En Control De Calidad, Fecha Corta o Defectuoso',
+        `id_usuario_registro` int(11) DEFAULT NULL,
+        `creado_el` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `sku_lote_vence` (`sku`, `lote`, `fecha_vencimiento`),
+        KEY `fecha` (`fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Formato Conciliador: lo que sale de producción'"
+);
+
+// NOTIFICACIONES (2026-10-06, del sistema de bodega): los avisos personales de la campana.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS notificaciones (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+        `id_usuario_emisor` int(11) DEFAULT NULL,
+        `id_usuario_receptor` int(11) NOT NULL,
+        `mensaje` varchar(500) NOT NULL,
+        `tipo` varchar(30) NOT NULL DEFAULT 'aviso' COMMENT 'producto_nuevo, conciliador…',
+        `enlace` varchar(255) DEFAULT NULL,
+        `leido` tinyint(1) NOT NULL DEFAULT 0,
+        `fecha` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `receptor_leido` (`id_usuario_receptor`, `leido`, `fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Las notificaciones personales'"
+);
+
+// POSICIONES DE BODEGA (2026-10-06): el módulo de posiciones del sistema de bodega, con los racks
+// de Monterojo. Cada posición se llama R1M1N1A1 (rack, módulo, nivel, posición): 8 racks × 12
+// módulos; los módulos 1 a 11 tienen 5 niveles y el 12 solo los niveles 3, 4 y 5; 4 posiciones
+// por nivel (A1, A2, B1, B2) = 1.856. Cada posición guarda a lo sumo una estiba.
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS posiciones (
+        `id_posicion` int(11) NOT NULL AUTO_INCREMENT,
+        `ubicacion` varchar(20) NOT NULL COMMENT 'R1M1N1A1',
+        `rack` tinyint(3) unsigned NOT NULL,
+        `modulo` tinyint(3) unsigned NOT NULL,
+        `nivel` tinyint(3) unsigned NOT NULL,
+        `lugar` char(2) NOT NULL COMMENT 'A1, A2, B1 o B2',
+        `creado_el` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id_posicion`),
+        UNIQUE KEY `ubicacion` (`ubicacion`),
+        KEY `rack_modulo_nivel` (`rack`, `modulo`, `nivel`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Las posiciones de los racks de la bodega'"
+);
+// La estiba de antes de Administrar Productos (con su propio SKU, lote y estado) pasa a apuntar a
+// su producto. Solo se cambia vacía: con estibas cargadas habría que pasarlas a mano.
+$columnasEstiba = $pdo->query("SHOW COLUMNS FROM posiciones_estibas")->fetchAll(PDO::FETCH_COLUMN);
+if (in_array('sku', $columnasEstiba, true)) {
+    if ((int) $pdo->query("SELECT COUNT(*) FROM posiciones_estibas")->fetchColumn() === 0) {
+        $pdo->exec("DROP TABLE posiciones_estibas");
+        echo "  · posiciones_estibas: pasada a la versión con producto (estaba vacía)\n";
+    } else {
+        echo "  · OJO: posiciones_estibas tiene estibas con el formato viejo; no se cambió.\n";
+    }
+}
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS posiciones_estibas (
+        `id_estiba` int(11) NOT NULL AUTO_INCREMENT,
+        `id_posicion` int(11) NOT NULL,
+        `id_producto` int(11) NOT NULL COMMENT 'El producto (SKU, lote, vencimiento, estado) de Administrar Productos',
+        `cantidad_cajas` int(11) DEFAULT NULL COMMENT 'NULL si es estiba completa',
+        `estiba_completa` tinyint(1) NOT NULL DEFAULT 0,
+        `observaciones` varchar(500) DEFAULT NULL,
+        `id_usuario_registro` int(11) DEFAULT NULL,
+        `id_usuario_edicion` int(11) DEFAULT NULL,
+        `creado_el` timestamp NOT NULL DEFAULT current_timestamp(),
+        `actualizado_el` datetime DEFAULT NULL,
+        PRIMARY KEY (`id_estiba`),
+        UNIQUE KEY `id_posicion` (`id_posicion`),
+        UNIQUE KEY `id_producto` (`id_producto`),
+        CONSTRAINT `posiciones_estibas_ibfk_1` FOREIGN KEY (`id_posicion`) REFERENCES `posiciones` (`id_posicion`) ON DELETE CASCADE,
+        CONSTRAINT `posiciones_estibas_ibfk_2` FOREIGN KEY (`id_producto`) REFERENCES `productos` (`id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='La estiba que hay en cada posición'"
+);
+
+// Las 1.856 posiciones de la estructura (las que ya están no se tocan).
+$crearPosicion = $pdo->prepare("INSERT IGNORE INTO posiciones (ubicacion, rack, modulo, nivel, lugar) VALUES (?, ?, ?, ?, ?)");
+$posicionesCreadas = 0;
+for ($rack = 1; $rack <= 8; $rack++) {
+    for ($modulo = 1; $modulo <= 12; $modulo++) {
+        foreach ($modulo === 12 ? [3, 4, 5] : [1, 2, 3, 4, 5] as $nivel) {
+            foreach (['A1', 'A2', 'B1', 'B2'] as $lugar) {
+                $crearPosicion->execute(["R{$rack}M{$modulo}N{$nivel}{$lugar}", $rack, $modulo, $nivel, $lugar]);
+                $posicionesCreadas += $crearPosicion->rowCount();
+            }
+        }
+    }
+}
+echo "  · posiciones: {$posicionesCreadas} creada(s)\n";
 
 // ==============================================================================================
 // ROLES
@@ -828,10 +1274,32 @@ $permisos = [
     // (el Visitante, 2026-09-28).
     'consolidado_mr_editar'    => 'Importar y vaciar el Consolidado MR.',
     'perfil_editar'            => 'Editar el perfil propio (nombre, foto y contraseña).',
+    'consolidados_eliminar_todo' => 'Borrar todos los consolidados y el historial de pedidos (pide la contraseña).',
+    'seguimiento_eliminar_todo'  => 'Borrar los datos de las transportadoras (pide la contraseña).',
+    'modulo_enlazar_facturas'    => 'Enlazar cada factura del Consolidado MR con el operario que la alistó y despachó.',
+    'modulo_pedidos'             => 'Ver los pedidos de los clientes contra el inventario de cada sede (qué se puede despachar).',
+    'pedidos_editar'             => 'Subir los archivos del módulo Pedidos (clientes y ciudades, pedidos e inventarios).',
+    'modulo_posiciones'          => 'Ver las posiciones de los racks de la bodega y la estiba de cada una.',
+    'posiciones_crear'           => 'Crear, editar, eliminar e importar posiciones.',
+    'posiciones_mover_estibas'   => 'Agregar y sacar estibas de las posiciones.',
+    'posiciones_editar_detalle'  => 'Corregir los datos de una estiba ya ubicada.',
+    'posiciones_llevar_a_picking' => 'Llevar una estiba a picking: sale de la posición y de Administrar Productos.',
+    'modulo_productos'           => 'Ver Administrar Productos (cada producto con su lote, vencimiento, estado y posición) y su Kardex.',
+    'productos_editar'           => 'Registrar, editar y eliminar productos en Administrar Productos.',
+    'modulo_formato_conciliador' => 'Ver el Formato Conciliador (lo que sale de producción) e imprimir sus rótulos.',
+    'formato_conciliador_registrar' => 'Registrar en el Formato Conciliador.',
+    'modulo_notificaciones'      => 'Ver la pantalla de Notificaciones (vencimientos y productos nuevos).',
+    'notificaciones_vencimiento' => 'Recibir en la campana los avisos de productos vencidos o por vencer.',
+    'notificaciones_productos_nuevos' => 'Recibir un aviso cuando se registra un producto nuevo.',
+    'modulo_trazabilidad'        => 'Ver la trazabilidad: cada acción del sistema, quién la hizo y cuándo.',
+    'modulo_rendimiento'         => 'Ver el rendimiento: la actividad de cada usuario por día, hora y módulo.',
+    'modulo_usuarios'            => 'Administrar usuarios: crear, editar y eliminar las cuentas que entran al sistema.',
+    'usuarios_backup'            => 'Descargar el backup de la base de datos desde Administrar usuarios.',
+    'modulo_chatbot'             => 'Usar el asistente MonteBot (consultas con IA; cada pregunta cuesta dinero).',
 ];
 
 $permisosPorRol = [
-    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos', 'modulo_cajas_punto_venta', 'modulo_ordenes_compra', 'modulo_seguimiento', 'modulo_consolidado_mr', 'consolidado_mr_editar', 'perfil_editar'],
+    1 => ['modulo_consolidados', 'modulo_maestro', 'modulo_picking', 'modulo_personal', 'modulo_historial', 'modulo_rotulos', 'modulo_cajas_punto_venta', 'modulo_ordenes_compra', 'modulo_seguimiento', 'modulo_consolidado_mr', 'consolidado_mr_editar', 'perfil_editar', 'consolidados_eliminar_todo', 'seguimiento_eliminar_todo', 'modulo_enlazar_facturas', 'modulo_pedidos', 'pedidos_editar', 'modulo_posiciones', 'posiciones_crear', 'posiciones_mover_estibas', 'posiciones_editar_detalle', 'posiciones_llevar_a_picking', 'modulo_productos', 'productos_editar', 'modulo_formato_conciliador', 'formato_conciliador_registrar', 'modulo_notificaciones', 'notificaciones_vencimiento', 'notificaciones_productos_nuevos', 'modulo_trazabilidad', 'modulo_rendimiento', 'modulo_usuarios', 'usuarios_backup', 'modulo_chatbot'],
     2 => ['modulo_consolidado_mr'],
 ];
 

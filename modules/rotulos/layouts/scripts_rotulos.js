@@ -23,6 +23,7 @@
         pv:       document.getElementById('rot-pv'),
         numeroPv: document.getElementById('rot-numero-pv'),
         cedi:     document.getElementById('rot-cedi'),
+        oc:       document.getElementById('rot-oc'),
         producto: document.getElementById('rot-producto'),
         sku:      document.getElementById('rot-sku'),
         ean:      document.getElementById('rot-ean')
@@ -53,6 +54,7 @@
                 pv:        campos.pv.value,
                 numero_pv: campos.numeroPv.value.trim(),
                 cedi:      campos.cedi.value,
+                oc:        campos.oc.value.trim(),
                 producto:  campos.producto.value,
                 sku:       campos.sku.value.trim(),
                 ean:       campos.ean.value.trim(),
@@ -77,6 +79,7 @@
         campos.pv.value       = '';
         campos.numeroPv.value = '';
         campos.cedi.value     = '';
+        campos.oc.value       = '';
         campos.producto.value = '';
         campos.sku.value      = '';
         campos.ean.value      = '';

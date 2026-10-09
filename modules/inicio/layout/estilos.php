@@ -25,6 +25,8 @@ $hojasDeEstiloApp = [
     '04-rotulo.css',   // el rótulo de Picking, en pantalla y en papel
     '05-ordenes-compra.css', // Órdenes de compra (Éxito): carro, faltantes y detalle por producto
     '06-listas-desplegables.css', // las listas de los <select> y del autocompletado, con el estilo del sistema
+    '07-bodega.css',   // Productos, Conciliador, Notificaciones (y su campana), Trazabilidad y Rendimiento
+    '08-estilo.css',   // la piel (2026-10-07): fotos de la bodega, iconos, tablas, botones y campos
 ];
 
 foreach ($hojasDeEstiloApp as $hoja) {

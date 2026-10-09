@@ -51,6 +51,7 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
 
     $sql = "SELECT l.cedi, l.punto_venta, l.ean_punto_venta, l.direccion_punto_venta,
                    l.orden_compra, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
+                   MAX(l.unidades_por_caja_hoja) AS unidades_por_caja_hoja,
                    SUM(l.unidades) AS unidades
             FROM consolidado_lineas l
             WHERE " . implode(' AND ', $where) . "
@@ -128,6 +129,9 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
             'producto' => $fila['descripcion'],
             'sku'      => $fila['sku'],
             'ean'      => $fila['ean_item'],
+            // La orden de compra va POR PRODUCTO y no por tienda: una tienda puede tener pedidos de
+            // más de una orden, y cada caja lleva la de su propio pedido (2026-09-28).
+            'oc'       => (string) $fila['orden_compra'],
             'unidades' => (int) $fila['unidades'],
             'cajas'    => $fila['sin_maestro'] ? 0 : (int) $fila['cajas'],
         ];

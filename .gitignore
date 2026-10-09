@@ -5,3 +5,4 @@ backups/
 vendor/
 temp/*
 !temp/.htaccess
+config/chatbot_config.php

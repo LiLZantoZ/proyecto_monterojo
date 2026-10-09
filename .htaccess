@@ -27,11 +27,13 @@ RewriteRule "(^|/)\.git/" - [F,L]
 # logs/    el registro de errores. El archivo todavía no existía, pero en modo producción los errores
 #          van ahí, y con el primero que se registrara se habría podido descargar.
 # .vscode/ la configuración del editor.
+# backups/ los backups de la base que descarga Administrar usuarios (2026-10-06): la base entera,
+#          con las contraseñas cifradas de todas las cuentas.
 #
 # Se cierran con una regla y no con un .htaccess adentro de cada una porque vendor/ se reemplaza
 # entero con cada "composer install", y un archivo puesto ahí se perdería sin que nadie lo note.
 # -----------------------------------------------------------------------------------------------
-RewriteRule "^(vendor|logs|\.vscode)(/|$)" - [F,L,NC]
+RewriteRule "^(vendor|logs|backups|\.vscode)(/|$)" - [F,L,NC]
 
 # -----------------------------------------------------------------------------------------------
 # EL ENRUTADOR (2026-09-14)

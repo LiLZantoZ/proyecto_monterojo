@@ -50,6 +50,11 @@ $filtrosEnUrl = http_build_query(array_filter($filtros));
 // El controlador la deja en la sesión junto con el archivo, y acá solo se muestra la pregunta.
 $pendiente = $_SESSION['importacion_pendiente'] ?? null;
 $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
+
+// "Eliminar todos los consolidados": solo con su permiso, y el botón solo aparece si hay algo que
+// borrar (pendiente o en el historial). Los números van en el aviso del modal.
+$paraBorrar = tienePermiso('consolidados_eliminar_todo') ? resumenParaEliminarTodo($pdo) : null;
+$puedeEliminarTodo = $paraBorrar && ($paraBorrar['cargas'] > 0 || $paraBorrar['lineas'] > 0);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -102,6 +107,11 @@ $hayQueConfirmar = $pendiente && ($_GET['confirmar'] ?? '') === 'duplicado';
                     <button type="button" class="btn" data-abrir="modal-importar-otros">
                         <i class="fa-solid fa-users"></i> Consolidado de otros clientes
                     </button>
+                    <?php if ($puedeEliminarTodo): ?>
+                        <button type="button" class="btn btn-peligro" data-abrir="modal-eliminar-todo">
+                            <i class="fa-solid fa-trash-can"></i> Eliminar todos los consolidados
+                        </button>
+                    <?php endif; ?>
                 </div>
             </header>
 
@@ -413,6 +423,58 @@ $modalImportar(
     'otros'
 );
 ?>
+
+<?php if ($puedeEliminarTodo): ?>
+<!-- MODAL: ELIMINAR TODOS LOS CONSOLIDADOS
+     Explica qué se pierde, con los números de hoy, y pide la contraseña de quien lo hace: es lo
+     único del sistema que borra el historial y no se puede deshacer. Ver la acción 'eliminar_todo'. -->
+<div class="modal-fondo" id="modal-eliminar-todo">
+    <div class="modal-caja">
+        <div class="modal-cabecera">
+            <h2><i class="fa-solid fa-triangle-exclamation"></i> Eliminar todos los consolidados</h2>
+            <button type="button" class="modal-cerrar" data-cerrar>&times;</button>
+        </div>
+        <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST" autocomplete="off">
+            <?php campoCSRF(); ?>
+            <input type="hidden" name="accion" value="eliminar_todo">
+
+            <div class="modal-cuerpo">
+                <div class="aviso aviso-atencion">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <div>
+                        <strong>Esto borra TODOS los pedidos del sistema y no se puede deshacer.</strong>
+                        No queda ningún historial.
+                    </div>
+                </div>
+
+                <p class="confirmar-pregunta">Se van a eliminar:</p>
+                <ul class="lista-eliminar-todo">
+                    <li><strong><?php echo number_format($paraBorrar['cargas'], 0, ',', '.'); ?></strong> archivo(s) de Consolidado cargados.</li>
+                    <li><strong><?php echo number_format($paraBorrar['pedidos_pendientes'], 0, ',', '.'); ?></strong> pedido(s) pendientes: desaparecen de Consolidados, Picking, Cajas por punto de venta y Órdenes de compra, con su personal asignado.</li>
+                    <li><strong><?php echo number_format($paraBorrar['pedidos_despachados'], 0, ',', '.'); ?></strong> pedido(s) ya despachados: se borra el <strong>Historial de Pedidos</strong> completo.</li>
+                </ul>
+                <p class="ayuda" style="margin-bottom: 16px;">
+                    No se tocan el maestro de productos, los cubicajes, el personal, el Estado de pedidos, el
+                    Consolidado MR ni los QR de los rótulos ya impresos.
+                </p>
+
+                <div class="campo" style="margin-bottom: 0;">
+                    <label for="eliminar-todo-contrasena">Escribí tu contraseña para confirmar</label>
+                    <input type="password" id="eliminar-todo-contrasena" name="contrasena" required
+                           autocomplete="current-password" placeholder="Tu contraseña de ingreso">
+                </div>
+            </div>
+
+            <div class="modal-pie">
+                <button type="button" class="btn" data-cerrar>Cancelar</button>
+                <button type="submit" class="btn btn-peligro">
+                    <i class="fa-solid fa-trash-can"></i> Eliminar todo
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if ($hayQueConfirmar): ?>
 <!-- AVISO: EL ARCHIVO YA ESTABA CARGADO

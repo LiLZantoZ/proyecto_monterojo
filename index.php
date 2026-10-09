@@ -36,7 +36,12 @@ if ($_enrutadorCamino === '' || strcasecmp($_enrutadorCamino, 'index.php') === 0
 // Sin distinguir mayúsculas: quien tipea /Picking quiere ir a /picking.
 $_enrutadorRuta = strtolower($_enrutadorCamino);
 
+// TRAZABILIDAD (2026-10-06): las acciones (POST y descargas) quedan anotadas solas al terminar.
+// Ver config/actividad.php.
+require_once __DIR__ . '/config/actividad.php';
+
 if (isset($_enrutadorTabla[$_enrutadorRuta])) {
+    iniciarRegistroDeActividad($_enrutadorRuta);
     require __DIR__ . '/' . $_enrutadorTabla[$_enrutadorRuta];
     exit();
 }
@@ -65,6 +70,7 @@ if (isset($_enrutadorViejas[$_enrutadorRuta])) {
         exit();
     }
 
+    iniciarRegistroDeActividad($_enrutadorViejas[$_enrutadorRuta]);
     require __DIR__ . '/' . $_enrutadorTabla[$_enrutadorViejas[$_enrutadorRuta]];
     exit();
 }

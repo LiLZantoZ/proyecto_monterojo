@@ -62,6 +62,7 @@ function filasPicking($pdo, array $filtros = []) {
     // pendientes al mismo tiempo.
     $sql = "SELECT l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
                    l.sku_item, l.descripcion_item,
+                   MAX(l.unidades_por_caja_hoja) AS unidades_por_caja_hoja,
                    SUM(l.unidades) AS unidades,
                    MAX(l.pedido_sap) AS pedido_sap,
                    MAX(l.ean_punto_venta) AS ean_punto_venta,

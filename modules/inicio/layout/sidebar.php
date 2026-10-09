@@ -22,6 +22,15 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
      que redirija con ?error= o ?exito= muestra el aviso sin que haya que tocar su vista. -->
 <?php include __DIR__ . '/mensaje_sistema.php'; ?>
 
+<!-- La campana de notificaciones (2026-10-06): flotante, en todas las pantallas privadas. -->
+<?php include ROOT_PATH . '/modules/notificaciones/layouts/campana.php'; ?>
+
+<!-- Los mensajes del sistema (2026-10-06): reemplazan los alert/confirm/prompt del navegador. -->
+<script src="<?php echo BASE_URL; ?>/assets/js/dialogos.js?v=<?php echo assetVersion(ROOT_PATH . '/assets/js/dialogos.js'); ?>"></script>
+
+<!-- El asistente MonteBot (2026-10-07, traído de Nutrium): globo flotante, para quien tiene el permiso. -->
+<?php if (tienePermiso('modulo_chatbot')) { include ROOT_PATH . '/modules/chatbot/layouts/chat_widget.php'; } ?>
+
 <!-- Solo se ve en pantallas angostas, donde los 260 px del menú se comen un tercio del ancho.
      En escritorio el CSS lo oculta y la barra queda siempre a la vista. -->
 <button type="button" class="btn-menu" id="btn-menu"
@@ -87,14 +96,7 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
         <?php if (tienePermiso('modulo_ordenes_compra')): ?>
             <a href="<?php echo BASE_URL; ?>/ordenes-compra" class="nav-link">
                 <i class="fa-solid fa-file-invoice-dollar"></i>
-                <span>Órdenes de compra (Éxito)</span>
-            </a>
-        <?php endif; ?>
-
-        <?php if (tienePermiso('modulo_seguimiento')): ?>
-            <a href="<?php echo BASE_URL; ?>/seguimiento" class="nav-link">
-                <i class="fa-solid fa-truck-fast"></i>
-                <span>Estado de pedidos</span>
+                <span>Órdenes de compra</span>
             </a>
         <?php endif; ?>
 
@@ -102,6 +104,69 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             <a href="<?php echo BASE_URL; ?>/consolidado-mr" class="nav-link">
                 <i class="fa-solid fa-file-invoice-dollar"></i>
                 <span>Consolidado MR</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_enlazar_facturas')): ?>
+            <a href="<?php echo BASE_URL; ?>/enlazar-facturas" class="nav-link">
+                <i class="fa-solid fa-link"></i>
+                <span>Enlazar facturas</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_pedidos')): ?>
+            <a href="<?php echo BASE_URL; ?>/pedidos" class="nav-link">
+                <i class="fa-solid fa-dolly"></i>
+                <span>Pedidos</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_posiciones')): ?>
+            <a href="<?php echo BASE_URL; ?>/posiciones" class="nav-link">
+                <i class="fa-solid fa-pallet"></i>
+                <span>Posiciones de bodega</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_productos')): ?>
+            <a href="<?php echo BASE_URL; ?>/productos" class="nav-link">
+                <i class="fa-solid fa-boxes-packing"></i>
+                <span>Administrar productos</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_formato_conciliador')): ?>
+            <a href="<?php echo BASE_URL; ?>/formato-conciliador" class="nav-link">
+                <i class="fa-solid fa-clipboard-list"></i>
+                <span>Formato Conciliador</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_notificaciones')): ?>
+            <a href="<?php echo BASE_URL; ?>/notificaciones" class="nav-link">
+                <i class="fa-solid fa-bell"></i>
+                <span>Notificaciones</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_trazabilidad')): ?>
+            <a href="<?php echo BASE_URL; ?>/trazabilidad" class="nav-link">
+                <i class="fa-solid fa-shoe-prints"></i>
+                <span>Trazabilidad</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_rendimiento')): ?>
+            <a href="<?php echo BASE_URL; ?>/rendimiento" class="nav-link">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>Rendimiento</span>
+            </a>
+        <?php endif; ?>
+
+        <?php if (tienePermiso('modulo_usuarios')): ?>
+            <a href="<?php echo BASE_URL; ?>/usuarios" class="nav-link">
+                <i class="fa-solid fa-users-gear"></i>
+                <span>Administrar usuarios</span>
             </a>
         <?php endif; ?>
 
@@ -175,6 +240,24 @@ $imagenRuta    = rutaImagenPerfil($_SESSION['usuario_imagen'] ?? '');
             if (destino === actual) { enlace.classList.add('active'); }
         });
     })();
+
+    // El icono del módulo junto al título de la pantalla (2026-10-07): el mismo de su opción del menú,
+    // así no hay que escribirlo en cada vista. Las pantallas que no están en el menú usan el de la lista.
+    document.addEventListener('DOMContentLoaded', function () {
+        var titulo = document.querySelector('.modulo > .modulo-header:first-child h2');
+        if (!titulo || titulo.querySelector('.icono-modulo')) { return; }
+        var activo = document.querySelector('.sidebar-nav .nav-link.active i');
+        var clase = activo ? activo.className : ({ personal: 'fa-solid fa-people-carry-box', perfil: 'fa-solid fa-user-pen' })[
+            window.location.pathname.replace(/\/+$/, '').split('/').pop()];
+        if (!clase) { return; }
+        var caja = document.createElement('span');
+        caja.className = 'icono-modulo';
+        caja.setAttribute('aria-hidden', 'true');
+        var i = document.createElement('i');
+        i.className = clase;
+        caja.appendChild(i);
+        titulo.insertBefore(caja, titulo.firstChild);
+    });
 
     // Menú plegable de las pantallas angostas. En escritorio el botón está oculto por CSS y este
     // código no llega a hacer nada.

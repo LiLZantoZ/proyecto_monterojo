@@ -1,0 +1,54 @@
+/* modules/enlazar_facturas/layouts/enlazar_facturas.css
+   Enlazar facturas: el formulario en dos pasos, las dos tarjetas de resumen y el botón grande. */
+
+.enlace-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 16px;
+    align-items: end;
+    margin: 18px 0;
+}
+.enlace-paso { display: flex; gap: 12px; align-items: flex-end; }
+.enlace-paso .campo { flex: 1; margin-bottom: 0; }
+.enlace-paso input { width: 100%; font-size: 1.05rem; padding: 12px 14px; }
+.enlace-numero {
+    flex-shrink: 0;
+    width: 32px; height: 32px; margin-bottom: 8px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--vino, #7a1220); color: #fff; font-weight: 700;
+}
+.enlace-buscar { height: 48px; }
+
+.enlace-tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.enlace-tarjeta {
+    border: 1px solid var(--borde, #e6e0d8);
+    border-radius: 14px;
+    padding: 16px 18px;
+    background: var(--blanco, #fff);
+}
+.enlace-tarjeta h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--texto-suave, #6b7580); }
+.enlace-tarjeta.enlace-error { border-color: #f1b0aa; background: #fdf3f2; }
+.enlace-titulo { font-size: 1.25rem; font-weight: 700; margin: 0 0 10px; }
+.enlace-datos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 0; }
+.enlace-datos dt { font-size: 0.75rem; color: var(--texto-suave, #6b7580); text-transform: uppercase; letter-spacing: 0.3px; }
+.enlace-datos dd { margin: 0; font-weight: 600; }
+.enlace-vacio { color: var(--texto-suave, #6b7580); margin: 6px 0; }
+.enlace-ya { margin: 12px 0 0; padding: 8px 12px; border-radius: 10px; background: #fef6e7; color: #8a5a00; font-size: 0.88rem; }
+.enlace-ya-error { background: #fdecea; color: #b3261e; }
+
+.enlace-confirmar {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) 2fr;
+    gap: 16px;
+    align-items: end;
+    margin: 18px 0 8px;
+}
+.btn-enlazar { width: 100%; height: 50px; padding: 0 16px; font-size: 1.1rem; background: #2e7d32; border-color: #2e7d32; }
+.btn-enlazar:hover { filter: brightness(1.08); }
+
+.enlace-subtitulo { margin: 28px 0 10px; font-size: 1rem; }
+
+@media (max-width: 760px) {
+    .enlace-form, .enlace-tarjetas, .enlace-datos, .enlace-confirmar { grid-template-columns: 1fr; }
+}

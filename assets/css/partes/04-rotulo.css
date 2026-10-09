@@ -26,7 +26,8 @@
 
 /* El rótulo mide lo mismo que el ÁREA QUE SE DIBUJA en la etiquetadora (ver ROTULO_DIBUJO_ANCHO_MM
    en config/config.php), no lo que mide el sticker: los 2,5mm de diferencia por lado son aire al
-   filo del papel y no se ven en la etiqueta impresa.
+   filo del papel y no se ven en la etiqueta impresa. Sticker de 100x80 desde el 2026-09-29, así
+   que el área dibujada es de 95x75 (antes 95x95).
 
    TODAS las medidas de acá abajo son las mismas que usa el PDF (ver cssRotulosPdf en
    modules/historial/helper_rotulos_pdf.php), y esa coincidencia no es estética: si la vista previa
@@ -34,13 +35,13 @@
    cortado, que es exactamente lo que no puede hacer una vista previa. */
 .rotulo {
     width: 95mm;
-    height: 95mm;
+    height: 75mm;
     /* flex-shrink: 0 porque en la vista previa el rótulo es un hijo flex y, por defecto, un hijo
        flex se encoge para caber. Encogido, la previa muestra un rótulo más chico que el que va a
        salir impreso —y con las barras más finas de lo que serán—, que es justo lo que no se
        quiere poder creer de una vista previa. */
     flex-shrink: 0;
-    padding: 4mm;
+    padding: 3mm 4mm;
     background: #ffffff;
     color: #000000;
     border: 0.8mm solid #000000;
@@ -58,15 +59,15 @@
     display: flex;
     align-items: center;
     gap: 3mm;
-    padding-bottom: 1.5mm;
-    margin-bottom: 1.5mm;
+    padding-bottom: 1mm;
+    margin-bottom: 1mm;
     border-bottom: 0.6mm solid #000000;
     flex-shrink: 0;
 }
 
 .rotulo-marca img {
-    width: 12mm;
-    height: 12mm;
+    width: 8mm;
+    height: 8mm;
 }
 
 .rotulo-marca span {
@@ -86,7 +87,7 @@
 /* 0,8mm, igual que el PDF: con 1,4mm los rótulos de nombres cortos no entraban en el papel (ver
    el comentario de .rotulo-campo en cssRotulosPdf). */
 .rotulo-campo {
-    margin-bottom: 0.8mm;
+    margin-bottom: 0.5mm;
 }
 
 /* La etiqueta del campo DESTACADO: en negrita y en negro, no en el gris de las demás. Junto con
@@ -96,14 +97,14 @@
    mismo peso, su gris (#444) le ganaba a este negro. En pantalla la etiqueta salía gris y en el
    PDF negra, y la vista previa tiene que ser igual al papel. */
 .rotulo-etiqueta.rotulo-etiqueta-fuerte {
-    font-size: 3.2mm;
+    font-size: 3mm;
     font-weight: 700;
     color: #000000;
 }
 
 .rotulo-etiqueta {
     display: block;
-    font-size: 2.4mm;
+    font-size: 2.2mm;
     line-height: 1.1;
     letter-spacing: 0.3mm;
     text-transform: uppercase;
@@ -115,7 +116,7 @@
    que coincidir con .rotulo-oc de helper_rotulos_pdf.php; en la etiquetadora, ese pedazo pasa de la
    fuente 2 a la 3 (ver helper_rotulos_tspl.php). */
 .rotulo-oc {
-    font-size: 3mm;
+    font-size: 2.8mm;
     font-weight: 700;
     color: #000000;
     letter-spacing: 0.2mm;
@@ -132,7 +133,7 @@
 .rotulo-valor {
     display: block;
     font-weight: bold;
-    line-height: 1.05;
+    line-height: 1;
     white-space: nowrap;
     overflow: hidden;
 }
@@ -144,7 +145,7 @@
    grande. Qué renglón le toca lo decide cediVaAlLadoDelNumero(), la misma cuenta en PHP y en
    assets/js/rotulo.js. Las medidas son las mismas del PDF (cssRotulosPdf). */
 .rotulo-con-cedi .rotulo-etiqueta-fuerte {
-    font-size: 4.5mm;
+    font-size: 4mm;
     letter-spacing: 0.1mm;
 }
 
@@ -164,7 +165,7 @@
 
 .rotulo-cedi {
     flex-shrink: 0;
-    font-size: 7.5mm;
+    font-size: 6.5mm;
     font-weight: 900;
     line-height: 1;
     white-space: nowrap;
@@ -177,7 +178,7 @@
 .rotulo-conteo {
     flex: 1;
     text-align: center;
-    font-size: 8mm;
+    font-size: 7mm;
     line-height: 1.05;
     font-weight: bold;
     letter-spacing: 0.4mm;
@@ -194,15 +195,16 @@
     align-items: center;
     justify-content: space-between;
     gap: 4mm;
-    padding-top: 2mm;
+    padding-top: 1mm;
+    margin-top: 0.5mm;
     border-top: 0.6mm solid #000000;
     flex-shrink: 0;
 }
 
 /* El cuadrado del QR no se deforma nunca: un QR estirado no lo lee ningún celular. */
 .rotulo-qr {
-    width: 13mm;
-    height: 13mm;
+    width: 12mm;
+    height: 12mm;
     flex-shrink: 0;
     display: block;
 }

@@ -552,10 +552,10 @@ function completarIdentificadoresDelMaestro($pdo, $idCarga) {
     }
 
     $lineas = $pdo->prepare(
-        "SELECT l.sku_item, l.descripcion_item, l.ean_item, l.plu, SUM(l.unidades) unidades
+        "SELECT l.sku_item, l.descripcion_item, l.ean_item, l.plu, l.empresa_compradora, SUM(l.unidades) unidades
            FROM consolidado_lineas l
           WHERE l.id_carga = ?
-          GROUP BY l.sku_item, l.descripcion_item, l.ean_item, l.plu"
+          GROUP BY l.sku_item, l.descripcion_item, l.ean_item, l.plu, l.empresa_compradora"
     );
     $lineas->execute([(int) $idCarga]);
 
@@ -581,6 +581,16 @@ function completarIdentificadoresDelMaestro($pdo, $idCarga) {
         // SKU es el número de material de SAP, no el código con el que la cadena pide el producto,
         // y guardarlo como PLU llenaría el maestro de códigos que ninguna cadena va a mandar.
         if ($plu !== null && $plu === textoLimpio($l['sku_item'], 30)) {
+            $plu = null;
+        }
+
+        // El PLU que guarda el maestro es el del ÉXITO (ver completarPluDelMaestro). El de Cencosud,
+        // Olímpica o Farmatodo es un código de esa cadena, en el mismo rango de números que los del
+        // Éxito: anotarlo dejaba al producto con un PLU que el Éxito nunca va a mandar —y que otra
+        // cadena podría usar para OTRO producto—. Pasó con el 36309, el 36444 y el 36478, que
+        // quedaron con el código de Cencosud (2026-10-02). El EAN sí se anota: es el mismo para todas.
+        $comprador = normalizarEncabezado($l['empresa_compradora'] ?? '');
+        if ($comprador !== '' && strpos($comprador, 'exito') === false) {
             $plu = null;
         }
 
@@ -669,7 +679,8 @@ function corregirGemelosPorEmpaque($pdo, $idCarga) {
     );
     $lineas->execute([(int) $idCarga]);
 
-    $reescribir = $pdo->prepare("UPDATE consolidado_lineas SET sku_item = ? WHERE id_linea = ?");
+    // El empaque anotado de la hoja era el del SKU viejo: al cambiar de presentación deja de valer.
+    $reescribir = $pdo->prepare("UPDATE consolidado_lineas SET sku_item = ?, unidades_por_caja_hoja = NULL WHERE id_linea = ?");
     $corregidas = [];
 
     foreach ($lineas as $l) {
@@ -705,6 +716,510 @@ function corregirGemelosPorEmpaque($pdo, $idCarga) {
     }
 
     return $corregidas;
+}
+
+// ---------------------------------------------------------------------------------------------
+// LA HOJA DE PRODUCTOS QUE VIENE CON EL CONSOLIDADO (2026-10-02)
+//
+// Los Consolidados que sube el usuario traen casi siempre DOS hojas: la del pedido y, al lado, una
+// tabla con los productos que se piden (EAN, SKU, DENOMINACIÓN). La columna SKU de la primera hoja
+// es un BUSCARV contra esa tabla, por EAN. Hasta hoy el sistema solo leía el SKU que devolvía ese
+// BUSCARV y nunca miraba el NOMBRE que la misma fila de la tabla le pone al producto.
+//
+// Pasó con el Consolidado Cencosud del 30-09-2026: la tabla decía «SKU 36366 · PAPAS SAL ROSADA MR
+// 25G BX6X16», pero en el maestro el 36366 es la presentación de a 8 (BX6X8) y la de a 16 es el
+// 36367 —mismo EAN, mismo PLU—. El sistema le creyó al SKU, mostró el producto de a 8 y calculó el
+// DOBLE de cajas: 48 en Bogotá donde eran 24. Las unidades no alcanzaban para darse cuenta (16, 32,
+// 48 y 64 son múltiplos de 8 y de 16), así que corregirGemelosPorEmpaque() no tenía cómo verlo.
+//
+// Ahora la tabla se lee y cada línea se contrasta con el maestro:
+//   · el EMPAQUE del nombre contra el del SKU. Si no coinciden y hay UNA SOLA presentación con el
+//     mismo EAN que tenga el empaque del nombre —y lo pedido da cajas completas con ella—, la línea
+//     se pasa a esa presentación. Si no, se deja como vino y se avisa.
+//   · el EAN: si en el maestro ese EAN es de OTRO producto, se avisa y no se cambia nada. Pasó en
+//     el mismo archivo con el 7707699957556, que la tabla llama plátano verde y SAP chicharrón: ahí
+//     no hay regla que pueda decidir sola cuál de los dos tiene razón.
+//   · el nombre: si el gramaje o el producto no se parecen a los del SKU, se avisa.
+// Todo se dice en el mensaje de la importación, con el producto y las dos versiones, para que quien
+// sube el archivo vea qué se cambió y qué tiene que revisar.
+// ---------------------------------------------------------------------------------------------
+
+// Títulos de la tabla de productos => campo. Sin "producto" ni "nombre" a propósito: son palabras
+// demasiado comunes y harían pasar por tabla de productos a cualquier hoja de trabajo.
+function columnasTablaDeProductos() {
+    return [
+        'ean'                     => 'ean',
+        'ean del item'            => 'ean',
+        'codigo ean/upc'          => 'ean',
+        'sku'                     => 'sku',
+        'material'                => 'sku',
+        'denominacion'            => 'denominacion',
+        'descripcion'             => 'denominacion',
+        'descripcion del item'    => 'denominacion',
+        'texto breve de material' => 'denominacion',
+    ];
+}
+
+/**
+ * La tabla de productos que acompaña al Consolidado en otra hoja del mismo libro, o null si el
+ * archivo no la trae. Devuelve ['hoja' => nombre, 'por_par' => ["ean|sku" => nombre],
+ * 'por_sku' => [sku => nombre], 'por_ean' => [ean => ['sku', 'denominacion']]].
+ *
+ * Se busca desde la SEGUNDA hoja (la primera es el pedido) y solo en hojas chicas: hay planillas de
+ * trabajo con 24 hojas y una de 1.048.576 filas (ver leerPrimeraHoja), y cargar eso para buscar una
+ * tabla de cincuenta productos agotaría la memoria. Gana la primera hoja que tenga SKU y nombre.
+ *
+ * Las celdas con fórmula se toman con el valor que guardó Excel, sin recalcular: una fórmula de esta
+ * hoja podría mirar a otra que no se cargó, y recalcularla es justo lo que agota la memoria.
+ */
+function leerTablaDeProductos($rutaArchivo) {
+    try {
+        $lector = IOFactory::createReaderForFile($rutaArchivo);
+        $lector->setReadDataOnly(true);
+        // Con una sola hoja no hay tabla que buscar, y listWorksheetInfo() recorre TODAS las hojas para
+        // contarles las filas: en el export de SAP de 12.000 filas eran 10 segundos para nada.
+        if (!method_exists($lector, 'listWorksheetInfo') || count($lector->listWorksheetNames($rutaArchivo)) < 2) {
+            return null;
+        }
+        $hojas = $lector->listWorksheetInfo($rutaArchivo);
+    } catch (Throwable $e) {
+        return null;
+    }
+
+    foreach (array_slice($hojas, 1, 5) as $info) {
+        if ((int) $info['totalRows'] > 5000 || (int) $info['totalColumns'] > 30) {
+            continue;
+        }
+
+        try {
+            $lector->setLoadSheetsOnly($info['worksheetName']);
+            $libro = $lector->load($rutaArchivo);
+        } catch (Throwable $e) {
+            continue;
+        }
+
+        $hoja  = $libro->getSheet(0);
+        $filas = $hoja->toArray(null, false, false, false);
+        foreach ($filas as $y => $fila) {
+            foreach ($fila as $x => $v) {
+                if (is_string($v) && $v !== '' && $v[0] === '=') {
+                    $filas[$y][$x] = $hoja->getCell(Coordinate::stringFromColumnIndex($x + 1) . ($y + 1))
+                                          ->getOldCalculatedValue();
+                }
+            }
+        }
+        $libro->disconnectWorksheets();
+        unset($libro, $hoja);
+
+        // El título casi siempre está en la primera fila, pero se aceptan hasta cinco por si la
+        // tabla tiene un rótulo encima.
+        foreach (array_slice($filas, 0, 5, true) as $y => $encabezado) {
+            $mapa = mapearColumnas($encabezado, columnasTablaDeProductos());
+            if (!isset($mapa['sku'], $mapa['denominacion'])) {
+                continue;
+            }
+
+            $tabla = ['hoja' => $info['worksheetName'], 'por_par' => [], 'por_sku' => [], 'por_ean' => []];
+            foreach (array_slice($filas, $y + 1) as $fila) {
+                $sku = codigoLimpio($fila[$mapa['sku']] ?? null);
+                $den = textoLimpio($fila[$mapa['denominacion']] ?? null);
+                $ean = isset($mapa['ean']) ? textoLimpio($fila[$mapa['ean']] ?? null, 20) : null;
+                if ($sku === null || $den === null) {
+                    continue;
+                }
+
+                $tabla['por_sku'][$sku] ??= $den;
+                if ($ean !== null) {
+                    $tabla['por_par'][$ean . '|' . $sku] = $den;
+                    // Como el BUSCARV de la planilla: si el EAN se repite, vale la PRIMERA fila.
+                    $tabla['por_ean'][$ean] ??= ['sku' => $sku, 'denominacion' => $den];
+                }
+            }
+
+            return $tabla['por_sku'] ? $tabla : null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * El nombre que la tabla de productos le da a una línea. Primero el par EAN + SKU —es la misma
+ * fila de la que salió el SKU—, después el SKU solo (la línea pudo traer el SKU escrito a mano) y,
+ * si la línea no trae SKU, el EAN.
+ */
+function denominacionDeLaTabla($tabla, $ean, $sku) {
+    if (!$tabla) {
+        return null;
+    }
+    if ($sku !== null) {
+        return $tabla['por_par'][$ean . '|' . $sku] ?? $tabla['por_sku'][$sku] ?? null;
+    }
+    return $ean !== null ? ($tabla['por_ean'][$ean]['denominacion'] ?? null) : null;
+}
+
+/**
+ * ¿Dos nombres son del mismo producto, aunque estén escritos distinto? Se comparan el GRAMAJE
+ * ("100G" no es "30G") y el comienzo de la primera palabra, que tolera abreviaturas ("PLÁTAN" y
+ * "PLÁTANOS"). No compara el empaque: de eso se encarga verificarConLaTablaDeProductos().
+ */
+function mismoProductoPorNombre($a, $b) {
+    $limpio = fn($t) => strtr(mb_strtoupper(trim((string) $t), 'UTF-8'),
+                              ['Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U', 'Ñ' => 'N']);
+    $a = $limpio($a);
+    $b = $limpio($b);
+    if ($a === '' || $b === '') {
+        return true;
+    }
+
+    $gramaje = function ($t) {
+        if (!preg_match('/(\d+(?:[.,]\d+)?)\s*(KG|GR|G|ML|L)\b/', $t, $m)) {
+            return null;
+        }
+        return str_replace(',', '.', $m[1]) . ($m[2] === 'GR' ? 'G' : $m[2]);
+    };
+    if ($gramaje($a) !== null && $gramaje($b) !== null && $gramaje($a) !== $gramaje($b)) {
+        return false;
+    }
+
+    $familia = fn($t) => preg_replace('/[^A-Z]/', '', explode(' ', $t)[0]);
+    $fa = $familia($a);
+    $fb = $familia($b);
+    $n  = min(4, strlen($fa), strlen($fb));
+
+    return $n === 0 || substr($fa, 0, $n) === substr($fb, 0, $n);
+}
+
+/**
+ * Contrasta cada línea de la carga con la tabla de productos del archivo y el maestro (ver el
+ * comentario de arriba). Corrige solo la presentación, y solo cuando no hay duda; lo demás lo
+ * devuelve para avisar. Devuelve ['corregidas' => [...], 'revisar' => [...]], una entrada por
+ * producto con cuántas líneas lo tienen: el mismo error repetido en 23 tiendas es UN aviso.
+ *
+ * CORRE DESPUÉS de corregirGemelosPorEmpaque() y ANTES de completarIdentificadoresDelMaestro(),
+ * por lo mismo que ésa: el EAN y el PLU de la cadena se anotan en el producto ya corregido.
+ */
+function verificarConLaTablaDeProductos($pdo, $idCarga, $tabla) {
+    $resultado = ['corregidas' => [], 'revisar' => []];
+    if (!$tabla) {
+        return $resultado;
+    }
+
+    $maestro = [];
+    $porEan  = [];
+    foreach ($pdo->query("SELECT sku, ean, descripcion, unidades_por_caja FROM maestro_productos") as $p) {
+        $maestro[(string) $p['sku']] = $p;
+        if ($p['ean'] !== null && $p['ean'] !== '') {
+            $porEan[$p['ean']][(string) $p['sku']] = $p;
+        }
+    }
+
+    $lineas = $pdo->prepare(
+        "SELECT id_linea, ean_item, sku_item, unidades FROM consolidado_lineas
+          WHERE id_carga = ? AND despachado = 0 AND sku_item IS NOT NULL AND sku_item <> ''"
+    );
+    $lineas->execute([(int) $idCarga]);
+    $reescribir = $pdo->prepare("UPDATE consolidado_lineas SET sku_item = ?, unidades_por_caja_hoja = NULL WHERE id_linea = ?");
+
+    $anotar = function ($clave, array $datos) use (&$resultado) {
+        if (isset($resultado['revisar'][$clave])) {
+            $resultado['revisar'][$clave]['lineas']++;
+        } else {
+            $resultado['revisar'][$clave] = $datos + ['lineas' => 1];
+        }
+    };
+
+    foreach ($lineas->fetchAll() as $l) {
+        $sku  = (string) $l['sku_item'];
+        $ean  = textoLimpio($l['ean_item'], 20);
+        $den  = denominacionDeLaTabla($tabla, $ean, $sku);
+        $prod = $maestro[$sku] ?? null;
+
+        if ($prod === null) {
+            $anotar('sin_maestro|' . $sku, ['tipo' => 'sin_maestro', 'sku' => $sku, 'tabla' => $den]);
+            continue;
+        }
+
+        // 1. El empaque que dice el nombre, contra el del SKU.
+        $empaque = $den !== null ? empaqueDelNombre($den) : null;
+        $uxc     = (int) $prod['unidades_por_caja'];
+        if ($empaque !== null && $uxc > 0 && $empaque['unidades_por_caja'] !== $uxc) {
+            $deA = $empaque['unidades_por_caja'];
+
+            // Las otras presentaciones del producto: las que comparten el EAN de la línea o el del
+            // SKU (casi siempre son el mismo).
+            $otras = [];
+            foreach (array_unique(array_filter([$ean, $prod['ean']])) as $e) {
+                foreach ($porEan[$e] ?? [] as $c) {
+                    if ((string) $c['sku'] !== $sku && (int) $c['unidades_por_caja'] === $deA) {
+                        $otras[(string) $c['sku']] = $c;
+                    }
+                }
+            }
+
+            if (count($otras) === 1 && (int) $l['unidades'] % $deA === 0) {
+                $nuevo = reset($otras);
+                $reescribir->execute([$nuevo['sku'], $l['id_linea']]);
+
+                $clave = $sku . '>' . $nuevo['sku'];
+                if (isset($resultado['corregidas'][$clave])) {
+                    $resultado['corregidas'][$clave]['lineas']++;
+                } else {
+                    $resultado['corregidas'][$clave] = [
+                        'de' => $sku, 'de_desc' => $prod['descripcion'], 'de_uxc' => $uxc,
+                        'a' => (string) $nuevo['sku'], 'a_desc' => $nuevo['descripcion'], 'a_uxc' => $deA,
+                        'tabla' => $den, 'lineas' => 1,
+                    ];
+                }
+
+                $sku  = (string) $nuevo['sku'];
+                $prod = $nuevo;
+            } else {
+                $anotar('empaque|' . $sku, [
+                    'tipo' => 'empaque', 'sku' => $sku, 'desc' => $prod['descripcion'], 'uxc' => $uxc,
+                    'tabla' => $den, 'tabla_uxc' => $deA,
+                ]);
+            }
+        }
+
+        // 2. El EAN de la línea, ¿es de este producto según el maestro?
+        if ($ean !== null && isset($porEan[$ean]) && !isset($porEan[$ean][$sku])) {
+            $anotar('ean|' . $ean . '|' . $sku, [
+                'tipo' => 'ean', 'ean' => $ean, 'sku' => $sku, 'desc' => $prod['descripcion'],
+                'duenos' => array_map(fn($c) => $c['sku'] . ' «' . $c['descripcion'] . '»', array_values($porEan[$ean])),
+            ]);
+        }
+
+        // 3. El nombre de la tabla, ¿es el mismo producto que el del SKU?
+        if ($den !== null && !mismoProductoPorNombre($den, $prod['descripcion'])) {
+            $anotar('nombre|' . $sku, ['tipo' => 'nombre', 'sku' => $sku, 'desc' => $prod['descripcion'], 'tabla' => $den]);
+        }
+    }
+
+    return $resultado;
+}
+
+// ---------------------------------------------------------------------------------------------
+// LA HOJA DE PRODUCTOS REESCRIBE LA MAESTRA (2026-10-02)
+//
+// Decisión del usuario, después de ver lo que implicaba: lo que dice la hoja de productos del Excel
+// que sube (EAN, SKU, DENOMINACIÓN) REESCRIBE la maestra y COMPLETA lo que le falte. Por cada SKU de
+// la hoja:
+//   · si no existe en la maestra, se crea con su EAN, su nombre y las unidades por caja que dice el
+//     final del nombre ("...BX6X16" son 16, ver empaqueDelNombre);
+//   · si existe, se le reemplazan el nombre, las unidades por caja (y la presentación) y el EAN
+//     cuando el de la maestra no es ninguno de los que la hoja le da a ese SKU.
+// No se toca lo que la hoja no trae (PLU, peso, línea) ni los productos que la hoja no nombra.
+//
+// LO QUE SE VIO ANTES DE HACERLO (simulado sobre nueve archivos reales): las hojas de las distintas
+// cadenas nombran distinto el mismo SKU —el Éxito pide el 36366 de a 8 y Cencosud lo nombra de a 16—,
+// así que la maestra va a quedar como diga el ÚLTIMO archivo subido. Para que eso no le cambie las
+// cajas a lo que ya estaba cargado, cada línea guarda además el empaque de SU archivo
+// (consolidado_lineas.unidades_por_caja_hoja, ver decorarConMaestro).
+//
+// Cada cambio queda en maestro_cambios —qué SKU, qué campo, antes, después y qué archivo lo hizo—
+// para poder ver cuándo cambió un producto y volverlo atrás.
+//
+// Si en la MISMA hoja un SKU aparece con dos empaques distintos, no se toca su empaque: se avisa.
+// ---------------------------------------------------------------------------------------------
+function actualizarMaestroConLaTablaDeProductos($pdo, $tabla, $origen) {
+    $resultado = ['cambiados' => [], 'nuevos' => [], 'dudosos' => [], 'error' => false];
+    if (!$tabla) {
+        return $resultado;
+    }
+
+    // Todas las filas de la hoja, por SKU: sus EAN y sus nombres. Un SKU puede venir en más de una
+    // fila (el 36351 vino con dos EAN). El nombre que se guarda es el de la PRIMERA fila, igual que lo
+    // que devolvería el BUSCARV de la planilla.
+    $porSku = [];
+    foreach ($tabla['por_par'] as $par => $nombre) {
+        [$ean, $sku] = explode('|', $par, 2);
+        $porSku[$sku]['eans'][]    = $ean;
+        $porSku[$sku]['nombres'][] = $nombre;
+    }
+    foreach ($tabla['por_sku'] as $sku => $nombre) {
+        $sku = (string) $sku;
+        $porSku[$sku]['eans']    = array_values(array_unique($porSku[$sku]['eans'] ?? []));
+        $porSku[$sku]['nombres'] = $porSku[$sku]['nombres'] ?? [$nombre];
+        $porSku[$sku]['primero'] = $nombre;
+    }
+
+    $actual    = $pdo->prepare("SELECT sku, ean, descripcion, unidades_por_caja, presentacion
+                                  FROM maestro_productos WHERE sku = ?");
+    $crear     = $pdo->prepare("INSERT INTO maestro_productos (sku, ean, descripcion, unidades_por_caja, presentacion)
+                                VALUES (?, ?, ?, ?, ?)");
+    $registrar = $pdo->prepare("INSERT INTO maestro_cambios (sku, campo, antes, despues, origen)
+                                VALUES (?, ?, ?, ?, ?)");
+    $origen    = mb_substr((string) $origen, 0, 255);
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($porSku as $sku => $d) {
+            $nombre = textoLimpio(preg_replace('/\s+/u', ' ', (string) $d['primero']), 255);
+
+            // El empaque sale del final del nombre. Si las filas del mismo SKU dicen empaques
+            // distintos, la hoja se contradice sola y el empaque no se toca.
+            $empaques = [];
+            foreach ($d['nombres'] as $n) {
+                $e = empaqueDelNombre($n);
+                if ($e !== null) {
+                    $empaques[$e['unidades_por_caja']] = $e;
+                }
+            }
+            $empaque = count($empaques) === 1 ? reset($empaques) : null;
+            if (count($empaques) > 1) {
+                $resultado['dudosos'][] = ['sku' => $sku, 'nombres' => array_values(array_unique($d['nombres']))];
+            }
+
+            $actual->execute([$sku]);
+            $m = $actual->fetch(PDO::FETCH_ASSOC);
+
+            if (!$m) {
+                $crear->execute([
+                    $sku, $d['eans'][0] ?? null, $nombre,
+                    $empaque['unidades_por_caja'] ?? null, $empaque['presentacion'] ?? null,
+                ]);
+                $registrar->execute([$sku, 'producto nuevo', null, $nombre, $origen]);
+                $resultado['nuevos'][] = ['sku' => $sku, 'nombre' => $nombre, 'uxc' => $empaque['unidades_por_caja'] ?? null];
+                continue;
+            }
+
+            $cambios = [];
+            if ($nombre !== null && $nombre !== (string) $m['descripcion']) {
+                $cambios['descripcion'] = $nombre;
+            }
+            if ($empaque !== null && (int) $m['unidades_por_caja'] !== $empaque['unidades_por_caja']) {
+                $cambios['unidades_por_caja'] = $empaque['unidades_por_caja'];
+                $cambios['presentacion']      = $empaque['presentacion'];
+            }
+            // El EAN se completa si falta y se reemplaza si el de la maestra no es ninguno de los que
+            // la hoja le da a este SKU. Si es uno de ellos, se deja: los otros también son suyos.
+            if ($d['eans'] && !in_array((string) $m['ean'], $d['eans'], true)) {
+                $cambios['ean'] = $d['eans'][0];
+            }
+            if (!$cambios) {
+                continue;
+            }
+
+            $pdo->prepare(
+                'UPDATE maestro_productos SET ' . implode(', ', array_map(fn($c) => "$c = ?", array_keys($cambios)))
+                . ' WHERE sku = ?'
+            )->execute([...array_values($cambios), $sku]);
+
+            foreach ($cambios as $campo => $nuevo) {
+                if ($campo !== 'presentacion') {
+                    $registrar->execute([$sku, $campo, $m[$campo], $nuevo, $origen]);
+                }
+            }
+            $resultado['cambiados'][] = ['sku' => $sku, 'antes' => $m, 'cambios' => $cambios];
+        }
+
+        $pdo->commit();
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log('Error actualizando la maestra con la hoja de productos: ' . $e->getMessage());
+        $resultado = ['cambiados' => [], 'nuevos' => [], 'dudosos' => [], 'error' => true];
+    }
+
+    return $resultado;
+}
+
+/** Lo que actualizarMaestroConLaTablaDeProductos() le cambió a la maestra, para el mensaje de la importación. */
+function mensajeDeMaestroActualizado(array $r, $tabla) {
+    if (!$tabla) {
+        return '';
+    }
+    if ($r['error']) {
+        return ' OJO: no se pudo actualizar la maestra con la hoja de productos; la maestra quedó como estaba.';
+    }
+
+    $partes = [];
+
+    // Primero los cambios de empaque, uno por uno: son los que cambian las cajas.
+    $empaques = array_filter($r['cambiados'], fn($c) => isset($c['cambios']['unidades_por_caja']));
+    foreach ($empaques as $c) {
+        $partes[] = "SKU {$c['sku']} pasó de {$c['antes']['unidades_por_caja']} a {$c['cambios']['unidades_por_caja']} "
+                  . 'unidades por caja («' . ($c['cambios']['descripcion'] ?? $c['antes']['descripcion']) . '»)';
+    }
+
+    $soloNombre = count(array_filter($r['cambiados'], fn($c) => isset($c['cambios']['descripcion']) && !isset($c['cambios']['unidades_por_caja'])));
+    if ($soloNombre) {
+        $partes[] = "{$soloNombre} producto(s) tomaron el nombre de la hoja";
+    }
+
+    $eans = array_filter($r['cambiados'], fn($c) => isset($c['cambios']['ean']));
+    if ($eans) {
+        $partes[] = count($eans) . ' producto(s) tomaron el EAN de la hoja (por ejemplo, el SKU '
+                  . reset($eans)['sku'] . ' ← ' . reset($eans)['cambios']['ean'] . ')';
+    }
+
+    if ($r['nuevos']) {
+        $nuevos = array_map(fn($n) => "{$n['sku']} «{$n['nombre']}»" . ($n['uxc'] ? '' : ' (sin unidades por caja: el nombre no las dice)'),
+                            array_slice($r['nuevos'], 0, 5));
+        $partes[] = count($r['nuevos']) . ' producto(s) nuevos: ' . implode(', ', $nuevos)
+                  . (count($r['nuevos']) > 5 ? '…' : '');
+    }
+
+    $mensaje = $partes
+        ? ' La maestra se actualizó con la hoja de productos («' . $tabla['hoja'] . '»): ' . implode('; ', $partes) . '.'
+        : '';
+
+    foreach ($r['dudosos'] as $d) {
+        $mensaje .= " REVISAR: en la hoja, el SKU {$d['sku']} viene con empaques distintos ("
+                  . implode(' / ', array_map(fn($n) => "«{$n}»", $d['nombres'])) . '); su empaque en la maestra no se tocó.';
+    }
+
+    return $mensaje;
+}
+
+/** Lo que encontró verificarConLaTablaDeProductos(), escrito para el mensaje de la importación. */
+function mensajeDeVerificacion(array $v, $tabla) {
+    if (!$tabla) {
+        return '';
+    }
+
+    $mensaje = '';
+
+    $corregidas = [];
+    foreach ($v['corregidas'] as $c) {
+        $corregidas[] = "SKU {$c['de']} → {$c['a']} en {$c['lineas']} línea(s): la hoja de productos dice "
+                      . "«{$c['tabla']}» (de a {$c['a_uxc']}) y en el maestro el {$c['de']} es «{$c['de_desc']}» "
+                      . "(de a {$c['de_uxc']})";
+    }
+    if ($corregidas) {
+        $mensaje .= ' Con la hoja de productos («' . $tabla['hoja'] . '») se corrigió la presentación: '
+                  . implode('; ', $corregidas) . '.';
+    }
+
+    $revisar = [];
+    foreach ($v['revisar'] as $r) {
+        $lineas = " ({$r['lineas']} línea/s)";
+        switch ($r['tipo']) {
+            case 'empaque':
+                $revisar[] = "SKU {$r['sku']}: la hoja dice «{$r['tabla']}» (de a {$r['tabla_uxc']}) pero en el "
+                           . "maestro es «{$r['desc']}» (de a {$r['uxc']}), y no hay otra presentación con ese EAN "
+                           . 'que lo resuelva' . $lineas;
+                break;
+            case 'ean':
+                $revisar[] = "EAN {$r['ean']}: la hoja lo manda al SKU {$r['sku']} «{$r['desc']}», pero en el "
+                           . 'maestro ese EAN es del ' . implode(' y del ', $r['duenos']) . $lineas;
+                break;
+            case 'nombre':
+                $revisar[] = "SKU {$r['sku']}: la hoja dice «{$r['tabla']}» y en el maestro es «{$r['desc']}»" . $lineas;
+                break;
+            case 'sin_maestro':
+                $revisar[] = "SKU {$r['sku']}" . ($r['tabla'] !== null ? " «{$r['tabla']}»" : '')
+                           . ' no está en el maestro' . $lineas;
+                break;
+        }
+    }
+    if ($revisar) {
+        $mensaje .= ' REVISAR (' . count($revisar) . ', quedaron como venían): '
+                  . implode('; ', array_slice($revisar, 0, 6))
+                  . (count($revisar) > 6 ? '; y ' . (count($revisar) - 6) . ' más' : '') . '.';
+    }
+
+    return $mensaje;
 }
 
 /**
@@ -922,6 +1437,10 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
             'id_carga' => null,
         ];
     }
+
+    // La hoja de productos del mismo libro (EAN, SKU, DENOMINACIÓN), si la trae: completa lo que le
+    // falte a cada línea y después sirve para verificarla contra el maestro. Ver leerTablaDeProductos().
+    $tablaProductos = leerTablaDeProductos($rutaArchivo);
 
     // Las filas gemelas en cero del export de SAP se descartan ANTES que cualquier otra cosa:
     // si no, el guardián de "títulos corridos" de más abajo las cuenta como si el archivo
@@ -1142,9 +1661,9 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
                 (id_carga, cedi, orden_compra, tipo_orden, plu, sku_item, descripcion_item,
                  ean_item, ean_punto_venta, punto_venta, direccion_punto_venta, unidades,
                  cantidad_total, fecha_documento, fecha_minima_entrega, fecha_maxima_entrega,
-                 precio_bruto, precio_neto, empresa_compradora)
+                 precio_bruto, precio_neto, empresa_compradora, unidades_por_caja_hoja)
              VALUES (:carga, :cedi, :oc, :tipo, :plu, :sku_item, :desc_item, :ean, :ean_pv, :pv,
-                     :dir, :unidades, :total, :f_doc, :f_min, :f_max, :p_bruto, :p_neto, :comprador)"
+                     :dir, :unidades, :total, :f_doc, :f_min, :f_max, :p_bruto, :p_neto, :comprador, :uxc_hoja)"
         );
 
         $guardadas = 0;
@@ -1160,15 +1679,34 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
                 continue;
             }
 
+            // Lo que le falte al producto de la línea sale de la hoja de productos: el SKU por el EAN
+            // —lo mismo que haría el BUSCARV de la planilla— y el nombre por el SKU. Lo que la línea ya
+            // trae no se toca.
+            $eanLinea  = textoLimpio($valor($fila, 'ean_item'), 20);
+            $skuLinea  = textoLimpio($valor($fila, 'sku_item'), 30);
+            if ($skuLinea === null && $eanLinea !== null && isset($tablaProductos['por_ean'][$eanLinea])) {
+                $skuLinea = $tablaProductos['por_ean'][$eanLinea]['sku'];
+            }
+
+            // El producto como lo nombra la hoja del archivo: manda sobre la descripción de la cadena
+            // (decisión del usuario, 2026-10-02) y deja anotado en la línea el empaque que dice ese
+            // nombre. Con eso las cajas de ESTA carga salen con el empaque de SU archivo aunque después
+            // se suba el de otra cadena que nombre distinto el mismo SKU (ver decorarConMaestro).
+            $denHoja   = denominacionDeLaTabla($tablaProductos, $eanLinea, $skuLinea);
+            $descLinea = $denHoja !== null
+                ? textoLimpio(preg_replace('/\s+/u', ' ', $denHoja), 255)
+                : textoLimpio($valor($fila, 'descripcion_item'), 255);
+            $uxcHoja   = $denHoja !== null ? (empaqueDelNombre($denHoja)['unidades_por_caja'] ?? null) : null;
+
             $insertar->execute([
                 ':carga'    => $idCarga,
                 ':cedi'     => $cedi,
                 ':oc'       => $oc,
                 ':tipo'     => textoLimpio($valor($fila, 'tipo_orden'), 120),
                 ':plu'      => $plu,
-                ':sku_item' => textoLimpio($valor($fila, 'sku_item'), 30),
-                ':desc_item'=> textoLimpio($valor($fila, 'descripcion_item'), 255),
-                ':ean'      => textoLimpio($valor($fila, 'ean_item'), 20),
+                ':sku_item' => $skuLinea,
+                ':desc_item'=> $descLinea,
+                ':ean'      => $eanLinea,
                 ':ean_pv'   => textoLimpio($valor($fila, 'ean_punto_venta'), 20),
                 ':pv'       => $pv,
                 ':dir'      => textoLimpio($valor($fila, 'direccion_punto_venta'), 255),
@@ -1180,6 +1718,7 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
                 ':p_bruto'  => precioDesdeExcel($valor($fila, 'precio_bruto')),
                 ':p_neto'   => precioDesdeExcel($valor($fila, 'precio_neto')),
                 ':comprador'=> textoLimpio($valor($fila, 'empresa_compradora'), 120),
+                ':uxc_hoja' => $uxcHoja,
             ]);
             $guardadas++;
         }
@@ -1195,7 +1734,16 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
         // ANTES de completarPluDelMaestro(): si una línea apunta al gemelo equivocado, ese cruce
         // le colgaría el PLU de la cadena al producto que no es, y el error quedaría guardado en
         // el maestro en vez de solo en esta carga. Ver corregirGemelosPorEmpaque().
+        // La hoja de productos del archivo reescribe la maestra y completa lo que le falte (decisión
+        // del usuario, 2026-10-02). Va PRIMERO: los gemelos y la verificación tienen que comparar
+        // contra la maestra ya actualizada. Ver actualizarMaestroConLaTablaDeProductos().
+        $maestroActualizado = actualizarMaestroConLaTablaDeProductos($pdo, $tablaProductos, $nombreArchivo);
+
         $gemelosCorregidos = corregirGemelosPorEmpaque($pdo, $idCarga);
+
+        // Cada línea contra la hoja de productos del archivo y el maestro: la presentación que dice
+        // el nombre manda cuando no hay duda, y lo demás se avisa. Ver verificarConLaTablaDeProductos().
+        $verificacion = verificarConLaTablaDeProductos($pdo, $idCarga, $tablaProductos);
 
         // Con los SKU ya verificados, se le anotan al maestro el EAN y el PLU que usa la cadena,
         // donde falten. Ver completarIdentificadoresDelMaestro() para por qué va en este orden.
@@ -1245,6 +1793,10 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
                       . "al {$ej['a']}, que va de a {$ej['uxc']} por caja).";
         }
 
+        // Lo que la hoja le cambió a la maestra, y lo que salió de contrastar cada línea con ella.
+        $mensaje .= mensajeDeMaestroActualizado($maestroActualizado, $tablaProductos);
+        $mensaje .= mensajeDeVerificacion($verificacion, $tablaProductos);
+
         // El descuadre se dice con el caso PEOR adentro, con orden, producto y los dos números:
         // "hay 7 diferencias" sin decir cuál obliga a abrir el Excel y buscarlas a mano, que es
         // justo lo que nadie va a hacer con el camión esperando.
@@ -1263,6 +1815,8 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
             'filas'      => $guardadas,
             'id_carga'   => $idCarga,
             'descuadres' => $descuadres,
+            'verificacion' => $verificacion,
+            'maestro'      => $maestroActualizado,
         ];
 
     } catch (PDOException $e) {
@@ -2012,4 +2566,357 @@ function importarMaestro($pdo, $rutaArchivo) {
     }
 
     return ['exito' => true, 'mensaje' => $mensaje . '.', 'filas' => $creados + $actualizados];
+}
+
+// ---------------------------------------------------------------------------------------------
+// LECTOR RÁPIDO DE .XLSX (2026-10-05)
+//
+// Un .xlsx es un ZIP con XML adentro. PhpSpreadsheet arma en memoria un objeto por cada celda, y
+// con el Consolidado MR de SAP (11,7 MB, ~47.000 filas x 56 columnas) eso se llevaba ~80 s y 400 MB
+// —medido el 2026-10-05: 15 s solo para mirar el encabezado y 64 s para leer los datos—, rozando
+// el max_execution_time de 120 s. Acá se recorre el XML de la hoja en UNA pasada con XMLReader
+// (sin cargarlo entero) y se guardan solo las columnas pedidas.
+//
+// Lee los VALORES tal cual los dejó guardados Excel (los de las fórmulas incluidos), sin formato:
+// lo mismo que toArray(null, false, false, false). Si una fórmula no trae su valor guardado (un
+// archivo generado por otro programa), devuelve null y el que llama usa PhpSpreadsheet como antes.
+// También devuelve null si el archivo no es un .xlsx (un .xls viejo, por ejemplo).
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Las filas de la PRIMERA hoja —o de la que se llame $nombreHoja—: [número de fila (desde 1) =>
+ * [índice de columna (desde 0) => valor]]. Solo vienen las celdas con algo. $columnas: los índices a
+ * leer (null = todas). $filaMax: hasta qué fila (0 = todas). null si no se puede leer así (o si no
+ * hay una hoja con ese nombre).
+ */
+function leerXlsxRapido($rutaArchivo, ?array $columnas = null, $filaMax = 0, $nombreHoja = null) {
+    if (!class_exists('ZipArchive') || !class_exists('XMLReader')) {
+        return null;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($rutaArchivo, ZipArchive::RDONLY) !== true) {
+        return null;   // no es un .xlsx
+    }
+    $hoja = rutaPrimeraHojaXlsx($zip, $nombreHoja);
+    $tieneTextos = $zip->locateName('xl/sharedStrings.xml') !== false;
+    $zip->close();
+    if ($hoja === null) {
+        return null;
+    }
+
+    $base = 'zip://' . str_replace('\\', '/', realpath($rutaArchivo) ?: $rutaArchivo) . '#';
+    $quiero = $columnas !== null ? array_fill_keys(array_map('intval', $columnas), true) : null;
+
+    // Leyendo pocas filas (el encabezado) no se cargan los textos de todo el archivo: se juntan las
+    // celdas y después se buscan solo los textos que hacen falta.
+    $diferido = $filaMax > 0;
+    $textos   = ($tieneTextos && !$diferido) ? textosCompartidosXlsx($base . 'xl/sharedStrings.xml') : [];
+    if ($textos === null) {
+        return null;
+    }
+
+    // Columnas sueltas de toda la hoja: primero el camino por texto, que es el más rápido.
+    if ($quiero !== null && !$filaMax) {
+        $porTexto = leerHojaXlsxPorTexto($base . $hoja, array_keys($quiero), $textos);
+        if ($porTexto !== null) {
+            return $porTexto;
+        }
+    }
+
+    $xml = new XMLReader();
+    if (!@$xml->open($base . $hoja, null, LIBXML_NONET | LIBXML_COMPACT)) {
+        return null;
+    }
+
+    $filas = []; $pendientes = []; $maxTexto = -1;
+    $fila = 0; $col = -1;
+    try {
+        // $leer en false: el nodo actual ya es el siguiente (lo dejó ahí next() al saltar una celda).
+        $leer = true;
+        while ($leer ? $xml->read() : true) {
+            $leer = true;
+            if ($xml->nodeType !== XMLReader::ELEMENT) {
+                continue;
+            }
+            if ($xml->localName === 'row') {
+                $fila = (int) ($xml->getAttribute('r') ?: $fila + 1);
+                $col  = -1;
+                if ($filaMax > 0 && $fila > $filaMax) {
+                    break;
+                }
+                continue;
+            }
+            if ($xml->localName !== 'c') {
+                continue;
+            }
+
+            $ref = $xml->getAttribute('r');
+            $col = $ref !== null ? indiceDeColumnaXlsx($ref) : $col + 1;
+            if ($xml->isEmptyElement) {
+                continue;
+            }
+            if ($quiero !== null && !isset($quiero[$col])) {
+                // Una columna que no se pide: se salta la celda entera sin recorrer lo de adentro.
+                if (!$xml->next()) {
+                    break;
+                }
+                $leer = false;
+                continue;
+            }
+
+            // Lo de adentro de la celda: <v> (valor), <f> (fórmula) o <is><t> (texto en línea).
+            $tipo = $xml->getAttribute('t') ?? 'n';
+            $valor = null; $formula = false; $enLinea = '';
+            $profundidad = $xml->depth;
+            while ($xml->read() && $xml->depth > $profundidad) {
+                if ($xml->nodeType !== XMLReader::ELEMENT) {
+                    continue;
+                }
+                if ($xml->localName === 'v') {
+                    $valor = $xml->readString();
+                } elseif ($xml->localName === 'f') {
+                    $formula = true;
+                } elseif ($xml->localName === 't' && $tipo === 'inlineStr') {
+                    $enLinea .= $xml->readString();
+                }
+            }
+            if ($formula && $valor === null) {
+                return null;   // fórmula sin su valor guardado: que la resuelva PhpSpreadsheet
+            }
+
+            switch ($tipo) {
+                case 's':
+                    if ($valor === null) { break; }
+                    if ($diferido) {
+                        $pendientes[] = [$fila, $col, (int) $valor];
+                        $maxTexto = max($maxTexto, (int) $valor);
+                    } else {
+                        $filas[$fila][$col] = $textos[(int) $valor] ?? null;
+                    }
+                    break;
+                case 'inlineStr':
+                    $filas[$fila][$col] = $enLinea;
+                    break;
+                case 'b':
+                    $filas[$fila][$col] = $valor === '1';
+                    break;
+                case 'str':
+                case 'e':
+                    $filas[$fila][$col] = $valor;
+                    break;
+                default:   // número (las fechas también: Excel las guarda como número de serie)
+                    if ($valor === null || $valor === '') { break; }
+                    $filas[$fila][$col] = (preg_match('/^-?\d{1,15}$/', $valor)) ? (int) $valor : (float) $valor;
+            }
+        }
+    } finally {
+        $xml->close();
+    }
+
+    if ($pendientes) {
+        $textos = textosCompartidosXlsx($base . 'xl/sharedStrings.xml', $maxTexto);
+        if ($textos === null) {
+            return null;
+        }
+        foreach ($pendientes as [$f, $c, $i]) {
+            $filas[$f][$c] = $textos[$i] ?? null;
+        }
+    }
+    foreach ($filas as &$celdas) {
+        ksort($celdas);
+    }
+    unset($celdas);
+    ksort($filas);
+
+    return $filas;
+}
+
+/**
+ * El camino más rápido, para leer columnas sueltas de TODA la hoja (el Consolidado MR): en vez de
+ * recorrer el XML nodo por nodo, se buscan con una expresión regular solo las celdas de esas columnas
+ * ("<c r="N123" ...>"), por tramos de 8 MB. 1,1 s en vez de 3,8 s con el archivo de 11 MB (medido el
+ * 2026-10-05, mismo resultado celda por celda).
+ *
+ * Supone el XML como lo escribe Excel (cada celda empieza con su r="..."). Si un tramo no es así
+ * —otro programa, otro prefijo— devuelve null y se lee con XMLReader.
+ */
+function leerHojaXlsxPorTexto($rutaHoja, array $columnas, array $textos) {
+    $fp = @fopen($rutaHoja, 'rb');
+    if (!$fp) {
+        return null;
+    }
+    $letras = [];
+    foreach ($columnas as $c) {
+        $letras[\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex((int) $c + 1)] = (int) $c;
+    }
+    // Las letras más largas primero no hacen falta: después de la letra tienen que venir dígitos.
+    $patron = '/<c r="(' . implode('|', array_keys($letras)) . ')(\d+)"([^>]*?)(?:\/>|>(.*?)<\/c>)/s';
+
+    $filas = []; $resto = ''; $hayFilas = false;
+    try {
+        while (true) {
+            $leido = fread($fp, 8 << 20);
+            $fin   = $leido === false || $leido === '' || feof($fp);
+            $buf   = $resto . ($leido ?: '');
+            $corte = $fin ? strlen($buf) : strrpos($buf, '</row>');
+            if ($corte === false) {   // una fila de más de 8 MB: se sigue juntando
+                $resto = $buf;
+                continue;
+            }
+            if (!$fin) {
+                $corte += 6;
+            }
+            $tramo = substr($buf, 0, $corte);
+            $resto = substr($buf, $corte);
+            unset($buf);
+
+            if (strpos($tramo, '<row') !== false) {
+                $hayFilas = true;
+            }
+            // Todas las celdas tienen que empezar con su r="...": si no, este camino no sirve.
+            if (substr_count($tramo, '<c ') !== substr_count($tramo, '<c r="')
+                || substr_count($tramo, '<c>') > 0 || strpos($tramo, ':c ') !== false) {
+                return null;
+            }
+
+            preg_match_all($patron, $tramo, $celdas, PREG_SET_ORDER);
+            foreach ($celdas as $c) {
+                $adentro = $c[4] ?? '';
+                if ($adentro === '') {
+                    continue;
+                }
+                $tipo = preg_match('/\bt="(\w+)"/', $c[3], $t) ? $t[1] : 'n';
+                $v = preg_match('/<v(?:\s[^>]*)?>(.*?)<\/v>/s', $adentro, $mv) ? $mv[1] : null;
+                if ($v === null && strpos($adentro, '<f') !== false) {
+                    return null;   // fórmula sin su valor guardado
+                }
+                $fila = (int) $c[2];
+                $col  = $letras[$c[1]];
+                switch ($tipo) {
+                    case 's':
+                        if ($v !== null) { $filas[$fila][$col] = $textos[(int) $v] ?? null; }
+                        break;
+                    case 'inlineStr':
+                        preg_match_all('/<t(?:\s[^>]*)?>(.*?)<\/t>/s', $adentro, $mt);
+                        $filas[$fila][$col] = html_entity_decode(implode('', $mt[1]), ENT_QUOTES | ENT_XML1, 'UTF-8');
+                        break;
+                    case 'b':
+                        if ($v !== null) { $filas[$fila][$col] = $v === '1'; }
+                        break;
+                    case 'str':
+                    case 'e':
+                        if ($v !== null) { $filas[$fila][$col] = html_entity_decode($v, ENT_QUOTES | ENT_XML1, 'UTF-8'); }
+                        break;
+                    default:
+                        if ($v === null || $v === '') { break; }
+                        $filas[$fila][$col] = preg_match('/^-?\d{1,15}$/', $v) ? (int) $v : (float) $v;
+                }
+            }
+            if ($fin) {
+                break;
+            }
+        }
+    } finally {
+        fclose($fp);
+    }
+
+    // Hay filas pero no se encontró ninguna celda: algo distinto en el XML; mejor XMLReader.
+    if ($hayFilas && !$filas) {
+        return null;
+    }
+    foreach ($filas as &$celdas) {
+        ksort($celdas);
+    }
+    unset($celdas);
+    ksort($filas);
+    return $filas;
+}
+
+/**
+ * Ruta dentro del ZIP de la PRIMERA hoja del libro ("xl/worksheets/sheet1.xml") —o de la que se llame
+ * $nombre, sin distinguir mayúsculas ni espacios de más—, o null.
+ */
+function rutaPrimeraHojaXlsx(ZipArchive $zip, $nombre = null) {
+    $libro = $zip->getFromName('xl/workbook.xml');
+    $rels  = $zip->getFromName('xl/_rels/workbook.xml.rels');
+    if ($libro === false || $rels === false) {
+        return null;
+    }
+    if ($nombre !== null) {
+        // La hoja con ese nombre: se compara normalizado ("MANDATO " y "mandato" son la misma).
+        $buscado = mb_strtoupper(trim(preg_replace('/\s+/', ' ', (string) $nombre)), 'UTF-8');
+        $m = null;
+        preg_match_all('/<(?:\w+:)?sheet\b([^>]*)>/', $libro, $hojas, PREG_SET_ORDER);
+        foreach ($hojas as $h) {
+            if (preg_match('/\bname="([^"]*)"/', $h[1], $n) && preg_match('/\br:id="([^"]+)"/', $h[1], $i)
+                && mb_strtoupper(trim(preg_replace('/\s+/', ' ', html_entity_decode($n[1], ENT_QUOTES | ENT_XML1, 'UTF-8'))), 'UTF-8') === $buscado) {
+                $m = $i;
+                break;
+            }
+        }
+        if ($m === null) {
+            return null;
+        }
+    } elseif (!preg_match('/<(?:\w+:)?sheet\b[^>]*\br:id="([^"]+)"/', $libro, $m)
+        && !preg_match('/<(?:\w+:)?sheet\b[^>]*\bid="([^"]+)"/', $libro, $m)) {
+        return null;
+    }
+    $id = preg_quote($m[1], '/');
+    if (!preg_match('/<Relationship\b[^>]*\bId="' . $id . '"[^>]*\bTarget="([^"]+)"/', $rels, $t)
+        && !preg_match('/<Relationship\b[^>]*\bTarget="([^"]+)"[^>]*\bId="' . $id . '"/', $rels, $t)) {
+        return null;
+    }
+    $destino = $t[1];
+    $ruta = $destino[0] === '/' ? ltrim($destino, '/') : 'xl/' . $destino;
+    return $zip->locateName($ruta) !== false ? $ruta : null;
+}
+
+/**
+ * Los textos compartidos del libro (cada celda de texto guarda solo su número en esta lista).
+ * $hasta: el último número que hace falta (-1 = todos). null si no se puede leer.
+ */
+function textosCompartidosXlsx($ruta, $hasta = -1) {
+    $xml = new XMLReader();
+    if (!@$xml->open($ruta, null, LIBXML_NONET | LIBXML_COMPACT)) {
+        return null;
+    }
+    $textos = []; $actual = null; $fonetica = 0;
+    while ($xml->read()) {
+        if ($xml->nodeType === XMLReader::ELEMENT) {
+            if ($xml->localName === 'si') {
+                if ($hasta >= 0 && count($textos) > $hasta) {
+                    break;
+                }
+                $actual = '';
+                if ($xml->isEmptyElement) { $textos[] = ''; $actual = null; }
+            } elseif ($xml->localName === 'rPh' && !$xml->isEmptyElement) {
+                $fonetica++;   // la guía fonética (japonés) no es parte del texto
+            } elseif ($xml->localName === 't' && $actual !== null && $fonetica === 0) {
+                $actual .= $xml->readString();
+            }
+        } elseif ($xml->nodeType === XMLReader::END_ELEMENT) {
+            if ($xml->localName === 'si' && $actual !== null) {
+                $textos[] = $actual;
+                $actual = null;
+            } elseif ($xml->localName === 'rPh') {
+                $fonetica = max(0, $fonetica - 1);
+            }
+        }
+    }
+    $xml->close();
+    return $textos;
+}
+
+/** "AB12" => 27 (índice de columna desde 0). */
+function indiceDeColumnaXlsx($referencia) {
+    $n = 0;
+    $largo = strlen($referencia);
+    for ($i = 0; $i < $largo; $i++) {
+        $c = ord($referencia[$i]);
+        if ($c < 65 || $c > 90) {
+            break;
+        }
+        $n = $n * 26 + ($c - 64);
+    }
+    return $n - 1;
 }

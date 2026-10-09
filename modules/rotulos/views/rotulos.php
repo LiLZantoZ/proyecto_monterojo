@@ -65,9 +65,13 @@ requierePermiso('modulo_rotulos', urlPanelDelRol($_SESSION['usuario_rol'] ?? nul
                     <label for="rot-numero-pv">N° punto de venta <span class="opcional">(opcional)</span></label>
                     <input type="text" id="rot-numero-pv" maxlength="20">
                 </div>
-                <div class="campo campo-ancho">
+                <div class="campo">
                     <label for="rot-cedi">CEDI</label>
                     <input type="text" id="rot-cedi" maxlength="120">
+                </div>
+                <div class="campo">
+                    <label for="rot-oc">Orden de compra <span class="opcional">(opcional)</span></label>
+                    <input type="text" id="rot-oc" maxlength="40">
                 </div>
                 <div class="campo campo-ancho">
                     <label for="rot-producto">Producto</label>

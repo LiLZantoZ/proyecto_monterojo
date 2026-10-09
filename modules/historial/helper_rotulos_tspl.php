@@ -10,7 +10,7 @@
 // tres capas distintas el error nunca se arregla en un solo lugar. Eso fue exactamente lo que pasó
 // con esta impresora: etiquetas al revés primero, etiquetas en blanco después.
 //
-// TSPL es el idioma propio de la impresora: se le manda "SIZE 100 mm, 100 mm", "TEXT ...",
+// TSPL es el idioma propio de la impresora: se le manda "SIZE 100 mm, 80 mm", "TEXT ...",
 // "BARCODE ...", "PRINT 1,1" y ella dibuja la etiqueta con su firmware. No hay nada en el medio
 // que pueda reescalar ni reacomodar, la medida es exacta por definición, y el código de barras
 // sale a los 203 dpi nativos del cabezal en vez de ser un PNG estirado.
@@ -45,8 +45,11 @@ const TSPL_DIB_ALTO  = ROTULO_DIBUJO_ALTO_MM  * TSPL_PUNTOS_POR_MM;
 const TSPL_X0 = (TSPL_ANCHO - TSPL_DIB_ANCHO) >> 1;
 const TSPL_Y0 = (TSPL_ALTO  - TSPL_DIB_ALTO)  >> 1;
 
-// Aire entre el marco dibujado y el contenido, hacia adentro del área de dibujo.
-const TSPL_MARGEN = 5 * TSPL_PUNTOS_POR_MM;
+// Aire entre el marco dibujado y el contenido, hacia adentro del área de dibujo. A los costados
+// sigue siendo de 5mm; arriba y abajo es de 3mm desde que el rollo pasó a 100x80 (2026-09-29): con
+// 75mm de alto dibujable, cada milímetro vertical es un renglón que entra o no entra.
+const TSPL_MARGEN   = 5 * TSPL_PUNTOS_POR_MM;
+const TSPL_MARGEN_V = 3 * TSPL_PUNTOS_POR_MM;
 
 // Fuentes internas de la impresora, con el ancho y alto de celda de cada una en puntos. Se usan
 // las de la impresora y no una imagen porque el firmware las dibuja al instante y salen nítidas;
@@ -66,8 +69,9 @@ const TSPL_FUENTES = [
 const TSPL_FUENTE_OC = '3';
 
 // El logo es un círculo negro con el texto en blanco: a 1 bit queda idéntico, sin medios tonos que
-// se pierdan. Se dibuja a 14mm, la misma medida que tenía en el rótulo original.
-const TSPL_LOGO_MM = 14;
+// se pierdan. Se dibujaba a 14mm; con el rollo de 100x80 (2026-09-29) bajó a 8mm, que es lo que
+// le deja al número del punto de venta y a los demás campos el alto que necesitan.
+const TSPL_LOGO_MM = 8;
 
 // Alto del código de barras. 14mm era la medida del rótulo original; el estirado vertical no
 // afecta la lectura —lo que codifica un Code 128 son los ANCHOS— pero un código alto es mucho más
@@ -207,7 +211,7 @@ function bitmapLogoTspl($lado) {
  *
  * La maqueta es el diseño original del rótulo (el que estuvo hasta el 2026-09-08, cuando hubo que
  * comprimirlo para que entrara en un rollo de 4cm de alto), devuelto tal cual ahora que el rollo es
- * de 10x10cm: logo y marca arriba con su línea divisoria, cada dato con su etiqueta y en su propio
+ * de 100x80mm (antes 10x10cm): logo y marca arriba con su línea divisoria, cada dato con su etiqueta y en su propio
  * renglón, el contador de cajas abajo solo y grande, y el código de barras al pie.
  *
  * La posición vertical se lleva con un cursor ($y) que va bajando, en vez de con coordenadas
@@ -225,7 +229,7 @@ function tsplDeUnRotulo(array $r) {
               . (TSPL_X0 + TSPL_DIB_ANCHO - 1) . ',' . (TSPL_Y0 + TSPL_DIB_ALTO - 1) . ',8';
 
     // ---------- Marca: logo + nombre, con línea divisoria debajo ----------
-    $y    = TSPL_Y0 + TSPL_MARGEN;
+    $y    = TSPL_Y0 + TSPL_MARGEN_V;
     $lado = TSPL_LOGO_MM * TSPL_PUNTOS_POR_MM;
     $logo = bitmapLogoTspl($lado);
     $xMarca = $izq;
@@ -242,9 +246,9 @@ function tsplDeUnRotulo(array $r) {
     $lineas[] = 'TEXT ' . $xMarca . ',' . ($y + intdiv($lado - TSPL_FUENTES['4']['alto'], 2))
               . ',"4",0,1,1,"MONTEROJO GOURMET"';
 
-    $y += $lado + 2 * TSPL_PUNTOS_POR_MM;
+    $y += $lado + TSPL_PUNTOS_POR_MM;
     $lineas[] = 'BAR ' . $izq . ',' . $y . ',' . $anchoUtil . ',5';
-    $y += 5 + 2 * TSPL_PUNTOS_POR_MM;
+    $y += 5 + TSPL_PUNTOS_POR_MM;
 
     // ---------- Los campos, cada uno con su etiqueta arriba ----------
     // El punto de venta va en la fuente más grande: es lo que mira quien recibe la caja. Los demás
@@ -294,7 +298,10 @@ function tsplDeUnRotulo(array $r) {
     // dígitos). Si la tienda viene identificada por su EAN de 13 dígitos, al triple no entraría y
     // textoQueEntre lo recortaría, así que ahí se queda en el doble: más vale un número completo
     // y algo más chico que uno enorme y cortado por la mitad.
-    $multNumero = mb_strlen($r['numero_pv']) <= 6 ? 3 : 2;
+    //
+    // Desde el rollo de 100x80 (2026-09-29) va SIEMPRE al doble: al triple no entraban los cinco
+    // campos en 75mm de alto. Sigue siendo, junto con el contador, lo más grande del rótulo.
+    $multNumero = 2;
 
     // FORMATO ÉXITO: con número de CEDI, la etiqueta "N. PUNTO DE VENTA" pasa a la fuente 4 —la
     // misma del nombre de la tienda— y a la derecha va "CEDI: 149" en grande. $campoDelCedi es el
@@ -332,9 +339,9 @@ function tsplDeUnRotulo(array $r) {
     // que es lo que no le importa a nadie. El contador y el QR comparten renglón.
     $altoConteo  = TSPL_FUENTES['4']['alto'] * 2;
     $ladoQr      = TSPL_QR_CELDA * 33;
-    $altoAbajo   = 5 + 2 * TSPL_PUNTOS_POR_MM          // línea divisoria + su aire
+    $altoAbajo   = 5 + TSPL_PUNTOS_POR_MM              // línea divisoria + su aire
                  + max($altoConteo, $ladoQr);
-    $pieArranca  = TSPL_Y0 + TSPL_DIB_ALTO - TSPL_MARGEN - $altoAbajo;
+    $pieArranca  = TSPL_Y0 + TSPL_DIB_ALTO - TSPL_MARGEN_V - $altoAbajo;
 
     // Alto "natural" de los campos, sin aire entre uno y otro. El bloque del CEDI no suma: va al
     // costado de un campo que ya es más alto que él.
@@ -419,7 +426,7 @@ function tsplDeUnRotulo(array $r) {
     // separado del resto por una línea y se lo imprime al doble de tamaño.
     $y = $pieArranca;
     $lineas[] = 'BAR ' . $izq . ',' . $y . ',' . $anchoUtil . ',5';
-    $y += 5 + 2 * TSPL_PUNTOS_POR_MM;
+    $y += 5 + TSPL_PUNTOS_POR_MM;
 
     $conteo = 'CAJ ' . $r['numero'] . ' DE ' . $r['total'];
 

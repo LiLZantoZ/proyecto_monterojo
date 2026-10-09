@@ -1,0 +1,597 @@
+/* =========================================
+   08 · LA PIEL DEL SISTEMA (2026-10-07)
+   =========================================
+   Una capa de estilo sobre todo lo anterior, con las fotos de la bodega de Monterojo: los racks,
+   el montacargas en el pasillo, las estibas por CEDI y el muelle. Va AL FINAL de la cascada a
+   propósito: no cambia cómo funciona nada, solo cómo se ve (iconos, bordes de las tablas,
+   botones, tarjetas, campos y las franjas con foto).
+
+   Las fotos viven en assets/img/ (fondo.jpg, banda.jpg, login.jpg, bienvenida.jpg y las tres de
+   la galería del inicio). Los colores siguen saliendo de 00-tema.css: negro, vino y crema. */
+
+:root {
+    --borde-suave:    #ece6dd;
+    --fila-hover:     #fbf3f3;
+    --sombra-tarjeta: 0 1px 2px rgba(17, 17, 17, 0.05), 0 8px 24px rgba(17, 17, 17, 0.07);
+    --sombra-boton:   0 1px 2px rgba(17, 17, 17, 0.08);
+    --degradado-negro: linear-gradient(180deg, #2a2525 0%, #121010 100%);
+    --degradado-vino:  linear-gradient(180deg, #a52424 0%, #7c1616 100%);
+    --anillo-foco:     0 0 0 3px rgba(142, 27, 27, 0.16);
+}
+
+::selection { background: rgba(142, 27, 27, 0.18); }
+
+/* ---------------------------------------------------------------------------------------------
+   EL FONDO: la foto de los racks con un velo más oscuro a la izquierda (donde va el menú) y que
+   deja ver la bodega hacia la derecha.
+   --------------------------------------------------------------------------------------------- */
+body.con-fondo {
+    background-image:
+        linear-gradient(115deg, rgba(10, 8, 8, 0.94) 0%, rgba(18, 12, 12, 0.86) 40%, rgba(74, 16, 16, 0.72) 100%),
+        var(--foto-fondo);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   EL MENÚ LATERAL: cada icono en su baldosa, la cabecera sobre la foto de los racks.
+   Con aside.sidebar delante: style_sidebar.css se carga DESPUÉS (desde sidebar.php) y, con la
+   misma especificidad, le ganaría a estas reglas.
+   --------------------------------------------------------------------------------------------- */
+aside.sidebar {
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+aside.sidebar .sidebar-header {
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;   /* en la columna flex del menú se achicaba y el overflow recortaba el nombre */
+    background:
+        linear-gradient(180deg, rgba(12, 10, 10, 0.55) 0%, rgba(12, 10, 10, 0.92) 100%),
+        url('../../img/banda.jpg') 70% center / cover,
+        var(--negro);
+    border-bottom: 3px solid var(--vino);
+    box-shadow: inset 0 -12px 24px rgba(0, 0, 0, 0.35);
+}
+
+aside.sidebar .sidebar-marca {
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+}
+
+aside.sidebar .sidebar-sistema {
+    color: rgba(255, 255, 255, 0.85);
+    letter-spacing: 2px;
+}
+
+aside.sidebar .sidebar-nav { gap: 3px; }
+
+aside.sidebar .nav-link {
+    gap: 12px;
+    padding: 7px 10px;
+    font-size: 0.9rem;
+}
+
+/* La baldosa del icono */
+aside.sidebar .nav-link i {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    background: var(--vino-claro);
+    color: var(--vino);
+    border: 1px solid #efdcdc;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+aside.sidebar .nav-link:not(.nav-link-logout):hover i {
+    background: #f1dada;
+    transform: scale(1.05);
+}
+
+aside.sidebar .nav-link.active {
+    background: linear-gradient(90deg, var(--vino-claro) 0%, rgba(246, 235, 235, 0.35) 100%);
+}
+
+aside.sidebar .nav-link.active i {
+    background: var(--degradado-vino);
+    border-color: var(--vino-oscuro);
+    color: var(--blanco);
+    box-shadow: 0 4px 10px rgba(142, 27, 27, 0.35);
+}
+
+aside.sidebar .nav-link-logout i {
+    background: #f3f1ef;
+    border-color: #e7e3df;
+    color: #8b8580;
+}
+
+aside.sidebar .nav-link-logout:hover i {
+    background: var(--vino-claro);
+    color: var(--vino);
+}
+
+aside.sidebar .sidebar-footer {
+    background: linear-gradient(135deg, #fbf3f3 0%, #f3e3e3 100%);
+    border-color: #ead6d6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   LA TARJETA DE CADA MÓDULO Y SU CABECERA CON FOTO
+   La cabecera (título y botones) va sobre una franja con la foto de los racks, oscurecida hacia
+   la izquierda para que el título se lea siempre. Solo cuando es lo primero de la tarjeta: así la
+   franja ocupa el borde de arriba entero.
+   --------------------------------------------------------------------------------------------- */
+.modulo {
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42);
+}
+
+.modulo > .modulo-header:first-child {
+    position: relative;
+    margin: -24px -26px 22px;
+    padding: 24px 26px 22px;
+    min-height: 92px;
+    border-radius: 18px 18px 0 0;
+    background:
+        linear-gradient(100deg, rgba(14, 12, 12, 0.96) 0%, rgba(16, 13, 13, 0.84) 38%, rgba(96, 18, 18, 0.42) 100%),
+        url('../../img/banda.jpg') 75% 35% / cover,
+        var(--negro);
+    border-bottom: 3px solid var(--vino);
+    color: rgba(255, 255, 255, 0.86);
+}
+
+body:has(.campana-flotante) .modulo > .modulo-header:first-child { padding-right: 72px; }
+
+.modulo > .modulo-header:first-child h2 {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--blanco);
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
+
+/* El icono del módulo junto al título (lo copia del menú el script de sidebar.php) */
+.icono-modulo {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    color: var(--blanco);
+    background: var(--degradado-vino);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    text-shadow: none;
+}
+
+/* Los botones sobre la franja oscura: los secundarios de vidrio, el principal en blanco (el que
+   más resalta sobre negro) y el de acento en vino. */
+.modulo > .modulo-header:first-child .btn {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.28);
+    color: var(--blanco);
+    backdrop-filter: blur(4px);
+}
+
+.modulo > .modulo-header:first-child .btn:hover {
+    background: rgba(255, 255, 255, 0.20);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+.modulo > .modulo-header:first-child .btn-primario {
+    background: var(--blanco);
+    border-color: var(--blanco);
+    color: var(--negro);
+}
+
+.modulo > .modulo-header:first-child .btn-primario:hover {
+    background: #f6ebeb;
+    border-color: #f6ebeb;
+    color: var(--vino-oscuro);
+}
+
+.modulo > .modulo-header:first-child :is(.btn-acento, .btn-peligro) {
+    background: var(--degradado-vino);
+    border-color: #b33030;
+    color: var(--blanco);
+}
+
+.modulo > .modulo-header:first-child :is(.btn-acento, .btn-peligro):hover {
+    background: linear-gradient(180deg, #b52a2a 0%, #8a1919 100%);
+}
+
+.modulo > .modulo-header:first-child a:not(.btn) { color: #f3dada; }
+
+/* ---------------------------------------------------------------------------------------------
+   TABLAS: caja con sombra suave, cabecera negra con línea vino, filas más aireadas y la fila
+   bajo el mouse marcada con una raya vino a la izquierda.
+   --------------------------------------------------------------------------------------------- */
+.tabla-caja {
+    border: 1px solid var(--borde-suave);
+    border-radius: 14px;
+    box-shadow: var(--sombra-tarjeta);
+}
+
+.tabla-caja::-webkit-scrollbar        { height: 10px; width: 10px; }
+.tabla-caja::-webkit-scrollbar-track  { background: #f6f2ec; border-radius: 0 0 14px 14px; }
+.tabla-caja::-webkit-scrollbar-thumb  { background: #d9cfc4; border-radius: 10px; border: 2px solid #f6f2ec; }
+.tabla-caja::-webkit-scrollbar-thumb:hover { background: var(--vino); }
+
+table.tabla thead th {
+    background: var(--degradado-negro);
+    border-bottom: 3px solid var(--vino);
+    font-size: 0.72rem;
+    letter-spacing: 0.7px;
+    padding: 13px 14px;
+}
+
+table.tabla thead th + th {
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+table.tabla tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid #f0ebe4;
+}
+
+table.tabla tbody tr {
+    transition: background-color 0.12s ease;
+}
+
+table.tabla tbody tr:hover {
+    background: var(--fila-hover);
+}
+
+table.tabla tbody tr:hover > td:first-child {
+    box-shadow: inset 3px 0 0 var(--vino);
+}
+
+.tabla-accion-fija > thead > tr > th:last-child { background: var(--degradado-negro); }
+.tabla-accion-fija > tbody > tr:not(.fila-detalle):hover > td:last-child { background: var(--fila-hover); }
+
+/* Las tablas anidadas (el detalle de un pedido) no llevan la raya: ya están dentro de una fila. */
+.tabla-productos tbody tr:hover > td:first-child { box-shadow: none; }
+
+/* ---------------------------------------------------------------------------------------------
+   BOTONES: con relieve, que se levantan apenas al pasar el mouse.
+   --------------------------------------------------------------------------------------------- */
+.btn {
+    border-radius: 10px;
+    font-weight: 600;
+    box-shadow: var(--sombra-boton);
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(17, 17, 17, 0.12);
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: var(--sombra-boton);
+}
+
+.btn:disabled { box-shadow: none; }
+
+.btn-primario {
+    background: var(--degradado-negro);
+    border-color: #121010;
+}
+
+.btn-primario:hover:not(:disabled) {
+    background: var(--degradado-vino);
+    border-color: var(--vino-oscuro);
+}
+
+.btn-acento {
+    background: var(--degradado-vino);
+    border-color: var(--vino-oscuro);
+}
+
+.btn-acento:hover:not(:disabled) {
+    background: linear-gradient(180deg, #8f1b1b 0%, #5e1111 100%);
+}
+
+.btn-peligro {
+    background: linear-gradient(180deg, #d0453a 0%, #a8291f 100%);
+    border-color: #a8291f;
+}
+
+.btn-chico { border-radius: 8px; }
+
+/* ---------------------------------------------------------------------------------------------
+   PÍLDORAS, PESTAÑAS Y AVISOS
+   --------------------------------------------------------------------------------------------- */
+.pastilla {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(17, 17, 17, 0.05);
+    font-weight: 500;
+}
+
+a.pastilla, button.pastilla {
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+a.pastilla:hover, button.pastilla:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(17, 17, 17, 0.10);
+}
+
+.aviso {
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(17, 17, 17, 0.04);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   CAMPOS: bordes redondeados y el anillo vino al escribir.
+   --------------------------------------------------------------------------------------------- */
+.filtro label {
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-size: 0.7rem;
+}
+
+.filtro select,
+.filtro input,
+.buscador input,
+.campo input[type="text"],
+.campo input[type="password"],
+.campo input[type="number"],
+.campo input[type="date"],
+.campo input[type="file"],
+.campo select,
+.campo textarea {
+    border-radius: 10px;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.filtro select:focus,
+.filtro input:focus,
+.buscador input:focus,
+.campo input:focus,
+.campo select:focus,
+.campo textarea:focus {
+    border-color: var(--vino);
+    box-shadow: var(--anillo-foco);
+    outline: none;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   MODALES: cabecera negra con un toque vino, esquinas más redondas y sombra profunda.
+   --------------------------------------------------------------------------------------------- */
+.modal-fondo { background: rgba(12, 8, 8, 0.62); backdrop-filter: blur(3px); }
+
+.modal-caja {
+    border-radius: 18px;
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+}
+
+.modal-cabecera {
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(110deg, #1d1919 0%, #121010 55%, #3d1212 100%);
+}
+
+.modal-cabecera h2 i { color: #e8bcbc; }
+
+.modal-pie { border-radius: 0 0 18px 18px; }
+
+/* ---------------------------------------------------------------------------------------------
+   PAGINACIÓN (la de Consolidado MR, Pedidos, Trazabilidad…)
+   --------------------------------------------------------------------------------------------- */
+.paginacion .pagina-num,
+.paginacion .pagina-flecha {
+    border-radius: 10px;
+    box-shadow: var(--sombra-boton);
+    transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.paginacion .pagina-num:hover,
+.paginacion .pagina-flecha:not(.deshabilitada):hover { transform: translateY(-1px); }
+
+.paginacion .pagina-num.activa {
+    background: var(--degradado-vino);
+    border-color: var(--vino-oscuro);
+    color: var(--blanco);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   EL PANEL DE INICIO: la foto del montacargas con el saludo encima, las cifras en tarjetas con
+   icono y la galería "Nuestra operación".
+   --------------------------------------------------------------------------------------------- */
+.panel-inicio { max-width: 1040px; }
+
+.welcome-box {
+    position: relative;
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.welcome-hero {
+    height: 320px;
+    object-position: center 40%;
+}
+
+/* El saludo va SOBRE la foto, con un degradado que la oscurece abajo. */
+.welcome-box:has(.welcome-hero) .welcome-texto {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 70px 34px 26px;
+    text-align: left;
+    border-top: none;
+    background: linear-gradient(180deg, rgba(12, 10, 10, 0) 0%, rgba(12, 10, 10, 0.78) 55%, rgba(12, 10, 10, 0.92) 100%);
+}
+
+.welcome-box:has(.welcome-hero) {
+    border-bottom: 4px solid var(--vino);
+}
+
+.welcome-box:has(.welcome-hero) h1 {
+    color: var(--blanco);
+    font-size: 1.75rem;
+    text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+}
+
+.welcome-box:has(.welcome-hero) p { color: rgba(255, 255, 255, 0.82); }
+.welcome-box:has(.welcome-hero) p strong { color: #f3c9c9; }
+
+.estado-dato {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.30);
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.estado-dato::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: var(--degradado-vino);
+}
+
+a.estado-dato:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
+}
+
+.galeria-operacion {
+    margin-top: 26px;
+}
+
+.galeria-operacion-titulo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 12px 4px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.galeria-operacion-titulo::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
+}
+
+.galeria-operacion-fotos {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.galeria-foto {
+    position: relative;
+    margin: 0;
+    height: 210px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.40);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.galeria-foto img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.5s ease;
+}
+
+.galeria-foto:hover img { transform: scale(1.05); }
+
+.galeria-foto figcaption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 34px 16px 13px;
+    color: var(--blanco);
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: linear-gradient(180deg, rgba(10, 8, 8, 0) 0%, rgba(10, 8, 8, 0.85) 100%);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.galeria-foto figcaption i {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--degradado-vino);
+    font-size: 0.78rem;
+}
+
+@media (max-width: 760px) {
+    .galeria-operacion-fotos { grid-template-columns: 1fr; }
+    .welcome-hero { height: 240px; }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   EL LOGIN: el panel de la marca sobre la foto del montacargas en el pasillo.
+   --------------------------------------------------------------------------------------------- */
+.login-box {
+    border-radius: 20px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+
+.login-panel {
+    position: relative;
+    background:
+        linear-gradient(180deg, rgba(12, 10, 10, 0.50) 0%, rgba(12, 10, 10, 0.72) 45%, rgba(12, 10, 10, 0.94) 100%),
+        url('../../img/login.jpg') center 35% / cover,
+        var(--negro);
+}
+
+.login-panel-marca { filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.6)); }
+.login-panel-titulo { text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
+.login-panel-texto { color: rgba(255, 255, 255, 0.82); }
+
+.btn-login {
+    background: var(--degradado-negro);
+    box-shadow: 0 8px 20px rgba(17, 17, 17, 0.25);
+}
+
+.btn-login:hover:not(:disabled) { background: var(--degradado-vino); }
+
+/* ---------------------------------------------------------------------------------------------
+   DETALLES SUELTOS
+   --------------------------------------------------------------------------------------------- */
+.content-area::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.30); }
+
+.campana-btn { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 -3px 0 var(--vino); }
+
+@media print {
+    .modulo > .modulo-header:first-child { background: none; color: inherit; }
+}
+
+/* Las tarjetas de Posiciones: el mismo relieve que el resto (con .grid-posiciones delante porque
+   posiciones.css se carga después). */
+.grid-posiciones .card-posicion {
+    border-width: 1px;
+    border-radius: 14px;
+    box-shadow: var(--sombra-tarjeta);
+}

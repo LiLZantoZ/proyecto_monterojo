@@ -1,43 +1,136 @@
 /* modules/consolidado_mr/layouts/consolidado_mr.css
-   Lo propio del Consolidado MR. La grilla, los totales y la paginación vienen de seguimiento.css,
-   para que esta tabla tenga las mismas celdas que las de Estado de pedidos. */
+   Lo propio del Consolidado MR. La grilla, los totales, la paginación, las pestañas y los chips de
+   estado vienen de seguimiento.css, para que esta tabla tenga las mismas celdas que las de Estado de
+   pedidos. La barra de selección es la de Picking (03-modulos.css). */
 
-/* El texto del material es la columna más larga: se le da un mínimo para que no quede en tres
-   renglones y se deja partir de línea. */
-.tabla-mr .celda-producto { min-width: 190px; }
-/* Igual con el cliente: angosto, "CADENA COMERCIAL OXXO - EJE CAF." ocupaba cuatro renglones. */
+/* El cliente es la columna más larga: se le da un mínimo para que "CADENA COMERCIAL OXXO - EJE CAF."
+   no ocupe cuatro renglones. */
 .tabla-mr .celda-cliente { min-width: 170px; }
 
-/* Son 11 columnas: los encabezados largos ("Ctd. facturada", "Fecha factura") parten de línea en vez
-   de ensanchar su columna. Hace falta el selector completo para ganarle al nowrap de th.num. */
+/* Los encabezados largos ("Fecha factura", "Orden de compra") parten de línea en vez de ensanchar
+   su columna. Hace falta el selector completo para ganarle al nowrap de th.num. */
 table.tabla.tabla-mr > thead > tr > th { white-space: normal; }
 
-/* SUBTOTAL POR FACTURA: cierra el bloque de renglones de cada factura con su Valor neto sumado.
-   Más suave que el TOTAL general del pie (que sigue siendo el más destacado), pero bien distinto de
-   un renglón común, y con una línea más gruesa abajo para separar una factura de la siguiente. */
-.tabla-mr tbody tr.fila-subtotal > td {
-    background: var(--crema, #faf6f0);
-    border-bottom: 2px solid #d9cfc2;
-    font-weight: 600;
-    padding-top: 8px;
-    padding-bottom: 8px;
-}
-.tabla-mr tbody tr.fila-subtotal:hover > td { background: var(--crema, #faf6f0); }
-.tabla-mr .subtotal-etiqueta { text-align: right; font-size: .82rem; }
-.tabla-mr .subtotal-etiqueta strong { color: var(--vino, #7a1220); }
-.tabla-mr .subtotal-nota { font-weight: 500; font-size: .8rem; color: var(--texto-suave, #6b7580); }
-.tabla-mr .subtotal-monto { color: var(--vino, #7a1220); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* La columna de las casillas: angosta y centrada. */
+.tabla-mr .col-chk { width: 34px; }
+.tabla-mr tbody tr.fila-seleccionada > td { background: var(--vino-claro, #f6ebeb); }
 
-/* Aviso de factura partida entre dos páginas. */
-.tabla-mr tbody tr.fila-continua > td {
-    background: #fbfaf8;
-    color: var(--texto-suave, #6b7580);
-    font-size: .8rem;
-    font-style: italic;
-    padding-top: 6px;
-    padding-bottom: 6px;
+/* La guía: es un número que se copia y se busca en el portal de la transportadora. */
+.tabla-mr .guia-mr {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
 }
-.tabla-mr tbody tr.fila-continua i { margin-right: 6px; }
+
+/* El transportador: un desplegable chico que se guarda solo al elegir. */
+.tabla-mr .celda-transportador { min-width: 150px; }
+.tabla-mr .sel-transportador {
+    width: 100%;
+    max-width: 190px;
+    padding: 5px 8px;
+    border: 1px solid var(--borde, #e6e0d8);
+    border-radius: 8px;
+    background: var(--blanco, #fff);
+    font-size: 0.82rem;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.tabla-mr .sel-transportador:focus {
+    outline: none;
+    border-color: var(--vino, #7a1220);
+    box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12);
+}
+/* Un instante en verde al guardar, para que se note que quedó. */
+.tabla-mr .sel-transportador.guardado {
+    border-color: #2e7d32;
+    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.18);
+}
+.tabla-mr .nota-transportador {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.72rem;
+    color: var(--texto-suave, #6b7580);
+}
+
+/* De contado (2026-10-05): un Sí/No chico que se guarda solo al elegir; el Sí, en verde. Abajo,
+   en la pestaña de contado, de dónde salió el último cambio (archivo o a mano, quién y cuándo). */
+.tabla-mr .celda-contado { min-width: 92px; }
+.tabla-mr .sel-contado {
+    padding: 5px 8px;
+    border: 1px solid var(--borde, #e6e0d8);
+    border-radius: 8px;
+    background: var(--blanco, #fff);
+    font-size: 0.82rem;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.tabla-mr .sel-contado.es-si { background: #e6f4ea; border-color: #b6ddc0; color: #1b5e20; font-weight: 700; }
+.tabla-mr .sel-contado:focus { outline: none; border-color: var(--vino, #7a1220); box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12); }
+.tabla-mr .sel-contado.guardado { border-color: #2e7d32; box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.18); }
+.tabla-mr .nota-contado { margin-top: 3px; font-size: 0.7rem; color: var(--texto-suave, #6b7580); white-space: nowrap; }
+
+/* En la barra de selección (fondo negro) el botón principal va en vino: el negro de .btn-primario
+   se perdía contra el fondo y parecía deshabilitado. Solo en este módulo; Picking queda igual. */
+.barra-seleccion .btn-primario {
+    background: var(--vino, #7a1220);
+    border-color: var(--vino, #7a1220);
+    color: var(--blanco, #fff);
+}
+.barra-seleccion .btn-primario:hover { filter: brightness(1.12); }
 
 /* Los botones del encabezado: el de "Vaciar" va dentro de un form, que no tiene que romper la fila. */
 .modulo-acciones form { display: inline-flex; margin: 0; }
+
+/* RESPONSABLE DE EMPAQUE (2026-10-05): la factura sin nadie enlazado sale en rojo, y la alerta es un
+   botón con forma de pastilla que abre la lista. */
+.tabla-mr .sin-responsable {
+    color: #b3261e;
+    font-weight: 700;
+    white-space: nowrap;
+}
+button.pastilla-alerta {
+    cursor: pointer;
+    font: inherit;
+    background: #fdecea;
+    border: 1px solid #f1b0aa;
+    color: #b3261e;
+}
+button.pastilla-alerta:hover { filter: brightness(0.97); }
+button.pastilla-alerta.sin-alerta { background: #e6f4ea; border-color: #b6ddc0; color: #1b5e20; }
+.modal-caja.modal-ancha { max-width: 860px; width: 100%; }
+.lista-sin-responsable { max-height: 52vh; overflow: auto; margin-top: 12px; border: 1px solid var(--borde, #e6e0d8); border-radius: 10px; }
+.lista-sin-responsable table { margin: 0; }
+
+/* "Sin transportador" filtra (2026-10-05): se ve como botón y marcada cuando está puesta. */
+a.pastilla-filtro-transp { text-decoration: none; cursor: pointer; }
+a.pastilla-filtro-transp:hover { filter: brightness(0.96); }
+a.pastilla-filtro-transp.activa { box-shadow: 0 0 0 2px currentColor inset; font-weight: 600; }
+
+/* Anuladas (2026-10-05): el rojo de la pastilla y del "Sí" de la columna "Anulada". */
+.estado-rojo { background: #fdecea; color: #b3261e; border: 1px solid #f1b0aa; }
+.pastillas-filtro .pastilla.estado-rojo.activa { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179,38,30,0.22); }
+
+/* El estado y la fecha de entrega a mano (2026-10-07): el mismo desplegable chico del transportador,
+   con el color del grupo del semáforo. */
+.tabla-mr .celda-estado-mr { min-width: 170px; }
+.tabla-mr .sel-estado-mr,
+.tabla-mr .fecha-entrega-mr {
+    width: 100%;
+    max-width: 200px;
+    padding: 5px 8px;
+    border: 1px solid var(--borde, #e6e0d8);
+    border-radius: 8px;
+    background: var(--blanco, #fff);
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.tabla-mr .fecha-entrega-mr { max-width: 150px; font-weight: 500; }
+.tabla-mr .sel-estado-mr.estado-verde { background: #eaf6ec; color: #1f6a2b; border-color: #b9dfc0; }
+.tabla-mr .sel-estado-mr.estado-azul  { background: #e9f1fc; color: #1e4f99; border-color: #bcd2f1; }
+.tabla-mr .sel-estado-mr.estado-ambar { background: #fdf5e4; color: #8a5a00; border-color: #efd8a6; }
+.tabla-mr .sel-estado-mr.estado-gris  { background: #f3f2f0; color: #55504b; border-color: #dedad5; }
+.tabla-mr .sel-estado-mr:focus,
+.tabla-mr .fecha-entrega-mr:focus { outline: none; border-color: var(--vino, #7a1220); box-shadow: 0 0 0 3px rgba(142, 27, 27, 0.12); }
+.tabla-mr .sel-estado-mr.guardado,
+.tabla-mr .fecha-entrega-mr.guardado { border-color: #2e7d32; box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.18); }
+.tabla-mr .sel-estado-mr option { background: #fff; color: #1b1b1b; font-weight: 500; }

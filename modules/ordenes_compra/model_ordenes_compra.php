@@ -1,6 +1,6 @@
 <?php
 // modules/ordenes_compra/model_ordenes_compra.php
-// Las órdenes de compra del Éxito, una fila por orden: cajas, unidades, estibas, peso, volumen,
+// Las órdenes de compra del Éxito, Cencosud y Olímpica (desde el 2026-10-01), una fila por orden: cajas, unidades, estibas, peso, volumen,
 // valor y carro. Es la planilla con la que se arma el transporte hacia los CEDI.
 //
 // DE DÓNDE SALE CADA COLUMNA (verificado el 2026-09-14 contra la planilla que armaba el usuario a
@@ -423,7 +423,25 @@ function guardarVehiculos($pdo, array $filas) {
 // =================================================================================================
 
 /**
- * Las órdenes de compra del Éxito PENDIENTES de despacho, con sus totales y el detalle por producto.
+ * Las cadenas cuyas órdenes de compra se calculan acá: el Éxito y, desde el 2026-10-01, Cencosud y
+ * Olímpica, que entregan igual —a una plataforma por orden de compra— y traen orden, precio y EAN de
+ * tienda (pedido del usuario). Olímpica se busca con y sin tilde: la comparación de la base no
+ * iguala la "í" con la "i" en un LIKE, y el archivo la trae como "OLIMPICAS". Para sumar otra cadena, agregarla en esta condición y en el texto de la
+ * pantalla.
+ *
+ * OJO: NO reemplaza a condicionPedidoExito(), que sigue decidiendo a qué líneas se les aplican las
+ * EXCEPCIONES de empaque/cubicaje del Éxito. Cencosud usa el maestro base, como los demás clientes.
+ */
+function condicionOrdenesDeCompra($alias = 'l') {
+    return '(' . condicionPedidoExito($alias)
+         . " OR {$alias}.empresa_compradora LIKE '%cencosud%'"
+         . " OR {$alias}.empresa_compradora LIKE '%olimpica%'"
+         . " OR {$alias}.empresa_compradora LIKE '%olímpica%')";
+}
+
+/**
+ * Las órdenes de compra del Éxito, Cencosud y Olímpica PENDIENTES de despacho, con sus totales y el detalle
+ * por producto. Cada orden dice de qué cadena es ('cadena').
  *
  * "Del Éxito" es lo mismo que en Cajas por punto de venta: las líneas de un CEDI de cadena, que se
  * reconocen porque sus puntos de venta traen EAN. Los despachos directos a clientes propios no
@@ -444,10 +462,10 @@ function guardarVehiculos($pdo, array $filas) {
 function ordenesDeCompraExito($pdo, array $filtros = []) {
     $stmt = $pdo->query(
         "SELECT l.id_carga, l.cedi, l.orden_compra, l.plu, l.ean_item, l.sku_item, l.descripcion_item,
-                l.unidades, l.precio_bruto
+                l.unidades, l.precio_bruto, l.empresa_compradora, l.unidades_por_caja_hoja
          FROM consolidado_lineas l
          WHERE l.despachado = 0
-           AND " . condicionPedidoExito('l') . "
+           AND " . condicionOrdenesDeCompra('l') . "
          ORDER BY l.orden_compra, l.id_carga"
     );
 
@@ -455,11 +473,13 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
     $maestro   = mapaMaestro($pdo);
     $mapaExito  = mapaMaestroExito($pdo);
     $cubicajes = mapaCubicajes($pdo);
-    // Órdenes de compra es SOLO del Éxito (la consulta ya filtra con condicionPedidoExito). Así que
-    // acá el empaque Y el cubicaje se toman de la excepción de Éxito cuando existe: se pisa el
-    // cubicaje base con el propio del Éxito antes de calcular los m³.
+    // En las líneas del ÉXITO el empaque Y el cubicaje se toman de la excepción de Éxito cuando existe;
+    // las de Cencosud y Olímpica usan el maestro y los cubicajes base. El canal se decide por CEDI, igual que en
+    // las demás pantallas mixtas (ver cedisExito).
+    $cedisExito      = cedisExito($pdo);
+    $cubicajesExito = [];
     foreach ($mapaExito as $skuExc => $exc) {
-        if ($exc['cubicaje_m3'] !== null) { $cubicajes[$skuExc] = (float) $exc['cubicaje_m3']; }
+        if ($exc['cubicaje_m3'] !== null) { $cubicajesExito[$skuExc] = (float) $exc['cubicaje_m3']; }
     }
     $flota     = vehiculos($pdo);
 
@@ -467,7 +487,8 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
     $sinCubicaje = [];           // sku/plu => descripción, para el aviso general
 
     foreach ($stmt as $fila) {
-        $l = decorarConMaestro($fila, $maestro, $mapaExito, true);
+        $esExito = isset($cedisExito[(string) $fila['cedi']]);
+        $l = decorarConMaestro($fila, $maestro, $mapaExito, $esExito);
 
         $clave = $l['id_carga'] . '|' . $l['orden_compra'];
         if (!isset($ordenes[$clave])) {
@@ -475,6 +496,7 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
                 'id_carga' => (int) $l['id_carga'],
                 'orden'    => $l['orden_compra'],
                 'cedi'     => $l['cedi'],
+                'cadena'   => $esExito ? 'Éxito' : cadenaDeLaEmpresa($l['empresa_compradora']),
                 'cajas' => 0, 'unidades' => 0, 'estibas' => 0, 'peso_kg' => 0, 'm3' => 0.0, 'valor' => 0.0,
                 'sin_maestro' => 0, 'sin_cubicaje' => 0, 'sin_precio' => 0,
                 'lineas' => [],
@@ -489,7 +511,10 @@ function ordenesDeCompraExito($pdo, array $filtros = []) {
         // Las cajas que salen físicamente: las completas más una por las unidades sueltas.
         $cajas = $l['sin_maestro'] ? null : (int) $l['cajas'] + ((int) $l['saldos'] > 0 ? 1 : 0);
 
-        $cubicaje = ($sku !== null && isset($cubicajes[$sku])) ? $cubicajes[$sku] : null;
+        $cubicaje = null;
+        if ($sku !== null) {
+            $cubicaje = ($esExito && isset($cubicajesExito[$sku])) ? $cubicajesExito[$sku] : ($cubicajes[$sku] ?? null);
+        }
         $m3       = ($cajas !== null && $cubicaje !== null) ? $cajas * $cubicaje : null;
         $precio   = $l['precio_bruto'] !== null ? (float) $l['precio_bruto'] : null;
         $valor    = $precio !== null ? $unidades * $precio : null;
@@ -618,13 +643,13 @@ function totalesDeOrdenes(array $ordenes) {
     return $t;
 }
 
-/** Los números de orden pendientes del Éxito, para el buscador. */
+/** Los números de orden pendientes del Éxito, Cencosud y Olímpica, para el buscador. */
 function ordenesDisponibles($pdo) {
     return $pdo->query(
         "SELECT DISTINCT l.orden_compra
          FROM consolidado_lineas l
          WHERE l.despachado = 0
-           AND " . condicionPedidoExito('l') . "
+           AND " . condicionOrdenesDeCompra('l') . "
          ORDER BY l.orden_compra"
     )->fetchAll(PDO::FETCH_COLUMN);
 }

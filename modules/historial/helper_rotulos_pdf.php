@@ -45,6 +45,7 @@ function cssRotulosPdf() {
     $pagAncho = ROTULO_ANCHO_MM;
     $pagAlto  = ROTULO_ALTO_MM;
     $margen   = ($pagAncho - ROTULO_DIBUJO_ANCHO_MM) / 2;
+    $margenV  = ($pagAlto - ROTULO_DIBUJO_ALTO_MM) / 2;
 
     // Ancho y alto en "content-box" a mano, y NO con box-sizing:border-box, aunque border-box es
     // lo que se usa en pantalla (ver 04-rotulo.css) y ahí SÍ funciona perfecto. dompdf no lo
@@ -52,7 +53,10 @@ function cssRotulosPdf() {
     // su mismo alto igual se pasaba a una segunda página —como si el padding y el borde se sumaran
     // ENCIMA en vez de repartirse adentro—. La única combinación que da exactamente 1 página es
     // calcular el contenido a mano y dejar que padding y borde se sumen por fuera.
-    $cont = ROTULO_DIBUJO_ANCHO_MM - 2 * 4 - 2 * 0.8;   // menos el padding y el borde de cada lado
+    // El padding es de 4mm a los costados y 3mm arriba y abajo (el mismo aire que la etiquetadora,
+    // ver TSPL_MARGEN_V): desde el rollo de 100x80 (2026-09-29) el alto es lo que no sobra.
+    $contAncho = ROTULO_DIBUJO_ANCHO_MM - 2 * 4 - 2 * 0.8;   // menos el padding y el borde de cada lado
+    $contAlto  = ROTULO_DIBUJO_ALTO_MM  - 2 * 3 - 2 * 0.8;
 
     // Todos los valores van en una sola línea (nowrap). Es deliberado: si el texto se parte, el
     // rótulo crece de alto, se pasa de la página y dompdf lo manda a una SEGUNDA hoja —que en una
@@ -60,23 +64,23 @@ function cssRotulosPdf() {
     // elige según el largo del texto (ver cuerpoValorPdf), igual que hace la etiquetadora con sus
     // fuentes de ancho fijo: primero se achica la letra, y recién si no alcanza se recorta.
     return <<<CSS
-@page { size: {$pagAncho}mm {$pagAlto}mm; margin: {$margen}mm; }
+@page { size: {$pagAncho}mm {$pagAlto}mm; margin: {$margenV}mm {$margen}mm; }
 body  { margin: 0; font-family: Helvetica, Arial, sans-serif; color: #000; }
 
 .rotulo {
-    width: {$cont}mm;
-    height: {$cont}mm;
-    padding: 4mm;
+    width: {$contAncho}mm;
+    height: {$contAlto}mm;
+    padding: 3mm 4mm;
     border: 0.8mm solid #000;
     overflow: hidden;
 }
 
 .rotulo-marca {
     border-bottom: 0.6mm solid #000;
-    padding-bottom: 1.5mm;
-    margin-bottom: 1.5mm;
+    padding-bottom: 1mm;
+    margin-bottom: 1mm;
 }
-.rotulo-marca img { width: 12mm; height: 12mm; vertical-align: middle; }
+.rotulo-marca img { width: 8mm; height: 8mm; vertical-align: middle; }
 .rotulo-marca span {
     display: inline-block; vertical-align: middle; margin-left: 3mm;
     font-size: 4mm; font-weight: bold; letter-spacing: 0.5mm; text-transform: uppercase;
@@ -86,40 +90,40 @@ body  { margin: 0; font-family: Helvetica, Arial, sans-serif; color: #000; }
    imprimen con la letra más grande— no entraba en la página y el pie se iba a una segunda hoja, que
    en la etiquetadora es una etiqueta en blanco. Pasaba en el rótulo común y en el de Cajas por punto
    de venta. El límite medido está entre 1,1 (entra) y 1,2 (no entra); 0,8 deja 1,5mm de holgura. */
-.rotulo-campo { margin-bottom: 0.8mm; }
+.rotulo-campo { margin-bottom: 0.5mm; }
 .rotulo-etiqueta {
-    display: block; font-size: 2.4mm; line-height: 1.1; letter-spacing: 0.3mm;
+    display: block; font-size: 2.2mm; line-height: 1.1; letter-spacing: 0.3mm;
     text-transform: uppercase; color: #444;
 }
 
 /* La orden de compra, dentro de la etiqueta de "Cajas total" pero más grande y en negro: es un
    número que se compara contra la planilla, y al gris de 2,4mm no se leía. Las medidas son las
    mismas de 04-rotulo.css, y el equivalente en la etiquetadora es pasar ese pedazo a la fuente 3. */
-.rotulo-oc { font-size: 3mm; font-weight: bold; color: #000; letter-spacing: 0.2mm; }
+.rotulo-oc { font-size: 2.8mm; font-weight: bold; color: #000; letter-spacing: 0.2mm; }
 
 /* La etiqueta del campo DESTACADO: más grande, en negrita y en negro. Junto con el valor enorme
    es lo que hace que el número del punto de venta se encuentre de un vistazo entre los cinco
    renglones — es el dato que se busca cuando las cajas ya están estibadas y solo se ve el canto
    de la etiqueta. */
 .rotulo-etiqueta-fuerte {
-    font-size: 3.2mm;
+    font-size: 3mm;
     font-weight: bold;
     color: #000;
 }
 
 .rotulo-valor {
-    display: block; font-weight: bold; line-height: 1.05;
+    display: block; font-weight: bold; line-height: 1;
     white-space: nowrap; overflow: hidden;
 }
 
 /* FORMATO ÉXITO (Cajas por punto de venta). La etiqueta del número, del tamaño del nombre de la
    tienda; y el bloque "CEDI: 149" a la derecha. Las medidas son las mismas de 04-rotulo.css. */
-.rotulo-con-cedi .rotulo-etiqueta-fuerte { font-size: 4.5mm; letter-spacing: 0.1mm; }
+.rotulo-con-cedi .rotulo-etiqueta-fuerte { font-size: 4mm; letter-spacing: 0.1mm; }
 table.rotulo-campo-cedi { width: 100%; border-collapse: collapse; }
 table.rotulo-campo-cedi td { border: none; padding: 0; vertical-align: middle; }
 td.rotulo-cedi {
     width: 1%; text-align: right; white-space: nowrap; padding-left: 3mm;
-    font-size: 7.5mm; font-weight: bold; line-height: 1;
+    font-size: 6.5mm; font-weight: bold; line-height: 1;
 }
 
 /* El pie: el contador a la izquierda y el QR a la derecha, en el mismo renglón. Se arma con una
@@ -127,18 +131,18 @@ td.rotulo-cedi {
 .rotulo-pie {
     width: 100%;
     border-top: 0.6mm solid #000;
-    padding-top: 1.5mm;
-    margin-top: 1mm;
+    padding-top: 1mm;
+    margin-top: 0.5mm;
 }
 .rotulo-pie td { border: none; padding: 0; vertical-align: middle; }
 
 .rotulo-conteo {
-    text-align: center; font-size: 8mm; line-height: 1.05;
+    text-align: center; font-size: 7mm; line-height: 1.05;
     font-weight: bold; letter-spacing: 0.4mm;
 }
 
 /* El cuadrado del QR no se deforma nunca: un QR estirado no lo lee ningún celular. */
-.rotulo-qr { width: 13mm; height: 13mm; display: block; }
+.rotulo-qr { width: 12mm; height: 12mm; display: block; }
 CSS;
 }
 /**
@@ -154,10 +158,11 @@ CSS;
 function cuerpoValorPdf($texto, $escala = 1.0) {
     $largo = mb_strlen(trim((string) $texto));
 
-    if ($largo <= 22) { return round(5.5 * $escala, 2); }
-    if ($largo <= 30) { return round(4.5 * $escala, 2); }
-    if ($largo <= 40) { return round(3.6 * $escala, 2); }
-    return round(3.0 * $escala, 2);
+    // Un 10% más chicos desde el rollo de 100x80 (2026-09-29): eran 5,5 / 4,5 / 3,6 / 3,0.
+    if ($largo <= 22) { return round(5.0 * $escala, 2); }
+    if ($largo <= 30) { return round(4.1 * $escala, 2); }
+    if ($largo <= 40) { return round(3.3 * $escala, 2); }
+    return round(2.7 * $escala, 2);
 }
 /**
  * El QR de un rótulo como data URI, o cadena vacía si no se puede armar.
@@ -229,10 +234,10 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
         ? 'Cajas total  ·  <span class="rotulo-oc">O/C ' . $esc($oc) . '</span>'
         : 'Cajas total';
 
-    // El número del punto de venta va al 2,3 cuando es corto. Si la tienda viene identificada por
-    // su EAN de 13 dígitos, a ese tamaño medía unos 91mm en un renglón de 85 y salía cortado; ahí va
-    // a dos tercios, la misma proporción que usa la etiquetadora (el triple o el doble).
-    $escalaNumero = mb_strlen(trim((string) $numeroPv)) <= 6 ? 2.3 : 1.53;
+    // El número del punto de venta va a 1,6 veces el cuerpo normal (8mm), el equivalente del doble
+    // de la etiquetadora. Hasta el rollo de 100x80 (2026-09-29) iba al 2,3 cuando era corto —el
+    // triple allá—, pero a ese tamaño los cinco campos no entraban en 75mm de alto.
+    $escalaNumero = 1.6;
 
     $campos = [
         ['Punto de venta',    $esc($pv),                        cuerpoValorPdf($pv),        false],

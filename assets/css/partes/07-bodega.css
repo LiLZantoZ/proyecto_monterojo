@@ -1,0 +1,190 @@
+/* =========================================
+   07 — LOS MÓDULOS DE BODEGA (2026-10-06)
+   =========================================
+   Administrar Productos, Formato Conciliador, Notificaciones, Trazabilidad y Rendimiento, traídos
+   del sistema de bodega: el semáforo de vencimiento, las tablas, el rótulo del conciliador, la
+   campana flotante (de TODAS las pantallas: por eso esta hoja es global) y los gráficos.
+   Los colores del semáforo y de los avisos son funcionales (verde/rojo de estado, como --exito y
+   --error del tema): tienen que leerse como "bien / mal" de un vistazo. */
+
+:root {
+    --semaforo-rojo:     #c62828;
+    --semaforo-naranja:  #d9620b;
+    --semaforo-amarillo: #b58a00;
+    --semaforo-verde:    #2e7d32;
+}
+
+.chip-estado.estado-rojo { background: #fdecea; color: #b3261e; border: 1px solid #f1b0aa; }
+
+/* --- Pastillas que cuentan y filtran --- */
+.pastillas-bodega { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.pastilla-bodega {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 20px; border: 2px solid var(--borde);
+    background: var(--blanco); color: var(--texto); font-size: 13px; font-weight: 600;
+    text-decoration: none; white-space: nowrap;
+}
+a.pastilla-bodega:hover { border-color: var(--texto-suave); }
+.pastilla-bodega.activa { border-color: var(--negro); box-shadow: 0 0 0 2px rgba(17, 17, 17, .12); }
+.pastilla-bodega strong { font-weight: 800; }
+.pastilla-bodega.pastilla-dato { background: var(--crema); }
+.punto-semaforo { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; }
+.semaforo-rojo     { color: var(--semaforo-rojo); }
+.semaforo-naranja  { color: var(--semaforo-naranja); }
+.semaforo-amarillo { color: var(--semaforo-amarillo); }
+.semaforo-verde    { color: var(--semaforo-verde); }
+.pastilla-bodega.semaforo-rojo.activa     { border-color: var(--semaforo-rojo); }
+.pastilla-bodega.semaforo-naranja.activa  { border-color: var(--semaforo-naranja); }
+.pastilla-bodega.semaforo-amarillo.activa { border-color: var(--semaforo-amarillo); }
+.pastilla-bodega.semaforo-verde.activa    { border-color: var(--semaforo-verde); }
+
+.chip-semaforo {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 2px 9px; border-radius: 20px; border: 1px solid currentColor;
+    font-weight: 700; font-size: 13px; white-space: nowrap; background: var(--blanco);
+}
+
+/* --- Tablas --- */
+.tabla-bodega td { vertical-align: middle; }
+.tabla-bodega .sub-dato { display: block; }
+.celda-acciones { white-space: nowrap; }
+.celda-acciones .btn + .form-en-linea, .celda-acciones .btn + .btn { margin-left: 4px; }
+.form-en-linea { display: inline; margin: 0; }
+.enlace-posicion { color: var(--vino); font-weight: 700; text-decoration: none; }
+.enlace-posicion:hover { text-decoration: underline; }
+.texto-suave { color: var(--texto-suave); }
+.ayuda.ayuda-error { color: var(--error); }
+.dato-calculado { padding: 10px 12px; border-radius: 10px; background: var(--crema); font-weight: 700; color: var(--texto); }
+
+/* --- Formularios de los modales --- */
+.campos-dos, .campos-tres { display: grid; gap: 4px 14px; }
+.campos-dos { grid-template-columns: 1fr 1fr; }
+.campos-tres { grid-template-columns: repeat(3, 1fr); }
+.campos-dos .campo-ancho, .campos-tres .campo-ancho { grid-column: 1 / -1; }
+.campos-dos input[type="date"], .campos-tres input[type="date"],
+.campos-dos input[type="number"], .campos-tres input[type="number"] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px;
+    background: var(--blanco); color: var(--texto); font: inherit;
+}
+.campo [hidden] { display: none !important; }
+@media (max-width: 640px) {
+    .campos-dos, .campos-tres { grid-template-columns: 1fr; }
+}
+
+/* --- Kardex --- */
+.kardex-producto { margin: 0 0 10px; color: var(--texto-suave); font-weight: 600; }
+.kardex-filtros { margin-bottom: 10px; }
+.kardex-tabla { max-height: 50vh; overflow: auto; }
+
+/* --- Secciones (Notificaciones, Rendimiento) --- */
+.seccion-bodega {
+    margin-top: 16px; padding: 16px; border: 1px solid var(--borde); border-radius: var(--radio);
+    background: var(--blanco);
+}
+.seccion-bodega h3 { margin: 0 0 12px; font-size: 16px; color: var(--texto); }
+.seccion-bodega h3 i { color: var(--vino); margin-right: 4px; }
+.seccion-bodega h3 small { color: var(--texto-suave); font-weight: 500; }
+.seccion-bodega-titulo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.seccion-bodega-titulo h3 { margin: 0 auto 0 0; }
+
+.lista-avisos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lista-avisos li { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--vino-claro); }
+.lista-avisos li > i { margin-top: 3px; color: var(--vino); }
+.lista-avisos li > div { flex: 1; }
+.lista-avisos li small { color: var(--texto-suave); }
+.lista-avisos li.aviso-leido { background: var(--crema); opacity: .75; }
+.lista-avisos li.aviso-leido > i { color: var(--texto-suave); }
+
+/* --- Trazabilidad --- */
+.tabla-trazabilidad .celda-fecha { white-space: nowrap; }
+.tabla-trazabilidad .celda-detalle-traza { min-width: 280px; max-width: 560px; white-space: normal; word-break: break-word; }
+.tabla-trazabilidad td:nth-child(5) { min-width: 190px; }
+.tabla-trazabilidad td:nth-child(2), .tabla-trazabilidad td:nth-child(3) { white-space: nowrap; }
+.tabla-trazabilidad tr.fila-error td { background: #fff6f5; }
+.icono-error { color: var(--error); margin-right: 4px; }
+
+/* --- Rendimiento --- */
+.tarjetas-rendimiento { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 4px; }
+.tarjeta-rend { padding: 14px 16px; border: 1px solid var(--borde); border-radius: var(--radio); background: var(--blanco); display: flex; flex-direction: column; gap: 2px; }
+.tarjeta-rend span { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-suave); }
+.tarjeta-rend strong { font-size: 28px; color: var(--texto); line-height: 1.15; }
+.tarjeta-rend small { color: var(--texto-suave); font-size: 12px; }
+.tarjeta-rend.tarjeta-alerta strong { color: var(--error); }
+.texto-sube { color: var(--exito); font-weight: 700; }
+.texto-baja { color: var(--error); font-weight: 700; }
+.rend-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.rend-dos > .seccion-bodega { min-width: 0; }
+@media (max-width: 900px) { .rend-dos { grid-template-columns: 1fr; } }
+
+.grafico-columnas { display: flex; align-items: flex-end; gap: 2px; height: 180px; padding-top: 18px; overflow-x: auto; }
+.grafico-columnas .columna { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 8px; }
+.columna-barra { width: 100%; max-width: 34px; border-radius: 4px 4px 0 0; background: var(--negro); min-height: 0; }
+.columna:hover .columna-barra { background: var(--vino); }
+.columna-valor { font-size: 10px; color: var(--texto-suave); margin-bottom: 2px; white-space: nowrap; }
+.columna-etiqueta { font-size: 10px; line-height: 13px; min-height: 13px; color: var(--texto-suave); margin-top: 4px; white-space: nowrap; }
+.grafico-columnas .columna { position: relative; }
+/* Por día: raya divisora y nombre del mes encima del día 1 (y del primer día de la ventana). */
+.grafico-dias { padding-top: 40px; }
+.columna-mes-nombre { position: absolute; top: -36px; left: 3px; font-size: 11px; font-weight: 700; color: var(--vino); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.columna-mes::before { content: ''; position: absolute; top: -36px; bottom: 0; left: -2px; border-left: 1px dashed var(--borde); }
+.columna-mes:first-child::before { display: none; }
+.columna-mes:first-child .columna-mes-nombre { left: 0; }
+/* Con 90 días las barras miden menos que el número: el número va solo en el título (al pasar el mouse). */
+.grafico-denso .columna-valor { display: none; }
+/* Por hora: todas las horas (00:00 … 23:00); el gráfico se lleva más ancho que el de los días de la semana. */
+.rend-horas { grid-template-columns: 2fr 1fr; }
+.grafico-horas .columna { min-width: 30px; }
+.rend-horas > .seccion-bodega:first-child { container-type: inline-size; }
+@container (max-width: 780px) {
+    .grafico-horas .columna { min-width: 24px; }
+    .grafico-horas .columna-etiqueta { font-size: 9px; letter-spacing: -.02em; }
+}
+@media (max-width: 900px) { .rend-horas { grid-template-columns: 1fr; } }
+
+.grafico-barras { display: grid; gap: 7px; }
+.barra-fila { display: grid; grid-template-columns: minmax(0, 40%) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.barra-etiqueta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto); }
+.barra-etiqueta small { color: var(--texto-suave); }
+.barra-pista { height: 12px; border-radius: 6px; background: var(--crema); overflow: hidden; }
+.barra-relleno { display: block; height: 100%; border-radius: 6px; background: var(--negro); }
+.barra-fila:hover .barra-relleno { background: var(--vino); }
+.barra-valor { font-weight: 700; min-width: 34px; text-align: right; }
+
+/* --- La campana flotante (todas las pantallas) --- */
+.campana-flotante { position: fixed; top: 16px; right: 18px; z-index: 1500; }
+.campana-btn {
+    position: relative; width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--negro); color: var(--blanco); font-size: 18px; box-shadow: var(--sombra-media);
+}
+.campana-btn:hover, .campana-btn[aria-expanded="true"] { background: var(--vino); }
+.campana-numero {
+    position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px;
+    border-radius: 10px; background: var(--error); color: var(--blanco); font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; border: 2px solid var(--blanco);
+}
+.campana-numero[hidden], .campana-panel[hidden] { display: none; }
+.campana-panel {
+    position: absolute; top: 54px; right: 0; width: min(380px, calc(100vw - 32px)); max-height: 70vh;
+    display: flex; flex-direction: column; border-radius: var(--radio); background: var(--blanco);
+    box-shadow: var(--sombra-fuerte); overflow: hidden;
+}
+.campana-panel-cabecera { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--negro); color: var(--blanco); }
+.campana-panel-cabecera a { color: var(--blanco); font-size: 13px; }
+.campana-panel-cuerpo { overflow-y: auto; padding: 8px; display: grid; gap: 6px; }
+.campana-item { display: flex; gap: 10px; align-items: flex-start; padding: 9px 10px; border-radius: 10px; font-size: 13px; background: var(--crema); }
+.campana-item > i { margin-top: 2px; }
+.campana-item > div { flex: 1; min-width: 0; }
+.campana-item small { color: var(--texto-suave); }
+.campana-item a { color: var(--vino); font-weight: 700; }
+.campana-personal { background: var(--vino-claro); }
+.campana-personal > i { color: var(--vino); }
+.campana-vencido > i     { color: var(--semaforo-rojo); }
+.campana-por_vencer > i  { color: var(--semaforo-naranja); }
+.campana-proximo > i     { color: var(--semaforo-amarillo); }
+.campana-leida { border: none; background: var(--blanco); border-radius: 50%; width: 26px; height: 26px; cursor: pointer; color: var(--exito); flex: none; }
+.campana-vacia { margin: 8px; color: var(--texto-suave); text-align: center; }
+@media (max-width: 900px) { .campana-flotante { top: 12px; right: 12px; } }
+/* Que los botones de la cabecera de cada pantalla no queden debajo de la campana. */
+body:has(.campana-flotante) .modulo-header { padding-right: 58px; }
+@media print { .campana-flotante { display: none !important; } }
+

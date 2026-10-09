@@ -48,6 +48,16 @@
 }
 .pestana-seg.activa .pestana-conteo { background: var(--vino-claro, #f6ebeb); color: var(--vino, #7a1220); }
 
+/* ELIMINAR TODOS LOS DATOS: las tres opciones del modal, como tarjetas que se eligen. */
+.opciones-borrar { display: grid; gap: 8px; margin-bottom: 16px; }
+.opciones-borrar label {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--borde, #e6e0d8); border-radius: 10px;
+    cursor: pointer; font-size: 0.9rem;
+}
+.opciones-borrar label:has(input:checked) { border-color: #c0392b; background: #fdf1ef; }
+.opciones-borrar strong { margin-left: auto; }
+
 /* El semáforo. Los mismos cuatro grupos que grupoDeEstado() en el modelo. */
 .chip-estado {
     display: inline-block;

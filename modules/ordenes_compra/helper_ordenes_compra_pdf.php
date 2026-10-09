@@ -34,7 +34,7 @@ function descargarOrdenesCompraPdf(array $datos, array $filtros) {
     if ($logo !== '') {
         $html .= '<td width="60"><img src="' . $logo . '" class="logo"></td>';
     }
-    $html .= '<td><div class="titulo">Órdenes de compra (Éxito)</div>'
+    $html .= '<td><div class="titulo">Órdenes de compra (Éxito, Cencosud y Olímpica)</div>'
            . '<div class="cedi">' . ($filtros['oc'] !== ''
                 ? 'Órdenes que contienen "' . $esc($filtros['oc']) . '"'
                 : 'Pendientes de despacho') . '</div></td>'
@@ -73,7 +73,7 @@ function descargarOrdenesCompraPdf(array $datos, array $filtros) {
 
         $html .= '<tr' . $clase . '>'
                . '<td><strong>' . $esc($o['orden']) . '</strong>' . $marca . '</td>'
-               . '<td>' . $esc($o['cedi']) . '</td>'
+               . '<td>' . $esc($o['cedi']) . ($o['cadena'] !== '' ? ' <span style="color:#666">· ' . $esc($o['cadena']) . '</span>' : '') . '</td>'
                . '<td class="num">' . $num($o['cajas']) . '</td>'
                . '<td class="num">' . $num($o['unidades']) . '</td>'
                . '<td class="num">' . $num($o['estibas']) . '</td>'
@@ -134,7 +134,7 @@ function descargarOrdenesCompraPdf(array $datos, array $filtros) {
     $dompdf->setPaper('letter', 'landscape');
     $dompdf->render();
 
-    $nombre = 'Ordenes_de_compra_Exito_'
+    $nombre = 'Ordenes_de_compra_'
             . ($filtros['oc'] !== '' ? trim(preg_replace('/[^A-Za-z0-9]+/', '_', $filtros['oc']), '_') . '_' : '')
             . date('Ymd') . '.pdf';
 

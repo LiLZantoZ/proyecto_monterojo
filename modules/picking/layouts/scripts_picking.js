@@ -188,7 +188,7 @@
             .then(function (r) { return r.json(); })
             .then(function (datos) {
                 if (!datos.exito) {
-                    alert(datos.error || 'No se pudo guardar la asignación.');
+                    Dialogo.avisar(datos.error || 'No se pudo guardar la asignación.');
                     return;
                 }
 
@@ -216,7 +216,7 @@
                 modalAsignar.classList.remove('active');
             })
             .catch(function () {
-                alert('No se pudo conectar con el servidor para guardar la asignación.');
+                Dialogo.avisar('No se pudo conectar con el servidor para guardar la asignación.');
             })
             .finally(function () {
                 botonGuardar.disabled = false;
@@ -641,7 +641,7 @@
         var totalRotulos = rotulosActuales.length;
 
         if (!totalRotulos) {
-            alert('Ninguno de los pedidos seleccionados tiene cajas que rotular.');
+            Dialogo.avisar('Ninguno de los pedidos seleccionados tiene cajas que rotular.', { tipo: 'info', titulo: 'Nada que rotular' });
             return;
         }
 

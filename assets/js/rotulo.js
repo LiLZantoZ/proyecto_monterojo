@@ -37,10 +37,10 @@
     // Si se cambia algún número acá, hay que cambiarlo también en el PHP.
     function cuerpoValor(texto, escala) {
         var largo = String(texto == null ? '' : texto).trim().length;
-        var base  = largo <= 22 ? 5.5
-                  : largo <= 30 ? 4.5
-                  : largo <= 40 ? 3.6
-                  : 3.0;
+        var base  = largo <= 22 ? 5.0
+                  : largo <= 30 ? 4.1
+                  : largo <= 40 ? 3.3
+                  : 2.7;
         return (base * (escala || 1)).toFixed(2);
     }
 
@@ -53,7 +53,7 @@
      */
     function cediVaAlLadoDelNumero(numeroPv, numeroCedi) {
         var largoNumero = String(numeroPv).length;
-        var anchoNumero = largoNumero * 24 * (largoNumero <= 6 ? 3 : 2);
+        var anchoNumero = largoNumero * 24 * 2;
         var anchoCedi   = ('CEDI: ' + numeroCedi).length * 16 * 2;
         return anchoNumero + 4 * 8 + anchoCedi <= 680;
     }
@@ -73,10 +73,9 @@
 
         var numeroPv = String(r.numero_pv == null ? '' : r.numero_pv).trim();
 
-        // El número va al 2,3 cuando es corto. Una tienda identificada por su EAN de 13 dígitos, a
-        // ese tamaño, medía unos 91mm en un renglón de 85 y salía cortada; ahí va a dos tercios, la
-        // misma proporción que la etiquetadora (el triple o el doble).
-        var escalaNumero = numeroPv.length <= 6 ? 2.3 : 1.53;
+        // El número va a 1,6 veces el cuerpo normal, el equivalente del doble de la etiquetadora
+        // (hasta el rollo de 100x80, 2026-09-29, iba al 2,3 cuando era corto). Ver helper_rotulos_pdf.php.
+        var escalaNumero = 1.6;
 
         // El cuarto elemento marca el campo DESTACADO: etiqueta en negrita y valor grande. Es solo
         // para el número del punto de venta, el dato que se busca de lejos cuando las cajas ya

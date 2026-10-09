@@ -1157,3 +1157,70 @@ tr.fila-total-general td {
     border: 3px solid var(--blanco);
     box-shadow: 0 0 0 3px var(--vino);
 }
+
+/* ELIMINAR TODOS LOS CONSOLIDADOS (2026-09-28)
+   El botón rojo de las acciones que no se deshacen. Antes vivía solo en seguimiento.css; se sube
+   acá para que cualquier pantalla lo tenga. */
+.btn-peligro {
+    background: #c0392b;
+    color: #fff;
+    border-color: #c0392b;
+}
+.btn-peligro:hover { background: #a93226; border-color: #a93226; color: #fff; }
+
+/* La lista de lo que se va a borrar, en el modal de confirmación. */
+.lista-eliminar-todo {
+    margin: 6px 0 12px 20px;
+    font-size: 0.92rem;
+    line-height: 1.55;
+}
+.lista-eliminar-todo li { margin-bottom: 4px; }
+
+/* =========================================
+   LOS MENSAJES DEL SISTEMA (2026-10-06)
+   =========================================
+   Avisos, confirmaciones y preguntas de assets/js/dialogos.js: reemplazan los alert(), confirm() y
+   prompt() del navegador. Usan la misma caja de los modales (.modal-caja, cabecera negra con la
+   línea vino), más angosta, y van por encima de cualquier modal abierto. */
+.dialogo-fondo {
+    position: fixed;
+    inset: 0;
+    z-index: 2600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.55);
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+.dialogo-fondo.active { opacity: 1; }
+.dialogo-caja { max-width: 440px; transform: translateY(-10px) scale(0.98); transition: transform 0.16s ease; }
+.dialogo-fondo.active .dialogo-caja { transform: none; }
+.dialogo-caja .modal-cabecera h2 i { color: var(--blanco); }
+.dialogo-error .modal-cabecera h2 i,
+.dialogo-confirmar .modal-cabecera h2 .fa-triangle-exclamation { color: #ff8a80; }
+.dialogo-exito .modal-cabecera h2 i { color: #8fd694; }
+.dialogo-info .modal-cabecera h2 i,
+.dialogo-confirmar .modal-cabecera h2 .fa-circle-question,
+.dialogo-pedir .modal-cabecera h2 i { color: #f0b429; }
+.dialogo-texto {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.55;
+    color: var(--texto);
+    white-space: pre-line;   /* los saltos de línea del mensaje se respetan */
+}
+.dialogo-campo {
+    width: 100%;
+    margin-top: 12px;
+    padding: 11px 14px;
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    background: var(--blanco);
+    color: var(--texto);
+    font: inherit;
+    font-size: 1rem;
+}
+.dialogo-campo:focus { outline: none; border-color: var(--vino); box-shadow: 0 0 0 3px var(--vino-claro); }
+.dialogo-campo.dialogo-campo-vacio { border-color: var(--error); box-shadow: 0 0 0 3px #fdecea; }

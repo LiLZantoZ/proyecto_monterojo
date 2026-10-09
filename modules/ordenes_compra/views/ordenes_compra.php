@@ -1,6 +1,6 @@
 <?php
 // modules/ordenes_compra/views/ordenes_compra.php
-// Las órdenes de compra del Éxito: la planilla para armar el transporte a los CEDI.
+// Las órdenes de compra del Éxito, Cencosud y Olímpica: la planilla para armar el transporte a los CEDI.
 //
 // Las columnas son las de la planilla que el usuario armaba a mano ("ordenes compra.xlsx"): orden,
 // cajas, unidades, estibas, peso, mts3, valor y carro, más el CEDI de destino. Cada fila se despliega
@@ -63,7 +63,7 @@ $etiquetaCarro = function (array $o) use ($esc) {
         <div class="modulo">
 
             <header class="modulo-header">
-                <h2>Órdenes de compra (Éxito)</h2>
+                <h2>Órdenes de compra (Éxito, Cencosud y Olímpica)</h2>
                 <div class="modulo-acciones">
                     <?php if (!empty($ordenes)): ?>
                         <a class="btn"
@@ -77,7 +77,7 @@ $etiquetaCarro = function (array $o) use ($esc) {
             <div class="aviso aviso-info">
                 <i class="fa-solid fa-circle-info"></i>
                 <div>
-                    Acá salen <strong>solo las órdenes del Éxito pendientes de despacho</strong>, las
+                    Acá salen <strong>solo las órdenes del Éxito, Cencosud y Olímpica pendientes de despacho</strong>, las
                     que van a un CEDI. Las cajas cuentan también la caja incompleta de cada producto,
                     igual que los rótulos. El <strong>peso</strong> es cajas × <?php echo ORDENES_KG_POR_CAJA; ?> kg
                     y el <strong>valor</strong>, unidades × precio bruto. El <strong>carro</strong> es el
@@ -116,7 +116,7 @@ $etiquetaCarro = function (array $o) use ($esc) {
                     <div>
                         <strong><?php echo $num($t['sin_precio']); ?> línea(s)</strong> no tienen precio y
                         <strong>no suman valor</strong>. Pasa con los consolidados importados antes de que el sistema
-                        guardara el precio: se completan volviendo a importar el archivo del Éxito.
+                        guardara el precio: se completan volviendo a importar el archivo de la cadena.
                     </div>
                 </div>
             <?php endif; ?>
@@ -153,7 +153,7 @@ $etiquetaCarro = function (array $o) use ($esc) {
                     <p class="tabla-vacia">
                         <?php echo $filtros['oc'] !== ''
                             ? 'Ninguna orden pendiente coincide con "' . $esc($filtros['oc']) . '".'
-                            : 'No hay órdenes del Éxito pendientes de despacho.'; ?>
+                            : 'No hay órdenes del Éxito, Cencosud ni Olímpica pendientes de despacho.'; ?>
                     </p>
                 </div>
             <?php else: ?>
@@ -273,7 +273,12 @@ $etiquetaCarro = function (array $o) use ($esc) {
                                         <?php endif; ?>
                                         <div class="dato-secundario">carga <?php echo (int) $o['id_carga']; ?></div>
                                     </td>
-                                    <td><?php echo $esc($o['cedi']); ?></td>
+                                    <td>
+                                        <?php echo $esc($o['cedi']); ?>
+                                        <?php if ($o['cadena'] !== ''): ?>
+                                            <span class="cadena-etiqueta"><?php echo $esc($o['cadena']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="num"><strong><?php echo $num($o['cajas']); ?></strong></td>
                                     <td class="num"><?php echo $num($o['unidades']); ?></td>
                                     <td class="num"><?php echo $num($o['estibas']); ?></td>

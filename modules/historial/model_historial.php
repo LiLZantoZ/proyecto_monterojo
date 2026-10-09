@@ -22,7 +22,7 @@ require_once __DIR__ . '/helper_rotulos_lista.php';                 // numeroYNo
  */
 function filasHistorial($pdo, array $filtros = []) {
     $sql = "SELECT l.id_carga, l.cedi, l.orden_compra, l.punto_venta, l.plu, l.ean_item,
-                   l.sku_item, l.descripcion_item,
+                   l.sku_item, l.descripcion_item, l.unidades_por_caja_hoja,
                    l.ean_punto_venta, l.direccion_punto_venta, l.unidades, l.pedido_sap, l.fecha_despacho,
                    l.id_personal, p.nombre AS personal_nombre,
                    l.despachado_por, u.nombre_usuario AS usuario_nombre

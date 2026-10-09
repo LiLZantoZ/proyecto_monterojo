@@ -189,14 +189,14 @@ function grupoDeEstado($estado) {
     if ($t === '') {
         return 'pendiente';
     }
-    // Los problemas van PRIMERO: "ENTREGA PARCIAL" y "DEVOLUCIÓN TOTAL" contienen la palabra
-    // "entrega/entregada" pero no son una entrega cumplida, así que si se mirara "entreg" primero
-    // se pintarían de verde. Un pedido que se devolvió o entregó a medias es justo lo que hay que
-    // ver, no algo cerrado.
-    if (preg_match('/parcial|devol|devuel|novedad|fallid|anul|rechaz|no despach|no entreg/', $t)) { return 'pendiente'; }
+    // Los problemas van PRIMERO: "DEVOLUCIÓN TOTAL" contiene "entrega/entregada" pero no es una
+    // entrega cumplida, así que si se mirara "entreg" primero se pintaría de verde.
+    // "ENTREGA PARCIAL" SÍ cuenta como entrega (2026-10-06, pedido del usuario): antes estaba acá con
+    // los problemas y salía en Pendientes; ahora cae en "entreg" y sale verde, en Entregados.
+    if (preg_match('/devol|devuel|novedad|fallid|anul|rechaz|no despach|no entreg/', $t)) { return 'pendiente'; }
     if (preg_match('/entreg|exitos|cumplid|efectiv|recib|finaliz/', $t))                          { return 'entregado'; }
-    if (preg_match('/tr[aá]nsit|camino|repart|despach|ruta|env[ií]|ofrecimiento|reintent/', $t))  { return 'en_camino'; }
-    if (preg_match('/pendient|programad|alistad|por despach|nuevo|factur/', $t))                    { return 'pendiente'; }
+    if (preg_match('/tr[aá]nsit|camino|repart|despach|ruta|env[ií]|ofrecimiento|reintent|traslad|distribuc|sucursal|cargue|reexped/', $t)) { return 'en_camino'; }
+    if (preg_match('/pendient|programad|alistad|alistam|por despach|nuevo|factur|cita/', $t))                    { return 'pendiente'; }
     return 'otro';
 }
 
@@ -212,10 +212,10 @@ function condicionGrupoEstado($grupo) {
     // Estado normalizado (NULL cuenta como vacío). REGEXP ignora mayúsculas y acentos por la
     // colación de la columna, así que los patrones van en minúscula igual que en grupoDeEstado().
     $est = "COALESCE(estado, '')";
-    $P = "{$est} REGEXP 'parcial|devol|devuel|novedad|fallid|anul|rechaz|no despach|no entreg'";
+    $P = "{$est} REGEXP 'devol|devuel|novedad|fallid|anul|rechaz|no despach|no entreg'";   // sin 'parcial' (2026-10-06)
     $E = "{$est} REGEXP 'entreg|exitos|cumplid|efectiv|recib|finaliz'";
-    $C = "{$est} REGEXP 'tr(a|á)nsit|camino|repart|despach|ruta|env(i|í)|ofrecimiento|reintent'";
-    $D = "{$est} REGEXP 'pendient|programad|alistad|por despach|nuevo|factur'";
+    $C = "{$est} REGEXP 'tr(a|á)nsit|camino|repart|despach|ruta|env(i|í)|ofrecimiento|reintent|traslad|distribuc|sucursal|cargue|reexped'";
+    $D = "{$est} REGEXP 'pendient|programad|alistad|alistam|por despach|nuevo|factur|cita'";
 
     switch ($grupo) {
         case 'entregado':
@@ -286,8 +286,9 @@ function guardarPedidoManual($pdo, array $datos, $idUsuario) {
  * Importa un listado de pedidos desde el Excel que exporta una transportadora.
  *
  * Las columnas se buscan por nombre, con varios alias por campo, porque cada transportadora titula
- * distinto. Lo único imprescindible es la transportadora (o se toma la del formulario) y factura o
- * guía. Se AGREGA/ACTUALIZA por clave: subir el mismo archivo dos veces no duplica.
+ * distinto. Lo único imprescindible es la factura o la guía. La transportadora se toma si se puede
+ * (formulario, columna o formato reconocido); si no, queda vacía (2026-10-05, pedido del usuario).
+ * Se AGREGA/ACTUALIZA por clave: subir el mismo archivo dos veces no duplica.
  *
  * Devuelve ['exito' => bool, 'mensaje' => string, 'nuevos' => int, 'actualizados' => int].
  */
@@ -301,7 +302,10 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         return importarFacturacionSap($pdo, $rutaArchivo, $idUsuario, $encabezadoRapido);
     }
 
-    $filas = leerPrimeraHoja($rutaArchivo);
+    // El lector rápido (2026-10-05); si no puede (un .xls, una fórmula sin valor guardado), PhpSpreadsheet.
+    $rapido = leerXlsxRapido($rutaArchivo);
+    $filas  = $rapido !== null ? array_values($rapido) : leerPrimeraHoja($rutaArchivo);
+    unset($rapido);
     if (count($filas) < 2) {
         return ['exito' => false, 'mensaje' => 'El archivo no tiene filas de datos.'];
     }
@@ -310,8 +314,7 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
     // bajo NO es un espacio, así que un encabezado "factura_real" queda "factura_real": por eso
     // conviven las variantes con espacio y con guion bajo, para leer tanto el archivo "prolijo"
     // como los export crudos de las transportadoras (Detalle_Facturas, exportable_5902…).
-    $encabezado = array_shift($filas);
-    $mapa = mapearColumnas($encabezado, [
+    $columnas = [
         // transportadora
         'transportadora'    => 'transportadora',
         'transportador'     => 'transportadora',
@@ -323,6 +326,13 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         'nro factura'       => 'numero_factura',
         'no factura'        => 'numero_factura',
         'documento'         => 'numero_factura',
+        // "Producción diario de envíos" (2026-10-05): la factura NU viene en "DOCUMENTO NRO 1".
+        'documento nro 1'   => 'numero_factura',
+        'documento nro'     => 'numero_factura',
+        // AGV (2026-10-08): una misma remesa puede llevar hasta cuatro facturas (DOCUMENTO NRO 2 a 4).
+        'documento nro 2'   => 'numero_factura_2',
+        'documento nro 3'   => 'numero_factura_3',
+        'documento nro 4'   => 'numero_factura_4',
         // guía
         'guia'              => 'numero_guia',
         'numero guia'       => 'numero_guia',
@@ -338,6 +348,12 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         'estado'            => 'estado',
         'estado guia'       => 'estado',
         'estado_guia'       => 'estado',
+        // Proeslog (exportable_5902): el NOMBRE del estado; 'codigoestadoguia' es solo un número.
+        'nombreestadoguia'  => 'estado',
+        // Producción diario de envíos: "ESTADO MERCANCIA" (ENTREGADO, ENTREGA PARCIAL…) se entiende
+        // mejor; "ESTADO TRANSPORTE" (CUMPLIDO…) queda de respaldo para cuando viene vacío.
+        'estado mercancia'  => 'estado',
+        'estado transporte' => 'estado_transporte',
         'novedad'           => 'estado',
         // detalle
         'detalle'           => 'detalle',
@@ -345,10 +361,12 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         'observacion'       => 'detalle',
         'observaciones'     => 'detalle',
         'dice_contener'     => 'detalle',
+        'causal'            => 'detalle',
         // bodega / origen
         'bodega'            => 'bodega',
         'origen'            => 'bodega',
         'ciudad_origen'     => 'bodega',
+        'ciudad origen'     => 'bodega',
         // destino / cliente que recibe
         'destino'           => 'destino',
         'nombre_pdv'        => 'destino',
@@ -357,41 +375,50 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         'nom_destinatario'  => 'destino',
         'cliente'           => 'destino',
         'punto de venta'    => 'destino',
-        'destinatario'      => 'destino',
-        'ciudad_destino'    => 'destino',
+        // El destinatario aparte (2026-10-05): con él se reconocen las devoluciones a la empresa.
+        // El destino es la CIUDAD DESTINO (pedido del usuario); si no viene, el destinatario.
+        'destinatario'      => 'destinatario',
+        // La CIUDAD de destino, en su propia columna: el Consolidado MR la muestra como Ciudad.
+        'ciudad_destino'    => 'ciudad_destino',
+        'ciudad destino'    => 'ciudad_destino',
         // fechas
         'fecha guia'        => 'fecha_guia',
         'fecha_guia'        => 'fecha_guia',
         'fecha documento'   => 'fecha_guia',
         'fecha_factura'     => 'fecha_guia',
         'fechaguiacliente'  => 'fecha_guia',
+        'fecha elaboracion' => 'fecha_guia',
         'fecha despacho'    => 'fecha_despacho',
         'fecha_despacho'    => 'fecha_despacho',
         'fecha de despacho' => 'fecha_despacho',
         'despacho'          => 'fecha_despacho',
         'fechaingreso'      => 'fecha_despacho',
         'fecha entrega'     => 'fecha_entrega',
+        'fechaentrega'      => 'fecha_entrega',
+        // Desde cuándo el pedido está en el estado que muestra (2026-10-02).
+        'fechaestadoguia'   => 'fecha_estado',
+        'fecha estado'      => 'fecha_estado',
+        'fecha_estado'      => 'fecha_estado',
         'fecha_entrega'     => 'fecha_entrega',
         'fecha de entrega'  => 'fecha_entrega',
         'entrega'           => 'fecha_entrega',
-    ]);
+        // La hora en su propia columna (Producción diario de envíos): se le pega a su fecha.
+        'hora entrega'      => 'hora_entrega',
+        'hora estado'       => 'hora_estado',
+    ];
+    [$encabezado, $mapa, $filas] = encabezadoDelReporte($filas, $columnas);
 
     // La transportadora sale, en este orden: de lo que se eligió en el formulario (si se eligió),
     // de la COLUMNA del archivo (Vector Foods trae el transportador real de cada guía), o de
     // RECONOCER el formato del archivo por sus columnas —así el Excel de Proeslog o de AGV se sube
     // sin tener que elegir nada—. Ver detectarTransportadora().
-    $transDef = textoLimpio($transportadoraPorDefecto, 80) ?? detectarTransportadora($encabezado);
+    $formato  = detectarTransportadora($encabezado);
+    $elegida  = textoLimpio($transportadoraPorDefecto, 80);
+    $transDef = $elegida ?? $formato;
 
-    // Sin transportadora en el archivo NI reconocida NI elegida no se puede saber de quién es el
-    // pedido.
-    if (!isset($mapa['transportadora']) && $transDef === null) {
-        return [
-            'exito'   => false,
-            'mensaje' => 'No se pudo reconocer de qué transportadora es el archivo y no trae una columna '
-                       . '"Transportadora". Elegí la transportadora en el formulario antes de subirlo, o '
-                       . 'agregá esa columna al archivo.',
-        ];
-    }
+    // Sin transportadora en el archivo NI reconocida NI elegida, el archivo se carga igual y la
+    // transportadora queda vacía (2026-10-05, pedido del usuario: la columna no es obligatoria). En el
+    // Consolidado MR esas facturas muestran la guía y el estado, y el transportador se pone a mano.
     if (!isset($mapa['numero_factura']) && !isset($mapa['numero_guia'])) {
         return [
             'exito'   => false,
@@ -401,33 +428,95 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
 
     $valor = fn(array $f, $campo) => isset($mapa[$campo]) ? ($f[$mapa[$campo]] ?? null) : null;
 
-    $preparadas = [];
+    // La hora que viene en otra columna ("07/09/2026" + "13:57"), pegada a su fecha.
+    $conHora = function ($fecha, $hora) {
+        $fecha = trim((string) $fecha);
+        $hora  = trim((string) $hora);
+        return ($fecha !== '' && !is_numeric($fecha) && strpos($fecha, ':') === false && preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $hora))
+            ? "{$fecha} {$hora}" : $fecha;
+    };
+
+    $preparadas   = [];
+    $devoluciones = 0;
+    $sinFacturaNu = 0;   // AGV: filas sin ninguna factura NU (2026-10-08)
     foreach ($filas as $f) {
-        $transportadora = textoLimpio($valor($f, 'transportadora'), 80) ?? $transDef;
+        // '' y no null: la columna de la tabla no admite NULL, y vacío es "no se sabe".
+        $transportadora = textoLimpio($valor($f, 'transportadora'), 80) ?? $transDef ?? '';
         // codigoLimpio y no textoLimpio: varios export ponen "0" en la guía o la factura cuando el
         // número todavía no está asignado. Un "0" no identifica ningún despacho —vale lo mismo que
         // vacío— y guardarlo agruparía en una sola fila pedidos que no tienen nada que ver.
-        $factura        = codigoLimpio($valor($f, 'numero_factura'), 60);
-        $guia           = codigoLimpio($valor($f, 'numero_guia'), 60);
+        // sinBom: la primera celda de los export que vienen de un CSV trae la marca invisible del
+        // archivo pegada (U+FEFF antes de "1074781"), y esa guía no se encontraba buscándola.
+        $sinBom         = fn($v) => $v === null ? null : preg_replace('/^\x{FEFF}+/u', '', (string) $v);
+        $factura        = codigoLimpio($sinBom($valor($f, 'numero_factura')), 60);
+        $guia           = codigoLimpio($sinBom($valor($f, 'numero_guia')), 60);
 
-        if ($transportadora === null || ($factura === null && $guia === null)) {
+        // PROESLOG (2026-10-02): su columna "factura" es la factura de FLETE que Proeslog le cobra a
+        // la empresa (35742, la misma para cientos de guías), no la de la mercancía. La de la empresa
+        // ("NU04164879") viene escrita en "observaciones". Se toma esa: es la que se busca, la que
+        // cruza con el Consolidado MR, y no cambia cuando Proeslog factura el flete.
+        if ($formato === 'Proeslog' && !isset($mapa['transportadora'])) {
+            $factura = preg_match('/\bNU\s*0*\d{6,}\b/i', (string) $valor($f, 'detalle'), $nu)
+                ? strtoupper(preg_replace('/\s+/', '', $nu[0])) : null;
+        }
+
+        // AGV (2026-10-08): las facturas de la remesa están en DOCUMENTO NRO 1 a 4, y solo cuentan las
+        // que empiezan por NU (en esas columnas también vienen otros números: devoluciones "DEV…",
+        // números de guía). Cada factura NU es un envío aparte, con la misma guía y el mismo estado.
+        $facturasDeLaFila = [$factura];
+        if ($formato === 'AGV' && isset($mapa['numero_guia']) && !isset($mapa['transportadora'])) {
+            $facturasDeLaFila = [];
+            foreach (['numero_factura', 'numero_factura_2', 'numero_factura_3', 'numero_factura_4'] as $campoFactura) {
+                $doc = strtoupper((string) codigoLimpio($sinBom($valor($f, $campoFactura)), 60));
+                if (str_starts_with($doc, 'NU') && !in_array($doc, $facturasDeLaFila, true)) {
+                    $facturasDeLaFila[] = $doc;
+                }
+            }
+            if (!$facturasDeLaFila) {
+                $sinFacturaNu++;
+                continue;
+            }
+            $factura = $facturasDeLaFila[0];
+        }
+
+        if ($factura === null && $guia === null) {
             continue;   // fila vacía o incompleta: se salta en silencio
         }
 
+        // DEVOLUCIONES A LA EMPRESA (2026-10-05): el reporte de Producción diario de envíos trae, con
+        // el mismo número de factura, el envío de vuelta de la mercancía rechazada (destinatario
+        // "NUTRIUM S.A.S DEV"). Ese envío sí llega ("ENTREGADO") y taparía el estado real de la
+        // factura —un rechazo— en el Consolidado MR. No se guarda.
+        if (esDevolucionALaEmpresa($valor($f, 'destinatario'))) {
+            $devoluciones++;
+            continue;
+        }
+
+        foreach ($facturasDeLaFila as $factura) {
         $preparadas[] = [
             'transportadora' => $transportadora,
+            // La clave NO lleva el nombre elegido al importar (2026-10-05): lleva el de la columna o el
+            // del formato reconocido. Así, subir el mismo reporte con otro nombre actualiza los envíos
+            // (y les cambia el nombre) en vez de guardar una copia de cada uno.
+            'clave_transportadora' => textoLimpio($valor($f, 'transportadora'), 80) ?? $formato ?? '',
             'numero_factura' => $factura,
             'numero_guia'    => $guia,
             // limpiarTextoImportado: los reportes traen la observación con entidades HTML.
-            'estado'         => limpiarTextoImportado(textoLimpio($valor($f, 'estado'), 80)),
+            'estado'         => limpiarTextoImportado(textoLimpio($valor($f, 'estado'), 80)
+                                                  ?? textoLimpio($valor($f, 'estado_transporte'), 80)),
             'detalle'        => limpiarTextoImportado(textoLimpio($valor($f, 'detalle'), 500)),
             'bodega'         => limpiarTextoImportado(textoLimpio($valor($f, 'bodega'), 80)),
-            'destino'        => limpiarTextoImportado(textoLimpio($valor($f, 'destino'), 160)),
+            'destino'        => limpiarTextoImportado(textoLimpio($valor($f, 'destino'), 160)
+                                                  ?? textoLimpio($valor($f, 'ciudad_destino'), 160)
+                                                  ?? textoLimpio($valor($f, 'destinatario'), 160)),
+            'ciudad_destino' => limpiarTextoImportado(textoLimpio($valor($f, 'ciudad_destino'), 80)),
             'fecha_guia'     => fechaSoloDia($valor($f, 'fecha_guia')),
             'fecha_despacho' => fechaYHora($valor($f, 'fecha_despacho')),
-            'fecha_entrega'  => fechaYHora($valor($f, 'fecha_entrega')),
+            'fecha_entrega'  => fechaYHora($conHora($valor($f, 'fecha_entrega'), $valor($f, 'hora_entrega'))),
+            'fecha_estado'   => fechaYHora($conHora($valor($f, 'fecha_estado'), $valor($f, 'hora_estado'))),
             'fuente'         => 'excel',
         ];
+        }
     }
 
     if (!$preparadas) {
@@ -451,7 +540,11 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
 
     // Si la transportadora se reconoció sola (no vino en columna), se dice cuál, para que quien
     // sube el archivo confirme que se identificó bien sin tener que abrir la tabla.
-    $reconocida = (!isset($mapa['transportadora']) && $transDef) ? " Transportadora reconocida: {$transDef}." : '';
+    $reconocida = (!isset($mapa['transportadora']) && $transDef)
+        ? ($elegida !== null ? " Transportadora elegida: {$elegida}." : " Transportadora reconocida: {$transDef}.") : '';
+    if (!isset($mapa['transportadora']) && !$transDef) {
+        $reconocida = ' El archivo no trae la columna "Transportadora": quedó vacía.';
+    }
 
     // Aviso de doble carga: el reporte de Vector Foods YA incluye las guías que mueve Proeslog
     // (aparecen con "PROESLOG" en su columna 'transportador'). Si además se sube el archivo propio
@@ -459,17 +552,50 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
     // Proeslog por número de guía—, así que no se funden en un solo pedido y quedan repetidos. Se
     // avisa solo cuando el archivo se reconoció como Proeslog (que es cuando puede pasar).
     $avisoDoble = '';
-    if (!isset($mapa['transportadora']) && $transDef === 'Proeslog') {
+    if (!isset($mapa['transportadora']) && $formato === 'Proeslog') {
         $avisoDoble = ' Ojo: si también subís el reporte de Vector Foods, esas guías de Proeslog '
                     . 'ya vienen ahí y quedarían repetidas. Elegí una sola fuente por transportadora.';
     }
 
     return [
         'exito'        => true,
-        'mensaje'      => 'Pedidos: ' . ($partes ? implode(', ', $partes) : 'ninguno') . '.' . $reconocida . $avisoDoble,
+        'mensaje'      => 'Pedidos: ' . ($partes ? implode(', ', $partes) : 'ninguno') . '.' . $reconocida . $avisoDoble
+                        . ($devoluciones ? ' Se dejaron afuera ' . $devoluciones . ' envío(s) de devolución a la empresa, para que no tapen el estado real de su factura.' : '')
+                        . ($sinFacturaNu ? ' ' . $sinFacturaNu . ' fila(s) no traían ninguna factura NU en DOCUMENTO NRO 1 a 4 y no se tomaron.' : ''),
         'nuevos'       => $r['nuevos'],
+        // Las facturas del reporte, para decir cuántas cruzan con el Consolidado MR.
+        'facturas'     => array_values(array_unique(array_filter(array_column($preparadas, 'numero_factura')))),
         'actualizados' => $r['actualizados'],
     ];
+}
+
+/**
+ * La fila de los TÍTULOS de un reporte y lo que viene debajo: [encabezado, mapa, filas de datos].
+ *
+ * Casi todos los reportes los traen en la fila 1, pero el "Producción diario de envíos" (2026-10-05)
+ * arranca con el nombre del reporte y el rango de fechas, y los títulos están en la fila 5. Se toma
+ * la primera de las primeras 20 filas que traiga Factura o Guía y al menos tres columnas conocidas.
+ */
+function encabezadoDelReporte(array $filas, array $columnas) {
+    $filas = array_values($filas);
+    foreach (array_slice($filas, 0, 20) as $i => $fila) {
+        $mapa = mapearColumnas($fila, $columnas);
+        if ((isset($mapa['numero_factura']) || isset($mapa['numero_guia'])) && count($mapa) >= 3) {
+            return [$fila, $mapa, array_slice($filas, $i + 1)];
+        }
+    }
+    $encabezado = $filas[0] ?? [];
+    return [$encabezado, mapearColumnas($encabezado, $columnas), array_slice($filas, 1)];
+}
+
+/**
+ * ¿El envío vuelve a la empresa? Destinatario "NUTRIUM S.A.S DEV", "NUTRIUM DEVOL", "MONTEROJO SEDE
+ * PRINCIPAL"…: la mercancía rechazada que regresa. Con el número de la factura original, pero no es
+ * su entrega.
+ */
+function esDevolucionALaEmpresa($destinatario) {
+    $d = trim((string) $destinatario);
+    return $d !== '' && preg_match('/\bDEV(OL\w*)?\b|^(NUTRIUM|MONTEROJO)\b/iu', $d) === 1;
 }
 
 /**
@@ -488,6 +614,9 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
  *                 (SOLISTICA, PROESLOG, INTERNO…), así que NO se le pone una etiqueta única: cada
  *                 fila conserva su transportador. Por eso acá devuelve null —no hay una sola
  *                 transportadora que ponerle— y la importación usa la columna.
+ *   · AGV (Producción diario de envíos) — "Produccion_Diario_Envios…": trae 'remesa', 'documento nro 1'
+ *                 y 'estado mercancia', que no aparecen juntos en otro. Hasta el 2026-10-08 se tomaba como
+ *                 de Solistica; el usuario aclaró que es de AGV, y la versión nueva trae DOCUMENTO NRO 2 a 4.
  *
  * Devuelve el nombre a usar como transportadora del archivo, o null si no se reconoce o si el
  * archivo ya trae el transportador por fila.
@@ -498,6 +627,12 @@ function detectarTransportadora(array $encabezado) {
 
     if ($tiene('guiatransporte') && $tiene('rel_envio')) {
         return 'Proeslog';
+    }
+    // "Producción diario de envíos": es el reporte de AGV (2026-10-08, pedido del usuario; antes se
+    // tomaba como de Solistica). Viene con títulos arriba (fila 5) o sin ellos (fila 1), y la versión
+    // nueva trae además DOCUMENTO NRO 2, 3 y 4.
+    if ($tiene('remesa') && $tiene('documento nro 1') && $tiene('estado mercancia')) {
+        return 'AGV';
     }
     if ($tiene('dice_contener') && ($tiene('doc_remitente') || $tiene('nom_destinatario'))
         && !$tiene('guiatransporte')) {
@@ -517,16 +652,20 @@ function detectarTransportadora(array $encabezado) {
 function guardarFilasDePedidos($pdo, array $filas, $idUsuario) {
     $insertar = $pdo->prepare(
         "INSERT INTO seguimiento_pedidos
-            (clave, transportadora, numero_factura, numero_guia, estado, detalle, bodega, destino,
-             fecha_guia, fecha_despacho, fecha_entrega, fuente, id_usuario)
+            (clave, transportadora, numero_factura, numero_guia, estado, detalle, bodega, destino, ciudad_destino,
+             fecha_guia, fecha_despacho, fecha_entrega, fecha_estado, fuente, id_usuario)
          VALUES
-            (:clave, :transportadora, :factura, :guia, :estado, :detalle, :bodega, :destino,
-             :f_guia, :f_despacho, :f_entrega, :fuente, :usuario)
+            (:clave, :transportadora, :factura, :guia, :estado, :detalle, :bodega, :destino, :ciudad,
+             :f_guia, :f_despacho, :f_entrega, :f_estado, :fuente, :usuario)
          ON DUPLICATE KEY UPDATE
+             transportadora = VALUES(transportadora),
+             numero_guia    = COALESCE(VALUES(numero_guia), numero_guia),
+             fecha_estado   = COALESCE(VALUES(fecha_estado), fecha_estado),
              estado         = COALESCE(VALUES(estado), estado),
              detalle        = COALESCE(VALUES(detalle), detalle),
              bodega         = COALESCE(VALUES(bodega), bodega),
              destino        = COALESCE(VALUES(destino), destino),
+             ciudad_destino = COALESCE(VALUES(ciudad_destino), ciudad_destino),
              fecha_guia     = COALESCE(VALUES(fecha_guia), fecha_guia),
              fecha_despacho = COALESCE(VALUES(fecha_despacho), fecha_despacho),
              fecha_entrega  = COALESCE(VALUES(fecha_entrega), fecha_entrega),
@@ -535,11 +674,48 @@ function guardarFilasDePedidos($pdo, array $filas, $idUsuario) {
 
     $nuevos = 0; $actualizados = 0; $sinCambios = 0;
 
+    // LA MISMA GUÍA ES EL MISMO PEDIDO (2026-10-02). La clave lleva la factura, y la factura de una
+    // guía puede aparecer o cambiar entre un export y el siguiente (Proeslog le pone la de flete
+    // cuando la factura; acá además se pasó a tomar la NU de observaciones). Sin esto, esa guía
+    // quedaba DOS veces en el tablero. Antes de guardar, la fila existente de esa transportadora y
+    // esa guía pasa a la clave nueva, y el UPSERT la actualiza en vez de duplicarla.
+    $limpiar  = fn($v) => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $v));
+    $porGuia  = [];
+    $claves   = [];
+    foreach ($pdo->query("SELECT id_pedido, clave, transportadora, numero_guia FROM seguimiento_pedidos") as $e) {
+        $claves[$e['clave']] = true;
+        if ($limpiar($e['numero_guia']) !== '') {
+            // La transportadora de la CLAVE (lo que va antes del primer "|"), no el nombre mostrado.
+            $porGuia[strstr($e['clave'], '|', true) . '|' . $limpiar($e['numero_guia'])] = $e;
+        }
+    }
+    $cambiarClave = $pdo->prepare("UPDATE seguimiento_pedidos SET clave = ?, numero_factura = ? WHERE id_pedido = ?");
+
+    // Una guía que en ESTE archivo trae varias facturas (AGV, 2026-10-08: DOCUMENTO NRO 1 a 4) son varios
+    // envíos y no uno con la factura cambiada: a esas no se les pasa la clave de una factura a otra.
+    $facturasPorGuia = [];
+    foreach ($filas as $f) {
+        if ($limpiar($f['numero_guia']) !== '') {
+            $facturasPorGuia[$limpiar($f['clave_transportadora'] ?? $f['transportadora']) . '|' . $limpiar($f['numero_guia'])][(string) $f['numero_factura']] = true;
+        }
+    }
+
     $pdo->beginTransaction();
     try {
         foreach ($filas as $f) {
+            $deClave = $f['clave_transportadora'] ?? $f['transportadora'];
+            $clave = claveDePedido($deClave, $f['numero_factura'], $f['numero_guia']);
+            $deGuia = $limpiar($deClave) . '|' . $limpiar($f['numero_guia']);
+            if ($limpiar($f['numero_guia']) !== '' && isset($porGuia[$deGuia]) && count($facturasPorGuia[$deGuia] ?? []) <= 1
+                && $porGuia[$deGuia]['clave'] !== $clave && !isset($claves[$clave])) {
+                $cambiarClave->execute([$clave, $f['numero_factura'], $porGuia[$deGuia]['id_pedido']]);
+                unset($claves[$porGuia[$deGuia]['clave']]);
+                $claves[$clave] = true;
+                $porGuia[$deGuia]['clave'] = $clave;
+            }
+
             $insertar->execute([
-                ':clave'          => claveDePedido($f['transportadora'], $f['numero_factura'], $f['numero_guia']),
+                ':clave'          => $clave,
                 ':transportadora' => $f['transportadora'],
                 ':factura'        => $f['numero_factura'],
                 ':guia'           => $f['numero_guia'],
@@ -547,9 +723,11 @@ function guardarFilasDePedidos($pdo, array $filas, $idUsuario) {
                 ':detalle'        => $f['detalle'],
                 ':bodega'         => $f['bodega'],
                 ':destino'        => $f['destino'],
+                ':ciudad'         => $f['ciudad_destino'] ?? null,
                 ':f_guia'         => $f['fecha_guia'],
                 ':f_despacho'     => $f['fecha_despacho'],
                 ':f_entrega'      => $f['fecha_entrega'],
+                ':f_estado'       => $f['fecha_estado'] ?? null,
                 ':fuente'         => $f['fuente'],
                 ':usuario'        => $idUsuario,
             ]);
@@ -624,6 +802,12 @@ function asegurarMemoriaSeguimiento($minMB) {
  * de qué archivo se trata antes de decidir cómo leerlo entero.
  */
 function encabezadoDeExcel($rutaArchivo) {
+    // Primero el lector rápido (2026-10-05): lee la fila 1 y corta. PhpSpreadsheet, aun con el filtro
+    // de "solo la fila 1", recorría el archivo entero: 15 s con el Consolidado MR de 11 MB.
+    $rapido = leerXlsxRapido($rutaArchivo, null, 1);
+    if ($rapido !== null) {
+        return $rapido[1] ?? [];
+    }
     try {
         $lector = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($rutaArchivo);
         $lector->setReadDataOnly(true);
@@ -877,6 +1061,48 @@ function eliminarPedido($pdo, $idPedido) {
  * Los ids se pasan como marcadores y no concatenados: aunque vengan de un checkbox del propio
  * sistema, entran por POST y podrían venir armados a mano.
  */
+// -------------------------------------------------------------------------------------------------
+// ELIMINAR TODOS LOS DATOS (2026-10-02)
+//
+// Pedido del usuario: un botón que vacíe el tablero, igual que el de Consolidados (modal que avisa
+// qué se pierde y pide la contraseña). Se elige QUÉ se borra, porque las pestañas son dos fuentes
+// distintas: los pedidos de las transportadoras, la facturación de SAP, o todo.
+// -------------------------------------------------------------------------------------------------
+
+/** La condición SQL de cada cosa que se puede borrar. Fija, no viene del usuario. */
+function condicionesParaEliminarSeguimiento() {
+    return [
+        'transportadoras' => "(fuente IS NULL OR fuente <> 'facturacion')",
+        'sap'             => "fuente = 'facturacion'",
+        'todos'           => '1 = 1',
+    ];
+}
+
+/** Cuántos pedidos hay hoy en cada opción del modal: ['transportadoras', 'sap', 'todos']. */
+function resumenParaEliminarSeguimiento($pdo) {
+    $r = $pdo->query(
+        "SELECT SUM(fuente IS NULL OR fuente <> 'facturacion') AS transportadoras,
+                SUM(fuente = 'facturacion') AS sap, COUNT(*) AS todos
+           FROM seguimiento_pedidos"
+    )->fetch(PDO::FETCH_ASSOC);
+    return array_map('intval', $r ?: ['transportadoras' => 0, 'sap' => 0, 'todos' => 0]);
+}
+
+/** Borra los pedidos de $origen ('transportadoras', 'sap' o 'todos'). Devuelve ['exito', 'borrados']. */
+function eliminarTodoSeguimiento($pdo, $origen) {
+    $condicion = condicionesParaEliminarSeguimiento()[$origen] ?? null;
+    if ($condicion === null) {
+        return ['exito' => false, 'borrados' => 0];
+    }
+    try {
+        $n = $pdo->exec("DELETE FROM seguimiento_pedidos WHERE {$condicion}");
+        return ['exito' => true, 'borrados' => (int) $n];
+    } catch (PDOException $e) {
+        error_log('Error eliminando el Estado de pedidos: ' . $e->getMessage());
+        return ['exito' => false, 'borrados' => 0];
+    }
+}
+
 function eliminarPedidos($pdo, array $ids) {
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($n) => $n > 0)));
     if (!$ids) {
@@ -937,7 +1163,7 @@ function fechaYHora($valor) {
         }
     }
     $texto = trim((string) $valor);
-    foreach (['d/m/Y H:i', 'd/m/Y H:i:s', 'Y-m-d H:i', 'Y-m-d H:i:s', 'd/m/Y', 'Y-m-d'] as $formato) {
+    foreach (['!d/m/Y H:i', '!d/m/Y H:i:s', '!Y-m-d H:i', '!Y-m-d H:i:s', '!d/m/Y', '!Y-m-d'] as $formato) {
         $fecha = DateTime::createFromFormat($formato, $texto);
         if ($fecha !== false) {
             return $fecha->format('Y-m-d H:i:s');

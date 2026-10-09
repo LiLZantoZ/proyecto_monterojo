@@ -1,0 +1,324 @@
+/* modules/posiciones/layouts/posiciones.css
+   Posiciones de bodega (2026-10-06): las tarjetas, las pastillas y los modales del módulo de
+   posiciones del sistema de bodega.
+
+   PALETA (2026-10-06, pedido del usuario): la tarjeta va con los colores de Monterojo (00-tema.css),
+   no con el verde de bodega: libre en crema, ocupada (Disponible) en el NEGRO de la marca y el vino
+   como acento al pasar el mouse. Como el negro ya quiere decir "ocupada", Bloqueado pasó de negro a
+   gris piedra. En Control De Calidad (azul), Defectuoso (rojo) y Producto Vencido (rojo oscuro)
+   siguen con sus colores de aviso, igual que el verde y el rojo de estado del tema. */
+
+:root {
+    --pos-piedra:       #78716c;   /* Bloqueado */
+    --pos-piedra-texto: #57534e;
+    --pos-piedra-fondo: #f5f5f4;
+    --pos-piedra-slot:  #e7e5e4;
+    --pos-sobre-negro:  #d6d3d1;   /* el subtítulo sobre el pie negro */
+    --pos-azul:        #1565c0;
+    --pos-azul-fondo:   #eff6ff;
+    --pos-azul-slot:    #dbeafe;
+    --pos-rojo:         #c62828;
+    --pos-rojo-fondo:   #fef2f2;
+    --pos-rojo-slot:    #fee2e2;
+    --pos-vino:         #7f1d1d;
+    --pos-vino-slot:    #fecaca;
+}
+
+/* --- LAS PASTILLAS: cuentan y filtran --- */
+.stats-posiciones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 4px 0 16px;
+}
+.stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 2px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: transform .15s ease, border-color .15s ease;
+}
+a.stat-pill:hover { transform: translateY(-1px); }
+.stat-pill.activo { border-color: currentColor; }
+.stat-pill strong { font-weight: 800; }
+.stat-total { background: var(--blanco); color: var(--texto); border-color: var(--borde); }
+.stat-total.activo { border-color: var(--texto); }
+/* Libres en crema, ocupadas en vino y Disponible en negro, como las tarjetas. */
+.stat-libre   { background: var(--crema); color: var(--texto); }
+.stat-ocupado { background: var(--vino-claro); color: var(--vino); }
+.stat-estado-disponible            { background: var(--negro); color: var(--blanco); }
+.stat-estado-disponible.activo     { border-color: var(--vino); }
+.stat-estado-bloqueado             { background: var(--pos-piedra-slot); color: var(--pos-piedra-texto); }
+.stat-estado-en-control-de-calidad { background: var(--pos-azul-slot); color: var(--pos-azul); }
+.stat-estado-defectuoso            { background: var(--pos-rojo-slot); color: var(--pos-rojo); }
+.stat-estado-producto-vencido      { background: var(--pos-vino-slot); color: var(--pos-vino); }
+.stat-cajas   { background: #f3e8fd; color: #6b21a8; }
+.stat-estibas { background: #fff4e5; color: #b45309; }
+
+.filtros-posiciones label i { color: var(--texto-suave); margin-right: 3px; }
+
+/* --- LA GRILLA DE TARJETAS --- */
+.grid-posiciones {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+    margin-top: 16px;
+}
+.card-posicion {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 2px solid var(--borde);
+    border-radius: 12px;
+    background: var(--blanco);
+    box-shadow: var(--sombra-suave);
+    cursor: pointer;
+    transition: all .2s ease;
+}
+/* Al pasar el mouse: el acento vino en el borde y los recuadros, y el pie en negro. */
+.card-posicion:hover,
+.card-posicion:focus-visible {
+    transform: translateY(-3px);
+    border-color: var(--vino);
+    box-shadow: 0 8px 20px rgba(142, 27, 27, .15);
+    outline: none;
+}
+.btn-editar-posicion {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, .92);
+    border: 1px solid var(--borde);
+    border-radius: 50%;
+    color: var(--vino);
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform .15s, background .15s;
+}
+.btn-editar-posicion:hover { background: var(--blanco); transform: scale(1.12); }
+
+.slots-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 15px;
+}
+.slot-box {
+    height: 50px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    overflow: hidden;
+    border: 2px solid var(--borde);
+    border-radius: 10px;
+    background: var(--crema);
+    transition: all .2s ease;
+}
+.slot-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    line-height: 1.2;
+    text-transform: uppercase;
+    color: var(--texto-suave);
+}
+.slot-valor {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--texto);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.card-posicion:hover .slot-box { border-color: var(--vino); background: var(--vino-claro); }
+
+.label-posicion {
+    position: relative;
+    z-index: 3;   /* por encima de la marca de agua */
+    margin-top: auto;
+    padding: 10px;
+    border-top: 2px solid var(--borde);
+    background: var(--crema);
+    color: var(--texto);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-align: center;
+    transition: all .2s ease;
+}
+.label-posicion-pasillo {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    color: var(--texto-suave);
+}
+.card-posicion:hover .label-posicion { border-top-color: var(--negro); background: var(--negro); color: var(--blanco); }
+.card-posicion:hover .label-posicion-pasillo { color: var(--pos-sobre-negro); }
+
+/* Ocupada = negro de la marca (Disponible). Los demás estados pisan ese negro. */
+.card-posicion.ocupada { border-color: var(--negro); background: var(--blanco); }
+.card-posicion.ocupada .slot-box { border-color: var(--negro); background: var(--crema); }
+.card-posicion.ocupada .label-posicion { border-top-color: var(--negro); background: var(--negro); color: var(--blanco); }
+.card-posicion.ocupada .label-posicion-pasillo { color: var(--pos-sobre-negro); }
+.card-posicion.ocupada:hover { border-color: var(--vino); }
+.card-posicion.ocupada:hover .slot-box { border-color: var(--vino); background: var(--vino-claro); }
+
+.card-posicion.ocupada.estado-bloqueado { border-color: var(--pos-piedra); background: var(--pos-piedra-fondo); }
+.card-posicion.ocupada.estado-bloqueado .slot-box { border-color: var(--pos-piedra); background: var(--pos-piedra-slot); }
+.card-posicion.ocupada.estado-bloqueado .label-posicion { border-top-color: var(--pos-piedra); background: var(--pos-piedra); }
+.card-posicion.ocupada.estado-bloqueado .label-posicion-pasillo { color: var(--pos-piedra-slot); }
+.card-posicion.ocupada.estado-bloqueado .marca-agua-estado { color: var(--pos-piedra-texto); }
+
+.card-posicion.ocupada.estado-en-control-de-calidad { border-color: var(--pos-azul); background: var(--pos-azul-fondo); }
+.card-posicion.ocupada.estado-en-control-de-calidad .slot-box { border-color: var(--pos-azul); background: var(--pos-azul-slot); }
+.card-posicion.ocupada.estado-en-control-de-calidad .label-posicion { border-top-color: var(--pos-azul); background: var(--pos-azul); }
+.card-posicion.ocupada.estado-en-control-de-calidad .label-posicion-pasillo { color: var(--pos-azul-slot); }
+.card-posicion.ocupada.estado-en-control-de-calidad .marca-agua-estado { color: var(--pos-azul); }
+
+.card-posicion.ocupada.estado-defectuoso { border-color: var(--pos-rojo); background: var(--pos-rojo-fondo); }
+.card-posicion.ocupada.estado-defectuoso .slot-box { border-color: var(--pos-rojo); background: var(--pos-rojo-slot); }
+.card-posicion.ocupada.estado-defectuoso .label-posicion { border-top-color: var(--pos-rojo); background: var(--pos-rojo); }
+.card-posicion.ocupada.estado-defectuoso .label-posicion-pasillo { color: var(--pos-rojo-slot); }
+.card-posicion.ocupada.estado-defectuoso .marca-agua-estado { color: var(--pos-rojo); }
+
+.card-posicion.ocupada.estado-producto-vencido { border-color: var(--pos-vino); background: var(--pos-rojo-fondo); }
+.card-posicion.ocupada.estado-producto-vencido .slot-box { border-color: var(--pos-vino); background: var(--pos-vino-slot); }
+.card-posicion.ocupada.estado-producto-vencido .label-posicion { border-top-color: var(--pos-vino); background: var(--pos-vino); }
+.card-posicion.ocupada.estado-producto-vencido .label-posicion-pasillo { color: var(--pos-vino-slot); }
+.card-posicion.ocupada.estado-producto-vencido .marca-agua-estado { color: var(--pos-vino); }
+
+/* Los estados de aviso no cambian de color al pasar el mouse: el color ES el aviso. */
+.card-posicion.ocupada.estado-bloqueado:hover { border-color: var(--pos-piedra); }
+.card-posicion.ocupada.estado-bloqueado:hover .slot-box { border-color: var(--pos-piedra); background: var(--pos-piedra-slot); }
+.card-posicion.ocupada.estado-en-control-de-calidad:hover { border-color: var(--pos-azul); }
+.card-posicion.ocupada.estado-en-control-de-calidad:hover .slot-box { border-color: var(--pos-azul); background: var(--pos-azul-slot); }
+.card-posicion.ocupada.estado-defectuoso:hover { border-color: var(--pos-rojo); }
+.card-posicion.ocupada.estado-defectuoso:hover .slot-box { border-color: var(--pos-rojo); background: var(--pos-rojo-slot); }
+.card-posicion.ocupada.estado-producto-vencido:hover { border-color: var(--pos-vino); }
+.card-posicion.ocupada.estado-producto-vencido:hover .slot-box { border-color: var(--pos-vino); background: var(--pos-vino-slot); }
+
+/* La marca de agua: encima de los datos, tenue y sin atrapar el clic; nunca sobre el código. */
+.marca-agua-estado {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px 52px;
+    pointer-events: none;
+    user-select: none;
+    font-size: clamp(11px, 2.6vw, 17px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: .06em;
+    text-align: center;
+    text-transform: uppercase;
+    opacity: .22;
+    transform: rotate(-16deg);
+}
+
+/* --- EL MODAL DE DETALLES --- */
+.modal-detalle-posicion { max-width: 640px; }
+.posicion-encabezado {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--borde);
+}
+.posicion-icono {
+    width: 46px;
+    height: 46px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--crema);
+    color: var(--texto);
+    font-size: 20px;
+}
+.posicion-codigo { font-size: 22px; font-weight: 800; letter-spacing: .5px; color: var(--texto); }
+.posicion-donde { font-size: 13px; color: var(--texto-suave); }
+.posicion-registro { margin-top: 2px; font-size: 12px; color: var(--texto-suave); }
+.posicion-registro:empty { display: none; }
+.chip-estado-posicion {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.chip-estado-posicion.estado-libre                 { background: var(--crema); color: var(--texto); }
+.chip-estado-posicion.estado-disponible            { background: var(--negro); color: var(--blanco); }
+.chip-estado-posicion.estado-bloqueado             { background: var(--pos-piedra-slot); color: var(--pos-piedra-texto); }
+.chip-estado-posicion.estado-en-control-de-calidad { background: var(--pos-azul-slot); color: var(--pos-azul); }
+.chip-estado-posicion.estado-defectuoso            { background: var(--pos-rojo-slot); color: var(--pos-rojo); }
+.chip-estado-posicion.estado-producto-vencido      { background: var(--pos-vino-slot); color: var(--pos-vino); }
+
+.campos-estiba {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 14px;
+}
+.campos-estiba .campo-ancho { grid-column: 1 / -1; }
+.campos-estiba input[type="number"],
+.campos-estiba input[type="date"],
+.campos-estiba textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    background: var(--blanco);
+    color: var(--texto);
+    font: inherit;
+}
+.campos-estiba textarea { resize: vertical; }
+.campos-estiba input:disabled,
+.campos-estiba select:disabled,
+.campos-estiba textarea:disabled { background: var(--crema); color: var(--texto); opacity: 1; }
+.check-estiba { min-height: 42px; align-items: center; }
+.ayuda.ayuda-error { color: var(--error); }
+.modal-pie [hidden], .cupo-conciliador[hidden] { display: none !important; }
+
+/* Lo registrado en el Formato Conciliador, dentro del modal (informativo). */
+.cupo-conciliador { padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+.cupo-conciliador.cupo-ok { background: #e8f5e9; color: var(--exito); }
+.cupo-conciliador.cupo-no { background: #fdecea; color: var(--error); }
+.cupo-conciliador.cupo-info { background: var(--crema); color: var(--texto-suave); }
+
+/* Llevar a picking: la estiba sale de la bodega; en negro, aparte del rojo de "Sacar estiba". */
+.btn-picking { background: var(--negro); border-color: var(--negro); color: var(--blanco); }
+.btn-picking:hover { background: var(--vino); border-color: var(--vino); color: var(--blanco); }
+
+/* --- CREAR / EDITAR UNA POSICIÓN --- */
+.campos-posicion { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.codigo-nuevo { margin: 6px 0 4px; font-size: 15px; color: var(--texto-suave); }
+.codigo-nuevo strong { color: var(--texto); font-size: 18px; letter-spacing: .5px; }
+
+@media (max-width: 640px) {
+    .campos-estiba, .campos-posicion { grid-template-columns: 1fr 1fr; }
+    .grid-posiciones { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+}

@@ -474,7 +474,7 @@
         var totalRotulos = rotulosActuales.length;
 
         if (!totalRotulos) {
-            alert('Ninguno de los pedidos seleccionados tiene cajas que rotular.');
+            Dialogo.avisar('Ninguno de los pedidos seleccionados tiene cajas que rotular.', { tipo: 'info', titulo: 'Nada que rotular' });
             return;
         }
 

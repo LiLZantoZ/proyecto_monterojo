@@ -1,0 +1,43 @@
+/* modules/formato_conciliador/layouts/formato_conciliador.css
+   Solo la carga el Formato Conciliador: el @page horizontal no puede ir en una hoja global (pondría
+   en horizontal TODAS las impresiones, también el rótulo de Picking). */
+
+/* --- EL RÓTULO DEL FORMATO CONCILIADOR ---
+   Réplica de la hoja "ROTULO" del Excel de bodega, medidas 1:1: 27,7 × 17,6 cm, bloque izquierdo
+   82,6 % y derecho 17,4 %, y los mismos cuerpos de letra en pt. En pantalla se ve a escala; al
+   imprimir sale a tamaño real. Las clases van con "rc-" para no chocar con el rótulo de Picking. */
+.modal-caja-rotulo-fc { max-width: 800px; width: 96vw; }
+.rc-scroll { overflow: auto; }
+.rc-escala { transform: scale(.62); transform-origin: top center; height: calc(17.6cm * .62); display: flex; justify-content: center; }
+.rc-hoja {
+    width: 27.7cm; height: 17.6cm; flex-shrink: 0; display: grid; box-sizing: border-box;
+    grid-template-columns: 82.6% 17.4%; grid-template-rows: 7.37% 26.5% 5.4% 28.6% 4.5% 27.7%;
+    background: #ffffff;
+}
+.rc-celda {
+    border: 2px solid #000000; margin: -1px 0 0 -1px; display: flex; align-items: center; justify-content: center;
+    text-align: center; overflow: hidden; padding: 2px 6px; box-sizing: border-box;
+    font-family: Calibri, 'Segoe UI', sans-serif; font-weight: bold; color: #000000; line-height: 1;
+}
+.rc-lbl { font-size: 22pt; }
+.rc-hoja > .rc-lbl:nth-child(even) { font-size: 18pt; }
+.rc-lbl-sku { justify-content: space-between; padding: 2px 14px; }
+.rc-fecha-hoy { font-size: 14pt; }
+.rc-val-sku { font-size: 170pt; }
+.rc-val-lote { font-size: 140pt; }
+.rc-val-venc { font-size: 100pt; }
+.rc-val-cajas { font-size: 72pt; }
+.rc-val-desc { font-size: 21pt; }
+.rc-val-juliano { font-size: 24pt; }
+.rc-val-desc, .rc-val-juliano { white-space: normal; line-height: 1.15; }
+.rc-val-sku, .rc-val-lote, .rc-val-venc, .rc-val-cajas { white-space: nowrap; line-height: .75; }
+.rc-nota { margin: 12px 0 0; font-size: 13px; color: var(--texto-suave); text-align: center; }
+.rc-nota.rc-nota-alerta { color: #c77700; font-weight: 600; }
+#rc-area-impresion { display: none; }
+@media print {
+    body.imprimiendo-rc > *:not(#rc-area-impresion) { display: none !important; }
+    #rc-area-impresion { display: block !important; position: absolute; top: 0; left: 0; margin: 0; padding: 0; }
+    #rc-area-impresion .rc-hoja { transform: none !important; page-break-inside: avoid; }
+    body.imprimiendo-rc .rc-celda { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { size: landscape; margin: 8mm; }
+}

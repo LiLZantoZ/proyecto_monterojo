@@ -1,0 +1,25 @@
+/* modules/usuarios/layouts/usuarios.css
+   Administrar usuarios (2026-10-06): la foto en la tabla y el formulario de dos columnas. */
+
+.tabla-usuarios td { vertical-align: middle; }
+.usuario-avatar {
+    width: 40px; height: 40px; border-radius: 50%; object-fit: cover; display: block; margin: 0 auto;
+    border: 2px solid var(--borde); background: var(--crema);
+}
+.etiqueta-yo {
+    display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+    background: var(--vino-claro); color: var(--vino-oscuro); vertical-align: middle;
+}
+.tabla-usuarios .sub-dato { display: block; margin-top: 3px; font-size: 0.72rem; }
+.btn-rendimiento { white-space: nowrap; }
+.tabla-usuarios .acciones-fila { justify-content: center; }
+
+.usuarios-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+@media (max-width: 640px) { .usuarios-grilla { grid-template-columns: 1fr; } }
+
+.usuario-foto-fila { display: flex; align-items: center; gap: 12px; }
+.usuario-foto-fila input[type="file"] { flex: 1; min-width: 0; }
+.usuario-foto-vista {
+    width: 56px; height: 56px; border-radius: 50%; object-fit: cover; flex: none;
+    border: 2px solid var(--borde); background: var(--crema);
+}

@@ -166,13 +166,14 @@ define('TIEMPO_INACTIVIDAD_SEGUNDOS', 600); // 10 minutos
 // que dependen la maqueta del rótulo, la página del PDF y la vista previa en pantalla: las tres
 // se calculan a partir de estos dos números, así que cambiar de rollo es cambiarlos acá y nada
 // más. (El 2026-09-08 el rollo era de 100x40; el 2026-09-11 se pasó a 100x100, que es el que
-// permitió volver al diseño con logo y con cada campo en su renglón.)
+// permitió volver al diseño con logo y con cada campo en su renglón. El 2026-09-29 se pasó a
+// 100 de ancho x 80 de alto: el diseño es el mismo, más compacto —ver tsplDeUnRotulo—.)
 define('ROTULO_ANCHO_MM', 100);
-define('ROTULO_ALTO_MM', 100);
+define('ROTULO_ALTO_MM', 80);
 
 // El área que se DIBUJA, centrada dentro del sticker. Es más chica a propósito: con el rótulo
 // ocupando los 100mm exactos, el marco quedaba pegado al filo del papel y la primera impresión
-// salió con el recuadro casi tocando las esquinas. Dibujando 95x95 quedan 2,5mm de aire por lado,
+// salió con el recuadro casi tocando las esquinas. Dibujando 95x75 quedan 2,5mm de aire por lado,
 // que además absorben el pequeño corrimiento lateral que tiene el avance del rollo.
 //
 // OJO: esto NO reemplaza a ROTULO_ANCHO_MM / ROTULO_ALTO_MM. Esos dos siguen siendo la medida
@@ -180,7 +181,7 @@ define('ROTULO_ALTO_MM', 100);
 // etiqueta y la siguiente; si se los tocara para "achicar el rótulo", el rollo se iría corriendo
 // un poco en cada etiqueta hasta desalinearse del todo.
 define('ROTULO_DIBUJO_ANCHO_MM', 95);
-define('ROTULO_DIBUJO_ALTO_MM', 95);
+define('ROTULO_DIBUJO_ALTO_MM', 75);
 
 // La dirección con la que se arma el enlace del QR del rótulo.
 //

@@ -210,7 +210,7 @@ $faltantes    = pluSinMaestro($pdo);
                                         </td>
                                         <td class="centro">
                                             <form action="<?php echo BASE_URL; ?>/consolidados/acciones" method="POST"
-                                                  onsubmit="return confirm('¿Quitar la excepción de Éxito del SKU <?php echo htmlspecialchars($e['sku']); ?>?');" style="display:inline;">
+                                                  data-confirmar="¿Quitar la excepción de Éxito del SKU <?php echo htmlspecialchars($e['sku']); ?>?" data-titulo="Quitar excepción" data-aceptar="Sí, quitarla" data-peligro style="display:inline;">
                                                 <?php campoCSRF(); ?>
                                                 <input type="hidden" name="accion" value="eliminar_excepcion_exito">
                                                 <input type="hidden" name="sku" value="<?php echo htmlspecialchars($e['sku']); ?>">

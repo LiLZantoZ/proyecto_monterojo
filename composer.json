@@ -3,6 +3,7 @@
         "phpoffice/phpspreadsheet": "^5.9",
         "dompdf/dompdf": "^3.1",
         "picqer/php-barcode-generator": "^3.3",
-        "endroid/qr-code": "^6.0"
+        "endroid/qr-code": "^6.0",
+        "anthropic-ai/sdk": "^0.46.0"
     }
 }

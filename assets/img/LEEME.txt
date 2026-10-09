@@ -18,6 +18,16 @@ En la raíz de assets/img/
   stand.jpg          Miniatura del bloque "Portafolio Monterojo Gourmet" (140x96, se recorta).
                      Sugerencia: las cinco bolsas en fila sobre fondo rojo.
 
+Las fotos de la bodega (2026-10-07)
+-----------------------------------
+  fondo.jpg          ya está: los racks y las estibas del CEDI.
+  bienvenida.jpg     ya está: el montacargas en el pasillo (cabecera del inicio).
+  login.jpg          El panel de la marca en la pantalla de entrada. Vertical. La usa 08-estilo.css.
+  banda.jpg          La franja de foto detrás del título de CADA módulo y de la cabecera del menú.
+                     Muy apaisada (1600x430); se oscurece hacia la izquierda. La usa 08-estilo.css.
+  bodega_racks.jpg   \n  bodega_cedi.jpg     > La galería "Nuestra operación" del inicio. Una que falte no aparece.
+  bodega_muelle.jpg  /
+
 En assets/img/sabores/
 ----------------------
 Fotos de empaque, preferible con fondo claro o blanco: se muestran completas, sin recortar.
