@@ -48,9 +48,14 @@ function normalizarListaDeRotulos(array $rotulos) {
         }
 
         $pv = trim(mb_substr((string) ($r['pv'] ?? ''), 0, 180));
-        if ($pv === '') {
-            // Sin punto de venta el rótulo no identifica ninguna caja: se salta en silencio en
-            // vez de imprimir una etiqueta que no le sirve a nadie.
+        // Un rótulo sin NINGÚN dato no identifica ninguna caja: se salta en silencio en vez de
+        // imprimir una etiqueta que no le sirve a nadie. Desde el 2026-10-09 basta con uno (la
+        // orden de compra sola, por ejemplo): los campos vacíos no se imprimen.
+        $algunDato = false;
+        foreach (['pv', 'numero_pv', 'oc', 'producto', 'sku', 'cedi'] as $campo) {
+            if (trim((string) ($r[$campo] ?? '')) !== '') { $algunDato = true; break; }
+        }
+        if (!$algunDato) {
             continue;
         }
 
@@ -179,4 +184,166 @@ function numeroYNombreDePunto($puntoVenta, $eanPuntoVenta = null, $direccion = n
     }
 
     return ['numero' => '', 'nombre' => $texto];
+}
+
+// -------------------------------------------------------------------------------------------------
+// LA LETRA CRECE CON EL ESPACIO QUE QUEDA (2026-10-09, pedido del usuario)
+//
+// Desde que los campos vacíos no se imprimen, un rótulo con pocos datos dejaba media etiqueta en
+// blanco y los datos chiquitos arriba. Ahora la letra se agranda según cuántos campos hay: con los
+// cinco queda como siempre, y con menos crece hasta llenar el alto, sin pasarse nunca del ancho.
+//
+// La cuenta se hace en MILÍMETROS, una sola vez, y la usan las tres versiones del rótulo: la vista
+// previa (tamanos() en assets/js/rotulo.js, la copia exacta de esta función), el PDF y la
+// etiquetadora, que traduce los milímetros a la fuente de la impresora más cercana que entre.
+// -------------------------------------------------------------------------------------------------
+
+// El alto que tienen los campos entre la marca y el pie, y el ancho útil, en mm. El alto está medido
+// con dompdf: con más, un rótulo cargado se pasa a una segunda página (una etiqueta en blanco).
+const ROTULO_CAMPOS_ALTO_MM  = 40;
+const ROTULO_CAMPOS_ANCHO_MM = 85;
+// Hasta cuánto puede crecer la letra: las cajas solas llegan a 15mm, lo que entra con holgura.
+const ROTULO_ESCALA_MAXIMA   = 4;
+
+/**
+ * El cuerpo de letra normal de un valor, en mm, según cuán largo sea el texto (ver cuerpoValorPdf
+ * en helper_rotulos_pdf.php, que llama a esta, y cuerpoValor() en assets/js/rotulo.js).
+ */
+function cuerpoValorRotulo($texto, $escala = 1.0) {
+    $largo = mb_strlen(trim((string) $texto));
+
+    // Un 10% más chicos desde el rollo de 100x80 (2026-09-29): eran 5,5 / 4,5 / 3,6 / 3,0.
+    if ($largo <= 22) { return round(5.0 * $escala, 2); }
+    if ($largo <= 30) { return round(4.1 * $escala, 2); }
+    if ($largo <= 40) { return round(3.3 * $escala, 2); }
+    return round(2.7 * $escala, 2);
+}
+
+/**
+ * Qué campos lleva el rótulo y de qué tamaño va cada uno.
+ *
+ * $r es un rótulo ya normalizado (ver normalizarListaDeRotulos). Devuelve:
+ *   'campos'         => [clave => ['etiqueta' => mm, 'oc' => mm, 'valor' => mm, 'cedi' => mm]], en el
+ *                       orden en que se dibujan; las claves son pv, numero, cajas, producto y cedi.
+ *   'campo_del_cedi' => la clave del campo al lado del cual va "CEDI: 149" (formato Éxito), o null.
+ *   'aire'           => los mm que sobran a lo alto, para repartir entre los campos.
+ */
+function tamanosDelRotulo(array $r) {
+    $lleno = fn($v) => trim((string) ($v ?? '')) !== '';
+    $largo = fn($v) => mb_strlen(trim((string) ($v ?? '')));
+
+    $numeroCedi = preg_replace('/\D+/', '', (string) ($r['numero_cedi'] ?? ''));
+    $conCedi    = $numeroCedi !== '';
+    $campoDelCedi = !$conCedi ? null
+        : ($lleno($r['numero_pv'] ?? '') && cediVaAlLadoDelNumero(trim((string) $r['numero_pv']), $numeroCedi) ? 'numero' : 'cajas');
+
+    // Por campo: largo de la etiqueta, largo de la O/C (0 si no va), largo del valor, cuerpo normal
+    // del valor y si es el destacado. Los largos de las etiquetas son los de los textos que se imprimen.
+    $campos = [];
+    if ($lleno($r['pv'] ?? '')) {
+        $campos['pv'] = [14, 0, $largo($r['pv']), cuerpoValorRotulo($r['pv']), false];
+    }
+    if ($lleno($r['numero_pv'] ?? '')) {
+        $campos['numero'] = [17, 0, $largo($r['numero_pv']), cuerpoValorRotulo($r['numero_pv'], 1.6), true];
+    }
+    $conOc = $lleno($r['oc'] ?? '');
+    $campos['cajas'] = [$conOc ? 16 : 11, $conOc ? 4 + $largo($r['oc']) : 0, $largo($r['total']),
+                        cuerpoValorRotulo((string) $r['total'], 0.75), false];
+    if ($lleno($r['producto'] ?? '')) {
+        $campos['producto'] = [$lleno($r['sku'] ?? '') ? 17 + $largo($r['sku']) : 8, 0, $largo($r['producto']),
+                               cuerpoValorRotulo($r['producto'], 0.70), false];
+    } elseif ($lleno($r['sku'] ?? '')) {
+        $campos['producto'] = [3, 0, $largo($r['sku']), cuerpoValorRotulo($r['sku'], 0.70), false];
+    }
+    if ($lleno($r['cedi'] ?? '')) {
+        $campos['cedi'] = [4, 0, $largo($r['cedi']), cuerpoValorRotulo($r['cedi'], 0.75), false];
+    }
+
+    // Lo que mide a lo alto un campo: el renglón de la etiqueta (o el de la O/C, si es más alta), el
+    // valor y el margen de abajo. Son los line-height de 04-rotulo.css y de cssRotulosPdf.
+    $alto = fn($c, $et, $oc, $valor) => max($et, $c[1] ? $oc : 0) * 1.1 + $valor + 0.5;
+    $etiquetaBase = fn($c) => $c[4] ? ($conCedi ? 4.0 : 3.0) : 2.2;
+
+    $natural = 0;
+    foreach ($campos as $c) {
+        $natural += $alto($c, $etiquetaBase($c), 2.8, $c[3]);
+    }
+
+    // La escala que llena el alto. Las etiquetas crecen la mitad que los valores: lo que se lee de
+    // lejos es el dato, no su nombre.
+    $escala = min(ROTULO_ESCALA_MAXIMA, max(1, ROTULO_CAMPOS_ALTO_MM / $natural));
+    $escalaEtiqueta = 1 + ($escala - 1) * 0.5;
+
+    $salida = [];
+    $usado  = 0;
+    foreach ($campos as $clave => $c) {
+        // "CEDI: 149" crece solo si al lado sigue entrando la etiqueta del campo en un renglón.
+        $cedi  = $clave === $campoDelCedi ? round(6.5 * min($escalaEtiqueta, 1.4), 2) : 0;
+        if ($cedi && $c[0] * $etiquetaBase($c) * 0.8 + mb_strlen('CEDI: ' . $numeroCedi) * $cedi * 0.68 + 3 > ROTULO_CAMPOS_ANCHO_MM) {
+            $cedi = 6.5;
+        }
+        $ancho = ROTULO_CAMPOS_ANCHO_MM - ($cedi ? mb_strlen('CEDI: ' . $numeroCedi) * $cedi * 0.68 + 3 : 0);
+
+        // El valor crece con la escala, pero nunca más de lo que entra a lo ancho (0,72 es lo que
+        // ocupa una letra mayúscula en negrita, en proporción a su alto). Nunca baja del normal:
+        // ese ya lo achica cuerpoValorRotulo para los textos largos.
+        $valor = $c[3] * $escala;
+        if ($c[2] > 0) {
+            $valor = min($valor, $ancho / ($c[2] * 0.72));
+        }
+        $valor = max($c[3], $valor);
+
+        // La etiqueta y la O/C crecen juntas y, si a lo ancho no entran, se achican juntas (las
+        // etiquetas van en mayúsculas y con separación: ocupan más que el valor por letra).
+        $et = $etiquetaBase($c) * $escalaEtiqueta;
+        $oc = 2.8 * $escalaEtiqueta;
+        // Y nunca más grandes que el dato que nombran: un nombre largo que no pudo crecer deja su
+        // etiqueta en el tamaño de siempre.
+        $et = min($et, max($etiquetaBase($c), $valor * 0.6));
+        $oc = min($oc, max(2.8, $valor * 0.9));
+        $anchoEtiqueta = $c[0] * $et * 0.8 + $c[1] * $oc * 0.72;
+        if ($anchoEtiqueta > $ancho) {
+            $f  = max(1 / $escalaEtiqueta, $ancho / $anchoEtiqueta);
+            $et *= $f;
+            $oc *= $f;
+        }
+
+        $salida[$clave] = ['etiqueta' => round($et, 2), 'oc' => round($oc, 2), 'valor' => round($valor, 2), 'cedi' => $cedi];
+        $usado += $alto($c, $et, $oc, $valor);
+    }
+
+    return [
+        'campos'         => $salida,
+        'campo_del_cedi' => $campoDelCedi,
+        'aire'           => round(max(0, ROTULO_CAMPOS_ALTO_MM - $usado), 2),
+    ];
+}
+
+// -------------------------------------------------------------------------------------------------
+// EL ORDEN DE LOS CEDI Y DE LAS TIENDAS (2026-10-09, pedido del usuario)
+//
+// Cajas por punto de venta y el Consolidado para rótulos (consolidadoExternoPorCedi) se miran y se
+// imprimen juntos, así que van en el MISMO orden: los dos llaman a estas dos funciones. Antes el
+// Consolidado para rótulos ordenaba las tiendas por nombre y no coincidía con la otra planilla.
+// -------------------------------------------------------------------------------------------------
+
+/**
+ * Las tiendas de un CEDI por su NÚMERO, de menor a mayor y comparando como número (en orden
+ * alfabético '4319' iría antes que '071'); las que no tienen número, al final; a igual número, por
+ * nombre. $a y $b traen 'numero' y 'nombre' (ver numeroYNombreDePunto).
+ */
+function compararPuntosDeVenta(array $a, array $b) {
+    if (($a['numero'] === '') !== ($b['numero'] === '')) {
+        return $a['numero'] === '' ? 1 : -1;
+    }
+    return [(int) $a['numero'], $a['nombre']] <=> [(int) $b['numero'], $b['nombre']];
+}
+
+/**
+ * Los CEDI, el que tiene menos tiendas primero (es el que se resuelve rápido); a igual cantidad, por
+ * nombre, para que el orden no dependa de en qué orden devolvió las filas la base.
+ */
+function ordenarCedisPorTiendas(array &$porCedi) {
+    $tiendas = array_map(fn($d) => count($d['puntos'] ?? []), $porCedi);
+    uksort($porCedi, fn($x, $y) => [$tiendas[$x], (string) $x] <=> [$tiendas[$y], (string) $y]);
 }

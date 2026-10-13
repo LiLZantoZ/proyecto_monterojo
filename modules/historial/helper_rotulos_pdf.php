@@ -156,13 +156,8 @@ CSS;
  * $escala permite usar la misma progresión para valores que arrancan más chicos, como el producto.
  */
 function cuerpoValorPdf($texto, $escala = 1.0) {
-    $largo = mb_strlen(trim((string) $texto));
-
-    // Un 10% más chicos desde el rollo de 100x80 (2026-09-29): eran 5,5 / 4,5 / 3,6 / 3,0.
-    if ($largo <= 22) { return round(5.0 * $escala, 2); }
-    if ($largo <= 30) { return round(4.1 * $escala, 2); }
-    if ($largo <= 40) { return round(3.3 * $escala, 2); }
-    return round(2.7 * $escala, 2);
+    // Vive en helper_rotulos_lista.php desde el 2026-10-09: la usa también tamanosDelRotulo().
+    return cuerpoValorRotulo($texto, $escala);
 }
 /**
  * El QR de un rótulo como data URI, o cadena vacía si no se puede armar.
@@ -211,10 +206,6 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
                        $numeroPv = '', $sku = '', $enlace = null, $numeroCedi = '') {
     $esc = fn($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-    $nombreProducto = trim((string) $producto) !== ''
-        ? $esc($producto)
-        : '<span style="color:#888">________________</span>';
-
     // El SKU acompaña a la etiqueta del producto en vez de ocupar su propio renglón: hay productos
     // que comparten nombre y solo se distinguen por él (ver productoDelMaestro), así que tiene que
     // estar; pero un renglón entero para cinco dígitos le robaría altura al nombre.
@@ -230,8 +221,14 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
     // La O/C va en un cuerpo más grande, en negrita y en negro dentro de la etiqueta: es un número
     // que se teclea y se compara contra la planilla, y al gris de 2,4mm de las etiquetas costaba
     // leerlo. Lo que crece es SOLO ese pedazo; "Cajas total" se queda como las demás etiquetas.
+    // Los tamaños de letra de cada campo: crecen cuando hay pocos (2026-10-09, ver
+    // tamanosDelRotulo en helper_rotulos_lista.php, la misma cuenta de la pantalla y la etiquetadora).
+    $tam = tamanosDelRotulo([
+        'pv' => $pv, 'numero_pv' => $numeroPv, 'oc' => $oc, 'total' => $total, 'producto' => $producto,
+        'sku' => $sku, 'cedi' => $cedi, 'numero_cedi' => $numeroCedi,
+    ]);
     $etiquetaCajas = trim((string) $oc) !== ''
-        ? 'Cajas total  ·  <span class="rotulo-oc">O/C ' . $esc($oc) . '</span>'
+        ? 'Cajas total  ·  <span class="rotulo-oc" style="font-size: ' . $tam['campos']['cajas']['oc'] . 'mm">O/C ' . $esc($oc) . '</span>'
         : 'Cajas total';
 
     // El número del punto de venta va a 1,6 veces el cuerpo normal (8mm), el equivalente del doble
@@ -239,22 +236,36 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
     // triple allá—, pero a ese tamaño los cinco campos no entraban en 75mm de alto.
     $escalaNumero = 1.6;
 
-    $campos = [
-        ['Punto de venta',    $esc($pv),                        cuerpoValorPdf($pv),        false],
-        ['N° punto de venta', $esc($numeroPv !== '' ? $numeroPv : '—'),
-                                                                cuerpoValorPdf($numeroPv, $escalaNumero), true],
-        [$etiquetaCajas,      (int) $total,                     cuerpoValorPdf((string) $total, 0.75), false],
-        [$etiquetaProducto,   $nombreProducto,                  cuerpoValorPdf($producto, 0.70), false],
-        ['CEDI',              $esc($cedi !== '' ? $cedi : '-'), cuerpoValorPdf($cedi, 0.75), false],
-    ];
+    // Solo van los campos que traen algo (2026-10-09, pedido del usuario): "Cajas total" siempre,
+    // los demás si no están vacíos. Las claves son el nombre del campo (ver $campoDelCedi). Igual
+    // que en assets/js/rotulo.js y en tsplDeUnRotulo().
+    $lleno  = fn($v) => trim((string) $v) !== '';
+    $campos = [];
+    if ($lleno($pv)) {
+        $campos['pv'] = ['Punto de venta', $esc($pv), cuerpoValorPdf($pv), false];
+    }
+    if ($lleno($numeroPv)) {
+        $campos['numero'] = ['N° punto de venta', $esc($numeroPv), cuerpoValorPdf($numeroPv, $escalaNumero), true];
+    }
+    $campos['cajas'] = [$etiquetaCajas, (int) $total, cuerpoValorPdf((string) $total, 0.75), false];
+    if ($lleno($producto)) {
+        $campos['producto'] = [$etiquetaProducto, $esc($producto), cuerpoValorPdf($producto, 0.70), false];
+    } elseif ($lleno($sku)) {
+        $campos['producto'] = ['SKU', $esc($sku), cuerpoValorPdf($sku, 0.70), false];
+    }
+    if ($lleno($cedi)) {
+        $campos['cedi'] = ['CEDI', $esc($cedi), cuerpoValorPdf($cedi, 0.75), false];
+    }
 
     // FORMATO ÉXITO: con número de CEDI va "CEDI: 149" a la derecha del número del punto de venta,
     // o del renglón de cajas total si al lado del número no entra. Ver cediVaAlLadoDelNumero().
     $numeroCedi   = trim((string) $numeroCedi);
     $textoCedi    = $numeroCedi !== '' ? 'CEDI: ' . $numeroCedi : '';
-    $campoDelCedi = $textoCedi === ''
-        ? null
-        : (cediVaAlLadoDelNumero($numeroPv !== '' ? $numeroPv : '-', $numeroCedi) ? 1 : 2);
+    $campoDelCedi = $tam['campo_del_cedi'];
+
+    // El alto que sobra se reparte arriba, entre los campos y abajo, para que el pie quede siempre
+    // en su lugar: en dompdf no se puede anclar al fondo como en pantalla (flex).
+    $aire = round($tam['aire'] / (count($campos) + 1), 2);
 
     $html = '<div class="rotulo' . ($textoCedi !== '' ? ' rotulo-con-cedi' : '') . '">';
 
@@ -264,21 +275,25 @@ function htmlRotuloPdf($logo, $pv, $oc, $cedi, $numero, $total, $producto, $tien
     }
     $html .= '<span>Monterojo Gourmet</span></div>';
 
-    foreach ($campos as $i => [$etiqueta, $valor, $cuerpo, $fuerte]) {
-        $texto = '<span class="rotulo-etiqueta' . ($fuerte ? ' rotulo-etiqueta-fuerte' : '') . '">'
-               . $etiqueta . '</span>'
-               . '<span class="rotulo-valor" style="font-size: ' . $cuerpo . 'mm">' . $valor . '</span>';
+    foreach ($campos as $i => [$etiqueta, $valor, , $fuerte]) {
+        $t = $tam['campos'][$i];
+        $texto = '<span class="rotulo-etiqueta' . ($fuerte ? ' rotulo-etiqueta-fuerte' : '') . '"'
+               . ' style="font-size: ' . $t['etiqueta'] . 'mm">' . $etiqueta . '</span>'
+               . '<span class="rotulo-valor" style="font-size: ' . $t['valor'] . 'mm">' . $valor . '</span>';
 
+        $html .= '<div class="rotulo-campo" style="padding-top: ' . $aire . 'mm">';
         if ($i === $campoDelCedi) {
             // Tabla y no flex: dompdf no soporta flexbox de forma confiable (igual que el pie).
-            $html .= '<table class="rotulo-campo rotulo-campo-cedi"><tr>'
+            $html .= '<table class="rotulo-campo-cedi"><tr>'
                    . '<td>' . $texto . '</td>'
-                   . '<td class="rotulo-cedi">' . $esc($textoCedi) . '</td>'
+                   . '<td class="rotulo-cedi" style="font-size: ' . $t['cedi'] . 'mm">' . $esc($textoCedi) . '</td>'
                    . '</tr></table>';
         } else {
-            $html .= '<div class="rotulo-campo">' . $texto . '</div>';
+            $html .= $texto;
         }
+        $html .= '</div>';
     }
+    $html .= '<div style="height: ' . $aire . 'mm"></div>';
 
     // El pie: contador y QR en el mismo renglón. El QR lleva el enlace a la página del rótulo —lo
     // único que un celular sabe abrir al escanear— y ahí se ve el EAN, que en la etiqueta no se

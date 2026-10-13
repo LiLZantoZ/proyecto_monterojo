@@ -58,6 +58,71 @@
         return anchoNumero + 4 * 8 + anchoCedi <= 680;
     }
 
+    // LA LETRA CRECE CON EL ESPACIO QUE QUEDA (2026-10-09). Es la copia EXACTA de
+    // tamanosDelRotulo() en modules/historial/helper_rotulos_lista.php, que usan el PDF y la
+    // etiquetadora: si se cambia un número acá, se cambia allá. Devuelve los milímetros de cada
+    // campo (etiqueta, oc, valor, cedi), el campo al lado del cual va "CEDI: 149" y el aire que sobra.
+    var CAMPOS_ALTO_MM = 40, CAMPOS_ANCHO_MM = 85, ESCALA_MAXIMA = 4;
+
+    function tamanos(r) {
+        var lleno = function (v) { return v != null && String(v).trim() !== ''; };
+        var largo = function (v) { return String(v == null ? '' : v).trim().length; };
+        var numeroCedi = String(r.numero_cedi == null ? '' : r.numero_cedi).replace(/\D+/g, '');
+        var conCedi = numeroCedi !== '';
+        var campoDelCedi = !conCedi ? null
+            : (lleno(r.numero_pv) && cediVaAlLadoDelNumero(String(r.numero_pv).trim(), numeroCedi) ? 'numero' : 'cajas');
+
+        var campos = [];
+        if (lleno(r.pv)) { campos.push(['pv', 14, 0, largo(r.pv), +cuerpoValor(r.pv), false]); }
+        if (lleno(r.numero_pv)) { campos.push(['numero', 17, 0, largo(r.numero_pv), +cuerpoValor(r.numero_pv, 1.6), true]); }
+        var conOc = lleno(r.oc);
+        campos.push(['cajas', conOc ? 16 : 11, conOc ? 4 + largo(r.oc) : 0, largo(r.total), +cuerpoValor(String(r.total), 0.75), false]);
+        if (lleno(r.producto)) {
+            campos.push(['producto', lleno(r.sku) ? 17 + largo(r.sku) : 8, 0, largo(r.producto), +cuerpoValor(r.producto, 0.70), false]);
+        } else if (lleno(r.sku)) {
+            campos.push(['producto', 3, 0, largo(r.sku), +cuerpoValor(r.sku, 0.70), false]);
+        }
+        if (lleno(r.cedi)) { campos.push(['cedi', 4, 0, largo(r.cedi), +cuerpoValor(r.cedi, 0.75), false]); }
+
+        var alto = function (c, et, oc, valor) { return Math.max(et, c[2] ? oc : 0) * 1.1 + valor + 0.5; };
+        var etiquetaBase = function (c) { return c[5] ? (conCedi ? 4.0 : 3.0) : 2.2; };
+
+        var natural = 0;
+        campos.forEach(function (c) { natural += alto(c, etiquetaBase(c), 2.8, c[4]); });
+        var escala = Math.min(ESCALA_MAXIMA, Math.max(1, CAMPOS_ALTO_MM / natural));
+        var escalaEtiqueta = 1 + (escala - 1) * 0.5;
+        var redondo = function (n) { return Math.round(n * 100) / 100; };
+
+        var salida = {}, usado = 0;
+        campos.forEach(function (c) {
+            var cedi  = c[0] === campoDelCedi ? redondo(6.5 * Math.min(escalaEtiqueta, 1.4)) : 0;
+            if (cedi && c[1] * etiquetaBase(c) * 0.8 + ('CEDI: ' + numeroCedi).length * cedi * 0.68 + 3 > CAMPOS_ANCHO_MM) {
+                cedi = 6.5;
+            }
+            var ancho = CAMPOS_ANCHO_MM - (cedi ? ('CEDI: ' + numeroCedi).length * cedi * 0.68 + 3 : 0);
+
+            var valor = c[4] * escala;
+            if (c[3] > 0) { valor = Math.min(valor, ancho / (c[3] * 0.72)); }
+            valor = Math.max(c[4], valor);
+
+            var et = etiquetaBase(c) * escalaEtiqueta;
+            var oc = 2.8 * escalaEtiqueta;
+            et = Math.min(et, Math.max(etiquetaBase(c), valor * 0.6));
+            oc = Math.min(oc, Math.max(2.8, valor * 0.9));
+            var anchoEtiqueta = c[1] * et * 0.8 + c[2] * oc * 0.72;
+            if (anchoEtiqueta > ancho) {
+                var f = Math.max(1 / escalaEtiqueta, ancho / anchoEtiqueta);
+                et *= f;
+                oc *= f;
+            }
+
+            salida[c[0]] = { etiqueta: redondo(et), oc: redondo(oc), valor: redondo(valor), cedi: cedi };
+            usado += alto(c, et, oc, valor);
+        });
+
+        return { campos: salida, campoDelCedi: campoDelCedi, aire: redondo(Math.max(0, CAMPOS_ALTO_MM - usado)) };
+    }
+
     /**
      * Un rótulo en HTML.
      *
@@ -67,10 +132,6 @@
      * dibuja es literalmente la que se imprime.
      */
     function html(r) {
-        var producto = r.producto && String(r.producto).trim() !== ''
-            ? esc(r.producto)
-            : '<span style="color:#888">________________</span>';
-
         var numeroPv = String(r.numero_pv == null ? '' : r.numero_pv).trim();
 
         // El número va a 1,6 veces el cuerpo normal, el equivalente del doble de la etiquetadora
@@ -82,28 +143,40 @@
         // están estibadas y solo se ve el canto de la etiqueta.
         // La orden de compra acompaña a la etiqueta de "Cajas total" y no ocupa renglón propio, por
         // la misma razón que el SKU: un sexto campo no entra en la etiqueta. Ver helper_rotulos_pdf.php.
+        // Los tamaños de letra: crecen cuando hay pocos campos (ver tamanos()).
+        var tam = tamanos(r);
         var etiquetaCajas = r.oc && String(r.oc).trim() !== ''
-            ? 'Cajas total  ·  <span class="rotulo-oc">O/C ' + esc(r.oc) + '</span>'
+            ? 'Cajas total  ·  <span class="rotulo-oc" style="font-size: ' + tam.campos.cajas.oc + 'mm">O/C ' + esc(r.oc) + '</span>'
             : 'Cajas total';
 
-        var campos = [
-            ['Punto de venta',    esc(r.pv),                    cuerpoValor(r.pv)],
-            ['N° punto de venta', esc(numeroPv || '—'),         cuerpoValor(numeroPv, escalaNumero), true],
-            [etiquetaCajas,       esc(r.total),                 cuerpoValor(String(r.total), 0.75)],
-            // El SKU acompaña a la etiqueta y no ocupa renglón propio: hay productos que comparten
-            // nombre y solo se distinguen por él, pero un renglón para cinco dígitos le robaría
-            // altura al nombre, que es lo que se lee.
-            [r.sku ? 'Producto  ·  SKU ' + esc(r.sku) : 'Producto',
-                                  producto,                     cuerpoValor(r.producto, 0.70)],
-            ['CEDI',              esc(r.cedi || '-'),           cuerpoValor(r.cedi, 0.75)]
-        ];
+        // Solo van los campos que traen algo (2026-10-09, pedido del usuario): un rótulo suelto con
+        // solo la orden de compra sale con la O/C, las cajas y el "CAJ x DE y", sin renglones vacíos.
+        // "Cajas total" va siempre. El quinto elemento es el nombre del campo (ver campoDelCedi).
+        // Lo mismo hacen htmlRotuloPdf() y tsplDeUnRotulo(): si se cambia acá, se cambia allá.
+        var lleno = function (v) { return v != null && String(v).trim() !== ''; };
+        var campos = [];
+        if (lleno(r.pv)) { campos.push(['Punto de venta', esc(r.pv), cuerpoValor(r.pv), false, 'pv']); }
+        if (numeroPv !== '') {
+            campos.push(['N° punto de venta', esc(numeroPv), cuerpoValor(numeroPv, escalaNumero), true, 'numero']);
+        }
+        campos.push([etiquetaCajas, esc(r.total), cuerpoValor(String(r.total), 0.75), false, 'cajas']);
+        // El SKU acompaña a la etiqueta y no ocupa renglón propio: hay productos que comparten
+        // nombre y solo se distinguen por él, pero un renglón para cinco dígitos le robaría
+        // altura al nombre, que es lo que se lee. Sin nombre, el SKU va solo.
+        if (lleno(r.producto)) {
+            campos.push([lleno(r.sku) ? 'Producto  ·  SKU ' + esc(r.sku) : 'Producto',
+                         esc(r.producto), cuerpoValor(r.producto, 0.70), false, 'producto']);
+        } else if (lleno(r.sku)) {
+            campos.push(['SKU', esc(r.sku), cuerpoValor(r.sku, 0.70), false, 'producto']);
+        }
+        if (lleno(r.cedi)) { campos.push(['CEDI', esc(r.cedi), cuerpoValor(r.cedi, 0.75), false, 'cedi']); }
 
         // FORMATO ÉXITO: solo Cajas por punto de venta manda numero_cedi. Con él, la etiqueta del
-        // número va más grande y a la derecha aparece "CEDI: 149". campoDelCedi es el índice del
-        // campo al lado del cual va: 1 (el número) si entra, 2 (cajas total) si no.
+        // número va más grande y a la derecha aparece "CEDI: 149". campoDelCedi es el campo al lado
+        // del cual va: el número si está y entra, cajas total si no.
         var numeroCedi   = String(r.numero_cedi == null ? '' : r.numero_cedi).replace(/\D+/g, '');
         var textoCedi    = numeroCedi ? 'CEDI: ' + numeroCedi : '';
-        var campoDelCedi = !textoCedi ? -1 : (cediVaAlLadoDelNumero(numeroPv || '-', numeroCedi) ? 1 : 2);
+        var campoDelCedi = tam.campoDelCedi || '';
 
         var salida = ''
             + '<div class="rotulo' + (textoCedi ? ' rotulo-con-cedi' : '') + '">'
@@ -113,14 +186,15 @@
             +   '</div>'
             +   '<div class="rotulo-campos">';
 
-        campos.forEach(function (c, i) {
-            var texto = '<span class="rotulo-etiqueta' + (c[3] ? ' rotulo-etiqueta-fuerte' : '') + '">' + c[0] + '</span>'
-                      + '<span class="rotulo-valor" style="font-size: ' + c[2] + 'mm">' + c[1] + '</span>';
+        campos.forEach(function (c) {
+            var t = tam.campos[c[4]];
+            var texto = '<span class="rotulo-etiqueta' + (c[3] ? ' rotulo-etiqueta-fuerte' : '') + '" style="font-size: ' + t.etiqueta + 'mm">' + c[0] + '</span>'
+                      + '<span class="rotulo-valor" style="font-size: ' + t.valor + 'mm">' + c[1] + '</span>';
 
-            if (i === campoDelCedi) {
+            if (c[4] === campoDelCedi) {
                 salida += '<div class="rotulo-campo rotulo-campo-cedi">'
                         +   '<div class="rotulo-campo-texto">' + texto + '</div>'
-                        +   '<span class="rotulo-cedi">' + esc(textoCedi) + '</span>'
+                        +   '<span class="rotulo-cedi" style="font-size: ' + t.cedi + 'mm">' + esc(textoCedi) + '</span>'
                         + '</div>';
             } else {
                 salida += '<div class="rotulo-campo">' + texto + '</div>';

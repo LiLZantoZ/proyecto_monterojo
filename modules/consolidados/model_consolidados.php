@@ -3,6 +3,7 @@
 // Consultas del Consolidado. Lo usan la pantalla de Consolidados, el PDF por CEDI y Picking.
 
 require_once __DIR__ . '/../../config/config.php';
+require_once __DIR__ . '/../historial/helper_rotulos_lista.php';   // el orden de las tiendas (2026-10-09)
 
 // ---------------------------------------------------------------------------------------------
 // EL CÁLCULO CENTRAL: de unidades a cajas y saldos.
@@ -707,10 +708,14 @@ function consolidadoExternoPorCedi($pdo, array $filtros = []) {
         }
         unset($pv);
 
-        // Las tiendas, alfabéticas: acá no hay un orden de trabajo que respetar como en el
-        // interno —el externo se lee buscando una tienda concreta— y alfabético es donde el ojo
-        // la encuentra sin pensar.
-        ksort($datos['puntos']);
+        // Las tiendas, en el MISMO orden que Cajas por punto de venta (2026-10-09, pedido del usuario:
+        // hasta entonces iban alfabéticas): por número de tienda, de menor a mayor, y las que no tienen
+        // número al final. Las dos planillas se miran e imprimen juntas. Ver compararPuntosDeVenta().
+        $numeros = [];
+        foreach ($datos['puntos'] as $punto => $pv) {
+            $numeros[$punto] = numeroYNombreDePunto($punto, $pv['ean_punto_venta'], $pv['direccion']);
+        }
+        uksort($datos['puntos'], fn($x, $y) => compararPuntosDeVenta($numeros[$x], $numeros[$y]));
 
         // El total del CEDI se calcula sobre TODAS las filas y no sumando los subtotales de cada
         // tienda: 'productos' tiene que contar productos distintos del CEDI, y sumando subtotales
@@ -725,8 +730,9 @@ function consolidadoExternoPorCedi($pdo, array $filtros = []) {
     unset($datos);
 
     // Mismo criterio que el interno: el CEDI con menos trabajo primero. Acá "menos trabajo" son
-    // menos tiendas que atender, que es lo que define el tamaño de este consolidado.
-    uasort($porCedi, fn($a, $b) => count($a['puntos']) <=> count($b['puntos']));
+    // menos tiendas que atender, que es lo que define el tamaño de este consolidado. Con la misma
+    // función que Cajas por punto de venta, para que los CEDI salgan en el mismo orden.
+    ordenarCedisPorTiendas($porCedi);
 
     return $porCedi;
 }

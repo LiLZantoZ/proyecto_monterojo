@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../config/auth_guard.php';
 require_once __DIR__ . '/../../../config/permisos.php';
 require_once __DIR__ . '/../model_posiciones.php';
+require_once __DIR__ . '/../helper_plano_posiciones.php';   // la vista Plano (2026-10-13)
 
 requierePermiso('modulo_posiciones', urlPanelDelRol($_SESSION['usuario_rol'] ?? null));
 
@@ -28,7 +29,15 @@ $filtros = [
     'nivel'  => $entero($_GET['nivel'] ?? '', POSICIONES_NIVELES),
     'buscar' => trim($_GET['buscar'] ?? ''),
     'estado' => in_array($_GET['estado'] ?? '', array_merge(['libre', 'ocupada'], array_keys($estadosGrilla)), true) ? $_GET['estado'] : '',
+    // TARJETAS o PLANO (2026-10-13): viaja con los filtros, así las pastillas, el formulario y la
+    // vuelta después de cargar o sacar una estiba se quedan en la misma vista.
+    'vista'  => ($_GET['vista'] ?? '') === 'plano' ? 'plano' : '',
 ];
+$esPlano = $filtros['vista'] === 'plano';
+// El plano dibuja un rack por vez: sin rack elegido, el 1.
+if ($esPlano && $filtros['rack'] === '') {
+    $filtros['rack'] = '1';
+}
 
 $resultado    = paginaPosiciones($pdo, $filtros, $_GET['pagina'] ?? 1);
 $stats        = estadisticasPosiciones($pdo, $filtros);
@@ -40,10 +49,14 @@ $desdeFila    = $totalFilas === 0 ? 0 : ($pagina - 1) * POSICIONES_POR_PAGINA + 
 $hastaFila    = min($pagina * POSICIONES_POR_PAGINA, $totalFilas);
 $hayFiltro    = $filtros['rack'] !== '' || $filtros['modulo'] !== '' || $filtros['nivel'] !== '' || $filtros['buscar'] !== '';
 $catalogo     = ($puedeMover || $puedeEditar) ? catalogoSkuPosiciones($pdo) : [];
+$plano        = $esPlano ? planoPosiciones($pdo, $filtros['rack'], $filtros) : null;
+$racks        = $esPlano ? resumenRacksPosiciones($pdo) : [];
 
 $urlPosiciones = fn(array $p) => BASE_URL . '/posiciones' . (($q = http_build_query(array_filter($p, fn($v) => $v !== ''))) !== '' ? '?' . $q : '');
 $urlEstado = fn($e) => $urlPosiciones(['estado' => $e] + $filtros);
 $urlPagina = fn($p) => $urlPosiciones($filtros + ['pagina' => $p > 1 ? $p : '']);
+$urlVista  = fn($v) => $urlPosiciones(['vista' => $v] + $filtros);
+$urlRack   = fn($r) => $urlPosiciones(['rack' => $r] + $filtros);
 // Para volver a la misma página y filtros después de una acción.
 $volver = http_build_query(array_filter($filtros + ['pagina' => $pagina > 1 ? $pagina : ''], fn($v) => $v !== ''));
 
@@ -80,6 +93,11 @@ $datosTarjeta = fn(array $p) => json_encode([
             <header class="modulo-header">
                 <h2>Posiciones de bodega</h2>
                 <div class="modulo-acciones">
+                    <!-- Tarjetas / Plano: las dos formas de ver las MISMAS posiciones (2026-10-13). -->
+                    <div class="toggle-vista-posiciones" role="group" aria-label="Forma de ver las posiciones">
+                        <a class="btn-toggle-vista<?php echo $esPlano ? '' : ' activo'; ?>" href="<?php echo $esc($urlVista('')); ?>"><i class="fa-solid fa-table-cells-large"></i> Tarjetas</a>
+                        <a class="btn-toggle-vista<?php echo $esPlano ? ' activo' : ''; ?>" href="<?php echo $esc($urlVista('plano')); ?>"><i class="fa-solid fa-border-all"></i> Plano</a>
+                    </div>
                     <a class="btn" href="<?php echo BASE_URL; ?>/posiciones/acciones?accion=exportar">
                         <i class="fa-solid fa-file-excel"></i> Exportar Excel
                     </a>
@@ -117,6 +135,9 @@ $datosTarjeta = fn(array $p) => json_encode([
                 <?php if ($filtros['estado'] !== ''): ?>
                     <input type="hidden" name="estado" value="<?php echo $esc($filtros['estado']); ?>">
                 <?php endif; ?>
+                <?php if ($esPlano): ?>
+                    <input type="hidden" name="vista" value="plano">
+                <?php endif; ?>
                 <div class="filtro">
                     <label for="f-rack"><i class="fa-solid fa-warehouse"></i> Rack</label>
                     <select name="rack" id="f-rack">
@@ -151,11 +172,30 @@ $datosTarjeta = fn(array $p) => json_encode([
                 </div>
                 <button type="submit" class="btn btn-acento"><i class="fa-solid fa-magnifying-glass"></i> Filtrar</button>
                 <?php if ($hayFiltro || $filtros['estado'] !== ''): ?>
-                    <a class="btn" href="<?php echo BASE_URL; ?>/posiciones">Limpiar</a>
+                    <a class="btn" href="<?php echo BASE_URL; ?>/posiciones<?php echo $esPlano ? '?vista=plano' : ''; ?>">Limpiar</a>
                 <?php endif; ?>
             </form>
 
-            <?php if (!$filas): ?>
+            <?php if ($esPlano): ?>
+                <!-- EL PLANO: el rack elegido en 2D (ver helper_plano_posiciones.php). Clic en una celda = el mismo
+                     modal que la tarjeta. Los filtros atenúan lo que no coincide en vez de quitarlo. -->
+                <section class="plano-posiciones">
+                    <nav class="plano-racks" aria-label="Rack a dibujar">
+                        <?php foreach ($racks as $r => $c): ?>
+                            <a class="btn-rack-plano<?php echo (int) $filtros['rack'] === $r ? ' activo' : ''; ?>" href="<?php echo $esc($urlRack($r)); ?>"
+                               title="<?php echo $mil($c['ocupadas']); ?> de <?php echo $mil($c['total']); ?> posiciones ocupadas">
+                                Rack <?php echo $r; ?> <small><?php echo $mil($c['ocupadas']); ?>/<?php echo $mil($c['total']); ?></small>
+                            </a>
+                        <?php endforeach; ?>
+                    </nav>
+                    <?php echo htmlLeyendaPlanoPosiciones(); ?>
+                    <?php if ($plano['total'] === 0): ?>
+                        <div class="aviso aviso-atencion"><i class="fa-solid fa-inbox"></i><div>El rack <?php echo (int) $plano['rack']; ?> todavía no tiene posiciones creadas.</div></div>
+                    <?php else: ?>
+                        <?php echo htmlPlanoPosiciones($plano, $datosTarjeta); ?>
+                    <?php endif; ?>
+                </section>
+            <?php elseif (!$filas): ?>
                 <div class="aviso aviso-atencion" style="margin-top: 14px;">
                     <i class="fa-solid fa-inbox"></i>
                     <div><?php echo $stats['total'] || $hayFiltro ? 'No hay posiciones con esos filtros. Probá con otros o limpialos.' : 'Todavía no hay posiciones creadas.'; ?></div>
@@ -287,13 +327,10 @@ $datosTarjeta = fn(array $p) => json_encode([
                     <!-- Lo registrado en el Formato Conciliador y lo ubicado, en vivo (solo informa). -->
                     <div class="campo campo-ancho cupo-conciliador" data-campo="cupo" hidden></div>
                     <div class="campo campo-ancho">
-                        <label for="e-estado"><i class="fa-solid fa-circle-half-stroke"></i> Estado</label>
-                        <select id="e-estado" name="estado">
-                            <?php foreach (POSICIONES_ESTADOS as $e): ?>
-                                <option value="<?php echo $esc($e); ?>"><?php echo $esc($e); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <span class="ayuda">"Producto vencido" no se elige: sale solo cuando la fecha de vencimiento ya pasó.</span>
+                        <label><i class="fa-solid fa-circle-half-stroke"></i> Estado</label>
+                        <!-- No se elige (2026-10-13): es el del producto del SKU en Administrar productos. -->
+                        <div class="estado-del-producto"><span class="chip-estado-posicion estado-disponible" data-campo="estado-producto">Disponible</span></div>
+                        <span class="ayuda" data-campo="estado-ayuda">Sale del producto del SKU (Administrar productos). "Producto vencido" sale solo cuando la fecha ya pasó.</span>
                     </div>
                     <div class="campo campo-ancho">
                         <label for="e-obs"><i class="fa-solid fa-comment"></i> Observaciones</label>

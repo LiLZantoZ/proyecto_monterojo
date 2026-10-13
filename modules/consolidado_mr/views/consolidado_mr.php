@@ -642,6 +642,7 @@ $hastaFila = min($pagina * CONSOLIDADO_MR_POR_PAGINA, $totalFilas);
                         <li><i class="fa-solid fa-check"></i> Le da a cada factura su <strong>guía</strong>, su <strong>estado</strong>, la <strong>ciudad</strong> y la <strong>fecha de entrega</strong>.</li>
                         <li><i class="fa-solid fa-check"></i> Los de <strong>Proeslog</strong>, <strong>AGV</strong> (Producción diario de envíos, con DOCUMENTO NRO 1 a 4) y <strong>Vector Foods</strong> se reconocen solos.</li>
                         <li><i class="fa-solid fa-check"></i> Subir otra vez el mismo reporte <strong>actualiza</strong> los envíos, no los duplica.</li>
+                        <li><i class="fa-solid fa-check"></i> Lo que trae el reporte <strong>reemplaza</strong> el estado, la fecha de entrega y el transportador puestos a mano.</li>
                     </ul>
                 </aside>
 

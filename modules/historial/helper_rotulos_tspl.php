@@ -274,7 +274,7 @@ function tsplDeUnRotulo(array $r) {
     // La etiqueta conserva los espacios del final: son los que separan un texto del otro.
     $etiquetaCajas = $r['oc'] !== '' ? 'CAJAS TOTAL  -  ' : 'CAJAS TOTAL';
     $textoOc       = $r['oc'] !== '' ? 'O/C ' . $r['oc'] : '';
-    $campoDeLaOc   = $textoOc !== '' ? 2 : null;   // el índice de CAJAS TOTAL en $campos
+    $campoDeLaOc   = $textoOc !== '' ? 'cajas' : null;   // la clave de CAJAS TOTAL en $campos
     $fuenteOc      = TSPL_FUENTE_OC;
 
     // En el modal la orden de compra se puede escribir a mano, así que puede venir mucho más larga
@@ -305,23 +305,34 @@ function tsplDeUnRotulo(array $r) {
 
     // FORMATO ÉXITO: con número de CEDI, la etiqueta "N. PUNTO DE VENTA" pasa a la fuente 4 —la
     // misma del nombre de la tienda— y a la derecha va "CEDI: 149" en grande. $campoDelCedi es el
-    // índice del campo al lado del cual va: 1 (el número) si entra, 2 (cajas total) si no. Ver
+    // campo al lado del cual va: el número si está y entra, cajas total si no. Ver
     // cediVaAlLadoDelNumero() en helper_rotulos_lista.php.
-    $numeroPvImpreso = $r['numero_pv'] !== '' ? $r['numero_pv'] : '-';
     $textoCedi       = $r['numero_cedi'] !== '' ? 'CEDI: ' . $r['numero_cedi'] : '';
     $fuenteFuerte    = $textoCedi !== '' ? '4' : '3';
     $campoDelCedi    = $textoCedi === ''
         ? null
-        : (cediVaAlLadoDelNumero($numeroPvImpreso, $r['numero_cedi']) ? 1 : 2);
+        : ($r['numero_pv'] !== '' && cediVaAlLadoDelNumero($r['numero_pv'], $r['numero_cedi']) ? 'numero' : 'cajas');
 
     // El quinto elemento marca el campo como DESTACADO: su etiqueta se imprime en negrita.
-    $campos = [
-        ['PUNTO DE VENTA',    $r['pv'],                        ['5', '4', '3'], 1, false],
-        ['N. PUNTO DE VENTA', $numeroPvImpreso,                ['4'], $multNumero, true],
-        [$etiquetaCajas,      (string) $r['total'],             ['4'], 1, false],
-        [$etiquetaProducto,   $r['producto'] !== '' ? $r['producto'] : '________________', ['4', '3'], 1, false],
-        ['CEDI',              $r['cedi'] !== '' ? $r['cedi'] : '-', ['4', '3'], 1, false],
-    ];
+    // Solo van los campos que traen algo (2026-10-09, pedido del usuario): CAJAS TOTAL siempre,
+    // los demás si no están vacíos. Las claves son el nombre del campo (ver $campoDeLaOc y
+    // $campoDelCedi). Igual que en assets/js/rotulo.js y en htmlRotuloPdf().
+    $campos = [];
+    if ($r['pv'] !== '') {
+        $campos['pv'] = ['PUNTO DE VENTA', $r['pv'], ['5', '4', '3'], 1, false];
+    }
+    if ($r['numero_pv'] !== '') {
+        $campos['numero'] = ['N. PUNTO DE VENTA', $r['numero_pv'], ['4'], $multNumero, true];
+    }
+    $campos['cajas'] = [$etiquetaCajas, (string) $r['total'], ['4'], 1, false];
+    if ($r['producto'] !== '') {
+        $campos['producto'] = [$etiquetaProducto, $r['producto'], ['4', '3'], 1, false];
+    } elseif ($r['sku'] !== '') {
+        $campos['producto'] = ['SKU', $r['sku'], ['4', '3'], 1, false];
+    }
+    if ($r['cedi'] !== '') {
+        $campos['cedi'] = ['CEDI', $r['cedi'], ['4', '3'], 1, false];
+    }
 
     // La fuente de cada valor se resuelve ANTES de empezar a dibujar, porque de ella depende
     // cuánto miden los campos y, por lo tanto, cuánto aire sobra para repartir entre ellos.
@@ -343,39 +354,98 @@ function tsplDeUnRotulo(array $r) {
                  + max($altoConteo, $ladoQr);
     $pieArranca  = TSPL_Y0 + TSPL_DIB_ALTO - TSPL_MARGEN_V - $altoAbajo;
 
-    // Alto "natural" de los campos, sin aire entre uno y otro. El bloque del CEDI no suma: va al
-    // costado de un campo que ya es más alto que él.
-    $altoCampos = 0;
-    foreach ($campos as $i => [, , , $mult, $fuerte, $fuente]) {
-        // El renglón de la etiqueta mide lo que la fuente más alta que haya en él: en el campo de
-        // la O/C conviven la fuente de las etiquetas y la, más alta, de la orden de compra.
-        $altoEtiqueta = TSPL_FUENTES[$fuerte ? $fuenteFuerte : '2']['alto'];
-        if ($i === $campoDeLaOc) {
-            $altoEtiqueta = max($altoEtiqueta, TSPL_FUENTES[$fuenteOc]['alto']);
-        }
-
-        $altoCampos += $altoEtiqueta + 2 + TSPL_FUENTES[$fuente]['alto'] * $mult;
+    // La fuente de la etiqueta y de la O/C de cada campo: las de siempre, que abajo pueden crecer.
+    foreach ($campos as $i => $c) {
+        $campos[$i][7] = $c[4] ? $fuenteFuerte : '2';
+        $campos[$i][8] = $i === $campoDeLaOc ? $fuenteOc : null;
     }
 
-    // El sobrante se reparte en partes iguales. El tope de 4 puntos evita que dos campos se toquen
-    // cuando el rótulo va muy cargado, y el de 24 que queden flotando separadísimos cuando va
-    // vacío; entre medio, el rótulo se estira o se comprime solo según el tamaño de la etiqueta.
-    $aire = intdiv($pieArranca - $y - $altoCampos, count($campos));
-    $aire = max(4, min(3 * TSPL_PUNTOS_POR_MM, $aire));
+    // Alto "natural" de los campos, sin aire entre uno y otro. El bloque del CEDI no suma: va al
+    // costado de un campo que ya es más alto que él. El renglón de la etiqueta mide lo que la
+    // fuente más alta que haya en él: en el de la O/C conviven la de las etiquetas y la de la O/C.
+    $medirCampos = function (array $campos) {
+        $total = 0;
+        foreach ($campos as [, , , $mult, , $fuente, , $fuenteEtiqueta, $fuenteOcCampo]) {
+            $altoEtiqueta = TSPL_FUENTES[$fuenteEtiqueta]['alto'];
+            if ($fuenteOcCampo !== null) {
+                $altoEtiqueta = max($altoEtiqueta, TSPL_FUENTES[$fuenteOcCampo]['alto']);
+            }
+            $total += $altoEtiqueta + 2 + TSPL_FUENTES[$fuente]['alto'] * $mult;
+        }
+        return $total;
+    };
 
-    foreach ($campos as $i => [$etiqueta, , , $mult, $fuerte, $fuente, $texto]) {
+    // LA LETRA CRECE CON EL ESPACIO (2026-10-09): con pocos campos, cada texto pasa a la fuente (y
+    // al multiplicador) más grande que no se pase del tamaño que calcula tamanosDelRotulo() —la
+    // misma cuenta de la pantalla y del PDF— ni del ancho. Si al final no entra a lo alto, se
+    // queda todo como estaba: más vale letra chica que un campo encima del pie.
+    $tam = tamanosDelRotulo($r)['campos'];
+    $crecidos = $campos;
+    foreach ($crecidos as $i => [$etiqueta, $valor, , $mult, , $fuente, , $fuenteEtiqueta, $fuenteOcCampo]) {
+        $t = $tam[$i] ?? null;
+        if ($t === null) { continue; }
+        $anchoValor = $anchoUtil - ($i === $campoDelCedi ? mb_strlen($textoCedi) * TSPL_FUENTES['3']['ancho'] * 2 + 4 * TSPL_PUNTOS_POR_MM : 0);
+
+        // El valor: fuente y multiplicador, siempre que entre completo.
+        $valor  = trim((string) $valor);
+        $tope   = $t['valor'] * TSPL_PUNTOS_POR_MM * 1.08;
+        $mejor  = TSPL_FUENTES[$fuente]['alto'] * $mult;
+        // Solo las fuentes 3 a 5: la 1 y la 2 agrandadas salen pixeladas.
+        foreach ([['3', 1], ['4', 1], ['5', 1], ['4', 2], ['5', 2], ['4', 3], ['5', 3]] as [$f, $k]) {
+            $h = TSPL_FUENTES[$f]['alto'] * $k;
+            if ($h > $mejor && $h <= $tope && mb_strlen($valor) * TSPL_FUENTES[$f]['ancho'] * $k <= $anchoValor) {
+                $mejor = $h;
+                $crecidos[$i][3] = $k;
+                $crecidos[$i][5] = $f;
+                $crecidos[$i][6] = $valor;
+            }
+        }
+
+        // La etiqueta y la O/C, en una sola línea: entre las dos tienen que entrar a lo ancho.
+        $largoOc = $fuenteOcCampo !== null ? mb_strlen($textoOc) : 0;
+        $anchoOc = fn($fo) => $fo === null ? 0 : $largoOc * TSPL_FUENTES[$fo]['ancho'];
+        foreach (['2', '3', '4'] as $f) {
+            if (TSPL_FUENTES[$f]['alto'] > TSPL_FUENTES[$fuenteEtiqueta]['alto']
+                && TSPL_FUENTES[$f]['alto'] <= $t['etiqueta'] * TSPL_PUNTOS_POR_MM * 1.15
+                && mb_strlen($etiqueta) * TSPL_FUENTES[$f]['ancho'] + $anchoOc($fuenteOcCampo) <= $anchoUtil) {
+                $fuenteEtiqueta = $f;
+            }
+        }
+        $crecidos[$i][7] = $fuenteEtiqueta;
+        if ($fuenteOcCampo !== null) {
+            foreach (['3', '4', '5'] as $f) {
+                if (TSPL_FUENTES[$f]['alto'] > TSPL_FUENTES[$fuenteOcCampo]['alto']
+                    && TSPL_FUENTES[$f]['alto'] <= $t['oc'] * TSPL_PUNTOS_POR_MM * 1.15
+                    && mb_strlen($etiqueta) * TSPL_FUENTES[$fuenteEtiqueta]['ancho'] + $anchoOc($f) <= $anchoUtil) {
+                    $fuenteOcCampo = $f;
+                }
+            }
+            $crecidos[$i][8] = $fuenteOcCampo;
+        }
+    }
+    if ($medirCampos($crecidos) + 4 * (count($crecidos) + 1) <= $pieArranca - $y) {
+        $campos = $crecidos;
+    }
+
+    // El sobrante se reparte en partes iguales arriba, entre los campos y abajo (2026-10-09: antes
+    // solo entre ellos, con tope de 24 puntos, y con pocos campos quedaba todo apretado arriba).
+    // El mínimo de 4 puntos evita que dos campos se toquen cuando el rótulo va muy cargado.
+    $altoCampos = $medirCampos($campos);
+    $aire = max(4, intdiv($pieArranca - $y - $altoCampos, count($campos) + 1));
+    $y += $aire;
+
+    foreach ($campos as $i => [$etiqueta, , , $mult, $fuerte, $fuente, $texto, $fuenteEtiqueta, $fuenteOcCampo]) {
         $yCampo = $y;
 
         // Las fuentes internas de la impresora no tienen negrita. Se simula imprimiendo el mismo
         // texto dos veces, corrido un punto: los trazos se solapan y quedan un punto más gruesos.
         // Es el truco estándar en TSPL, y a 203 dpi la diferencia se nota sin verse sucio.
-        $fuenteEtiqueta = $fuerte ? $fuenteFuerte : '2';
         $altoEtiqueta   = TSPL_FUENTES[$fuenteEtiqueta]['alto'];
 
         // Con la O/C al lado, el renglón mide lo que la fuente más alta de las dos y cada texto se
         // baja lo que le falta para apoyar en la misma línea: TSPL posiciona por la esquina de
         // ARRIBA, así que sin esto la más chica quedaría colgada del techo del renglón.
-        $altoOc    = ($i === $campoDeLaOc) ? TSPL_FUENTES[$fuenteOc]['alto'] : 0;
+        $altoOc    = $fuenteOcCampo !== null ? TSPL_FUENTES[$fuenteOcCampo]['alto'] : 0;
         $altoRengl = max($altoEtiqueta, $altoOc);
 
         $yEtiqueta = $y + $altoRengl - $altoEtiqueta;
@@ -388,11 +458,11 @@ function tsplDeUnRotulo(array $r) {
 
         // La orden de compra, pegada al final de la etiqueta y en negrita doble (la misma pasada
         // corrida un punto, el truco de siempre: las fuentes de la impresora no tienen negrita).
-        if ($i === $campoDeLaOc) {
+        if ($fuenteOcCampo !== null) {
             $xOc = $izq + mb_strlen($etiqueta) * TSPL_FUENTES[$fuenteEtiqueta]['ancho'];
             foreach ([0, 1] as $corrimiento) {
                 $lineas[] = 'TEXT ' . ($xOc + $corrimiento) . ',' . ($y + $altoRengl - $altoOc)
-                          . ',"' . $fuenteOc . '",0,1,1,"' . textoTspl($textoOc) . '"';
+                          . ',"' . $fuenteOcCampo . '",0,1,1,"' . textoTspl($textoOc) . '"';
             }
         }
 

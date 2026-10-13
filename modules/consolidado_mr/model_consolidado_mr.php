@@ -591,8 +591,9 @@ function transportadorasManualesMr($pdo, array $facturas) {
 //
 // Igual que el transportador: lo que se pone a mano MANDA sobre lo que dice el reporte de la
 // transportadora, y vive en su propia tabla (consolidado_mr_estados_manuales) para que volver a subir
-// el Consolidado MR o un reporte no lo borre. Dejarlo vacío vuelve a mostrar lo del reporte. El grupo
-// del semáforo (entregado, en camino…) sale del estado puesto a mano, con grupoDeEstado().
+// el Consolidado MR no lo borre. Desde el 2026-10-13, subir un REPORTE con "Actualizar transportadoras"
+// sí lo reemplaza en las facturas que el reporte trae con ese dato (ver reporteReemplazaLoManualMr).
+// Dejarlo vacío vuelve a mostrar lo del reporte. El grupo del semáforo (entregado, en camino…) sale del estado puesto a mano, con grupoDeEstado().
 // =================================================================================================
 
 // Los estados del desplegable (además, "Otro…" deja escribir cualquiera).
@@ -852,8 +853,73 @@ function importarArchivoMr($pdo, $rutaArchivo, $idUsuario, $transportadora = nul
     $r['mensaje'] = 'Reporte de transportadora cargado (guías, estados y entregas). ' . $r['mensaje'];
     if ($r['exito']) {
         $r['mensaje'] = cruceDelReporteMr($pdo, $r['facturas'] ?? [], $r['mensaje']);
+        $r['mensaje'] .= reporteReemplazaLoManualMr($pdo, $r);
     }
     return $r;
+}
+
+/**
+ * EL REPORTE MANDA SOBRE LO PUESTO A MANO (2026-10-13, pedido del usuario): al subir un reporte con
+ * "Actualizar transportadoras", las facturas que el reporte trae con estado, fecha de entrega o
+ * transportadora pierden lo que se les había puesto a mano en ESA columna, y muestran lo del reporte.
+ * Lo último que se sube es lo que vale; lo que el reporte no trae (una factura que no está, o que
+ * viene sin fecha) conserva lo puesto a mano. Devuelve el pedazo de mensaje que lo cuenta.
+ *
+ * $r es lo que devuelve importarPedidosExcel(): 'con_estado', 'con_fecha_entrega' y
+ * 'con_transportadora' son números de factura del reporte, que se cruzan con las facturas del
+ * Consolidado MR igual que en la tabla (por la referencia o la factura, ver claveFacturaMr).
+ */
+function reporteReemplazaLoManualMr($pdo, array $r) {
+    // De la clave del número (NU04165672 → NU4165672) a las facturas de SAP que la llevan.
+    $deClave = [];
+    foreach ($pdo->query("SELECT DISTINCT factura, referencia FROM consolidado_mr") as $m) {
+        foreach ([$m['referencia'], $m['factura']] as $numero) {
+            $clave = claveFacturaMr($numero);
+            if ($clave !== '') {
+                $deClave[$clave][(string) $m['factura']] = true;
+            }
+        }
+    }
+    $facturasMr = function (array $delReporte) use ($deClave) {
+        $salida = [];
+        foreach ($delReporte as $numero) {
+            $salida += $deClave[claveFacturaMr($numero)] ?? [];
+        }
+        return array_map('strval', array_keys($salida));
+    };
+    $enTandas = function ($sql, array $facturas) use ($pdo) {
+        $n = 0;
+        foreach (array_chunk($facturas, 500) as $tanda) {
+            $stmt = $pdo->prepare(sprintf($sql, implode(',', array_fill(0, count($tanda), '?'))));
+            $stmt->execute($tanda);
+            $n += $stmt->rowCount();
+        }
+        return $n;
+    };
+
+    try {
+        $pdo->beginTransaction();
+        $estados = $enTandas("UPDATE consolidado_mr_estados_manuales SET estado = NULL
+                               WHERE estado IS NOT NULL AND estado <> '' AND factura IN (%s)", $facturasMr($r['con_estado'] ?? []));
+        $fechas  = $enTandas("UPDATE consolidado_mr_estados_manuales SET fecha_entrega = NULL
+                               WHERE fecha_entrega IS NOT NULL AND factura IN (%s)", $facturasMr($r['con_fecha_entrega'] ?? []));
+        // Sin estado ni fecha a mano, la fila sobra (igual que en guardarEstadoManualMr).
+        $pdo->exec("DELETE FROM consolidado_mr_estados_manuales WHERE (estado IS NULL OR estado = '') AND fecha_entrega IS NULL");
+        $transportadores = $enTandas("DELETE FROM consolidado_mr_envios WHERE factura IN (%s)",
+                                     $facturasMr($r['con_transportadora'] ?? []));
+        $pdo->commit();
+    } catch (PDOException $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('Error pasando el reporte por encima de lo puesto a mano (Consolidado MR): ' . $e->getMessage());
+        return ' OJO: los envíos se guardaron, pero no se pudo reemplazar lo puesto a mano; esas facturas siguen mostrando lo de antes.';
+    }
+
+    $mil = fn($n) => number_format($n, 0, ',', '.');
+    $partes = [];
+    if ($estados)         { $partes[] = $mil($estados) . ' estado(s)'; }
+    if ($fechas)          { $partes[] = $mil($fechas) . ' fecha(s) de entrega'; }
+    if ($transportadores) { $partes[] = $mil($transportadores) . ' transportador(es)'; }
+    return $partes ? ' Se reemplazaron por lo del reporte ' . implode(', ', $partes) . ' que estaban puestos a mano.' : '';
 }
 
 /**

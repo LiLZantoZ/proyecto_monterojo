@@ -239,6 +239,9 @@ a.stat-pill:hover { transform: translateY(-1px); }
 
 /* --- EL MODAL DE DETALLES --- */
 .modal-detalle-posicion { max-width: 640px; }
+/* El estado del producto en el formulario: solo se muestra (2026-10-13). */
+.estado-del-producto { padding: 4px 0; }
+.estado-del-producto .chip-estado-posicion { font-size: 13px; }
 .posicion-encabezado {
     display: flex;
     align-items: center;
@@ -322,3 +325,202 @@ a.stat-pill:hover { transform: translateY(-1px); }
     .campos-estiba, .campos-posicion { grid-template-columns: 1fr 1fr; }
     .grid-posiciones { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
 }
+
+/* =============================================================================================
+   EL PLANO DEL RACK (2026-10-13, pedido del usuario)
+   =============================================================================================
+   Las mismas posiciones de las tarjetas dibujadas donde están: un rack por vez, con sus dos
+   lados, una fila por nivel (N5 arriba) y una columna por módulo·puesto. Ver
+   helper_plano_posiciones.php. Los colores son los de las tarjetas: libre en crema, ocupada
+   (Disponible) en el negro de la marca y los estados de aviso con sus colores. */
+
+/* --- Tarjetas / Plano --- */
+.toggle-vista-posiciones {
+    display: inline-flex;
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--blanco);
+}
+.btn-toggle-vista {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 15px;
+    color: var(--texto);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background .15s, color .15s;
+}
+.btn-toggle-vista + .btn-toggle-vista { border-left: 1px solid var(--borde); }
+.btn-toggle-vista:hover { background: var(--vino-claro); color: var(--vino); }
+.btn-toggle-vista.activo,
+.btn-toggle-vista.activo:hover { background: var(--negro); color: var(--blanco); }
+
+/* En la cabecera (la franja con la foto, ver 08-estilo.css) el selector va como los demás botones de ahí:
+   translúcido con letra clara, y el elegido en vino. Con la clase de la cabecera delante, porque la regla
+   de los enlaces de la franja les pone su propio color. */
+.modulo-header .toggle-vista-posiciones { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .28); }
+.modulo-header .btn-toggle-vista { color: #f5e9e9; }
+.modulo-header .btn-toggle-vista + .btn-toggle-vista { border-left-color: rgba(255, 255, 255, .28); }
+.modulo-header .btn-toggle-vista:hover { background: rgba(255, 255, 255, .16); color: #ffffff; }
+.modulo-header .btn-toggle-vista.activo,
+.modulo-header .btn-toggle-vista.activo:hover { background: var(--vino); color: #ffffff; }
+
+/* --- Los racks --- */
+.plano-posiciones { margin-top: 14px; }
+.plano-racks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.btn-rack-plano {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    background: var(--blanco);
+    color: var(--texto);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all .15s ease;
+}
+.btn-rack-plano small { font-size: 11px; font-weight: 600; color: var(--texto-suave); }
+.btn-rack-plano:hover { border-color: var(--vino); color: var(--vino); }
+.btn-rack-plano.activo { background: var(--vino); border-color: var(--vino); color: var(--blanco); }
+.btn-rack-plano.activo small { color: var(--vino-claro); }
+
+/* --- La leyenda: los mismos nombres y colores que las pastillas --- */
+.plano-leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    border: 1px solid var(--borde);
+    border-radius: 10px;
+    background: var(--crema);
+}
+.plano-leyenda-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--texto);
+}
+.plano-muestra {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid var(--borde);
+    flex-shrink: 0;
+}
+.plano-muestra-libre       { border-color: var(--borde); background: var(--crema); }
+.plano-muestra-inexistente { border-style: dashed; background: transparent; }
+
+/* --- Un rack: el encabezado y sus dos lados --- */
+.plano-rack {
+    border: 1px solid var(--borde);
+    border-radius: 14px;
+    background: var(--blanco);
+    padding: 14px 16px 18px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .05);
+}
+.plano-rack-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--vino);
+}
+.plano-rack-header h4 { margin: 0; font-size: 17px; color: var(--texto); }
+.plano-rack-header h4 i { color: var(--vino); margin-right: 4px; }
+.plano-rack-conteo { font-size: 12px; color: var(--texto-suave); }
+
+.plano-lado + .plano-lado { margin-top: 18px; }
+.plano-lado-titulo {
+    margin: 0 0 7px;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--texto-suave);
+}
+
+/* La rejilla: 24 columnas (12 módulos × 2 puestos) no entran en un celular; se desplaza la
+   rejilla, no la pantalla. */
+.plano-rejilla-scroll { overflow-x: auto; padding-bottom: 4px; }
+.plano-rejilla {
+    display: grid;
+    gap: 4px;
+    min-width: 820px;
+}
+.plano-eje-columna,
+.plano-eje-nivel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--texto-suave);
+}
+.plano-eje-columna small { font-weight: 600; opacity: .75; }
+.plano-eje-nivel { justify-content: flex-end; padding-right: 6px; }
+/* Un poco más de aire antes de cada módulo, para que se lean de a dos puestos. */
+.plano-eje-columna.inicio-modulo,
+.plano-celda.inicio-modulo { margin-left: 5px; }
+
+/* --- La celda: una posición --- */
+.plano-celda {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 1px;
+    border: 2px solid var(--borde);
+    border-radius: 7px;
+    background: var(--crema);
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: -.2px;   /* el SKU de 5 dígitos entra en la celda más angosta */
+    font-weight: 800;
+    line-height: 1.1;
+    color: var(--texto);
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform .12s ease, box-shadow .12s ease, opacity .15s ease;
+}
+.plano-celda:hover,
+.plano-celda:focus-visible {
+    transform: scale(1.1);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .22);
+    border-color: var(--vino);
+    position: relative;
+    z-index: 1;
+}
+.plano-celda-texto { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plano-celda-inexistente {
+    border-style: dashed;
+    background: transparent;
+    cursor: default;
+}
+.plano-celda-inexistente:hover { transform: none; box-shadow: none; border-color: var(--borde); }
+
+/* Los estados: las mismas variables que las tarjetas y las pastillas (arriba en este archivo). */
+.plano-estado-disponible            { border-color: var(--negro); background: var(--negro); color: var(--blanco); }
+.plano-estado-bloqueado             { border-color: var(--pos-piedra); background: var(--pos-piedra-slot); color: var(--pos-piedra-texto); }
+.plano-estado-en-control-de-calidad { border-color: var(--pos-azul); background: var(--pos-azul-slot); color: var(--pos-azul); }
+.plano-estado-defectuoso            { border-color: var(--pos-rojo); background: var(--pos-rojo-slot); color: var(--pos-rojo); }
+.plano-estado-producto-vencido      { border-color: var(--pos-vino); background: var(--pos-vino-slot); color: var(--pos-vino); }
+
+/* Filtrar en el plano apaga lo que no coincide en vez de quitarlo: la forma del rack es el dato. */
+.plano-celda-atenuada { opacity: .18; }
+.plano-celda-atenuada:hover { opacity: .6; }

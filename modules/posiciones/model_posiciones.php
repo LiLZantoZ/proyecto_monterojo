@@ -322,6 +322,22 @@ function estibaDelFormulario($pdo, array $d) {
 }
 
 /**
+ * EL ESTADO SALE DEL PRODUCTO (2026-10-13, pedido del usuario): en Detalles de la posición no se
+ * elige; es el del producto registrado en Administrar productos con ese SKU, lote y vencimiento
+ * (primero el que está sin ubicar, que es el que se va a usar; si no, cualquiera de esa misma
+ * combinación). Null si no hay ninguno registrado: entonces es un producto nuevo y entra Disponible.
+ * El estado se cambia en Administrar productos; "Producto Vencido" sale solo con la fecha.
+ */
+function estadoDelProductoRegistrado($pdo, $sku, $lote, $vence) {
+    $st = $pdo->prepare("SELECT p.estado FROM productos p
+                         WHERE p.sku = ? AND TRIM(p.lote) = TRIM(?) AND p.fecha_vencimiento <=> ?
+                         ORDER BY EXISTS (SELECT 1 FROM posiciones_estibas e WHERE e.id_producto = p.id), p.id LIMIT 1");
+    $st->execute([(string) $sku, (string) $lote, $vence ?: null]);
+    $estado = $st->fetchColumn();
+    return $estado === false ? null : $estado;
+}
+
+/**
  * Pone una estiba en una posición libre. Aprovecha el producto sin ubicar que ya exista (SKU +
  * lote + vencimiento); si no hay, lo crea.
  */
@@ -338,6 +354,8 @@ function agregarEstibaPosicion($pdo, $id, array $d, $idUsuario) {
         return ['exito' => false, 'mensaje' => $e];
     }
     $p = $e['producto'];
+    // El estado no viene del formulario: es el del producto registrado (ver estadoDelProductoRegistrado).
+    $p['estado'] = estadoDelProductoRegistrado($pdo, $p['sku'], $p['lote'], $p['fecha_vencimiento']) ?? 'Disponible';
     $pdo->beginTransaction();
     try {
         // El producto que ya se registró a mano y no está en ninguna posición (el más viejo).
@@ -349,8 +367,10 @@ function agregarEstibaPosicion($pdo, $id, array $d, $idUsuario) {
         $st->execute([$p['sku'], $p['lote'], $p['fecha_vencimiento']]);
         $idProducto = $st->fetchColumn();
         if ($idProducto) {
-            $pdo->prepare("UPDATE productos SET producto = ?, estado = ?, actualizado_el = NOW() WHERE id = ?")
-                ->execute([$p['producto'], $p['estado'], $idProducto]);
+            // Conserva su estado: lo manda Administrar productos.
+            $pdo->prepare("UPDATE productos SET producto = ?, actualizado_el = NOW() WHERE id = ?")
+                ->execute([$p['producto'], $idProducto]);
+            $p['estado'] = $pdo->query('SELECT estado FROM productos WHERE id = ' . (int) $idProducto)->fetchColumn() ?: $p['estado'];
         } else {
             $pdo->prepare("INSERT INTO productos (sku, producto, lote, fecha_vencimiento, estado, origen, id_usuario_registro)
                            VALUES (?, ?, ?, ?, ?, 'posiciones', ?)")
@@ -384,6 +404,12 @@ function actualizarEstibaPosicion($pdo, $id, array $d, $idUsuario) {
         return ['exito' => false, 'mensaje' => $e];
     }
     $p = $e['producto'];
+    // El estado no viene del formulario: se queda el del producto. Si se corrigió el SKU, el lote o el
+    // vencimiento y esa combinación ya está registrada, toma el estado de esa (2026-10-13).
+    $mismo = $p['sku'] === (string) $pos['sku'] && trim((string) $p['lote']) === trim((string) $pos['lote'])
+           && (string) $p['fecha_vencimiento'] === (string) $pos['fecha_vencimiento'];
+    $p['estado'] = ($mismo ? null : estadoDelProductoRegistrado($pdo, $p['sku'], $p['lote'], $p['fecha_vencimiento']))
+                 ?? ($pos['estado_elegido'] ?: 'Disponible');
     $pdo->beginTransaction();
     try {
         $pdo->prepare("UPDATE productos SET sku = ?, producto = ?, lote = ?, fecha_vencimiento = ?, estado = ?, actualizado_el = NOW() WHERE id = ?")

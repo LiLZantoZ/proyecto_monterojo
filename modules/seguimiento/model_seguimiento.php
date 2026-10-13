@@ -565,8 +565,24 @@ function importarPedidosExcel($pdo, $rutaArchivo, $idUsuario, $transportadoraPor
         'nuevos'       => $r['nuevos'],
         // Las facturas del reporte, para decir cuántas cruzan con el Consolidado MR.
         'facturas'     => array_values(array_unique(array_filter(array_column($preparadas, 'numero_factura')))),
+        // Qué trae el reporte de cada factura (2026-10-13): el Consolidado MR reemplaza con esto lo que
+        // se había puesto a mano (ver reporteReemplazaLoManualMr).
+        'con_estado'         => facturasDelReporteCon($preparadas, 'estado'),
+        'con_fecha_entrega'  => facturasDelReporteCon($preparadas, 'fecha_entrega'),
+        'con_transportadora' => facturasDelReporteCon($preparadas, 'transportadora'),
         'actualizados' => $r['actualizados'],
     ];
+}
+
+/** Las facturas de las filas preparadas que traen el dato $campo (no vacío). */
+function facturasDelReporteCon(array $preparadas, $campo) {
+    $salida = [];
+    foreach ($preparadas as $p) {
+        if (($p['numero_factura'] ?? '') !== '' && trim((string) ($p[$campo] ?? '')) !== '') {
+            $salida[(string) $p['numero_factura']] = true;
+        }
+    }
+    return array_keys($salida);
 }
 
 /**

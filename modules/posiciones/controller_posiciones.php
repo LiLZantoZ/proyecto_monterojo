@@ -25,8 +25,10 @@ requierePermiso('modulo_posiciones', urlPanelDelRol($_SESSION['usuario_rol'] ?? 
 // 2026-10-06 no frena ninguna estiba.
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'consultar_cupo') {
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(cupoConciliador($pdo, trim($_GET['sku'] ?? ''), trim($_GET['lote'] ?? ''),
-        ($_GET['fecha_vencimiento'] ?? '') !== '' ? $_GET['fecha_vencimiento'] : null, (int) ($_GET['id_posicion'] ?? 0)));
+    $vence = ($_GET['fecha_vencimiento'] ?? '') !== '' ? $_GET['fecha_vencimiento'] : null;
+    echo json_encode(cupoConciliador($pdo, trim($_GET['sku'] ?? ''), trim($_GET['lote'] ?? ''), $vence, (int) ($_GET['id_posicion'] ?? 0))
+        // El estado del producto registrado con ese SKU, lote y vencimiento (2026-10-13): el modal lo muestra.
+        + ['estado' => estadoDelProductoRegistrado($pdo, trim($_GET['sku'] ?? ''), trim($_GET['lote'] ?? ''), $vence)]);
     exit();
 }
 

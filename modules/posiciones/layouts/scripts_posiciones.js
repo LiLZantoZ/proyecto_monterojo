@@ -37,7 +37,20 @@
     function boton(nombre) { return form.querySelector('[data-boton="' + nombre + '"]'); }
     function mostrar(el, si) { if (el) { el.hidden = !si; } }
 
-    var editables = ['sku', 'cantidad_cajas', 'estiba_completa', 'lote', 'fecha_vencimiento', 'estado', 'observaciones'];
+    var editables = ['sku', 'cantidad_cajas', 'estiba_completa', 'lote', 'fecha_vencimiento', 'observaciones'];
+
+    // EL ESTADO NO SE ELIGE (2026-10-13): es el del producto del SKU en Administrar productos. Con estiba
+    // se muestra el que tiene; al cargar una, el del producto registrado con ese SKU, lote y vencimiento
+    // (lo trae la consulta en vivo), o Disponible si es un producto nuevo.
+    function mostrarEstadoProducto(estado, ayuda) {
+        var chip = texto('estado-producto');
+        if (!chip) { return; }
+        estado = estado || 'Disponible';
+        chip.textContent = estado;
+        chip.className = 'chip-estado-posicion estado-' + String(estado).toLowerCase().replace(/ /g, '-');
+        if (ayuda) { texto('estado-ayuda').textContent = ayuda; }
+    }
+    var AYUDA_ESTADO = 'Sale del producto del SKU (Administrar productos). "Producto vencido" sale solo cuando la fecha ya pasó.';
 
     function bloquear(si) {
         editables.forEach(function (n) { campo(n).disabled = si; });
@@ -82,6 +95,14 @@
         var url = CONF.urlCupo + '&sku=' + encodeURIComponent(sku) + '&lote=' + encodeURIComponent(lote)
                 + '&fecha_vencimiento=' + encodeURIComponent(vence) + '&id_posicion=' + (posicionAbierta && posicionAbierta.tiene ? posicionAbierta.id : 0);
         fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (c) {
+            var editando = posicionAbierta && posicionAbierta.tiene;
+            if (c && c.estado) {
+                mostrarEstadoProducto(c.estado, 'Es el estado del producto registrado en Administrar productos con ese SKU, lote y vencimiento.');
+            } else if (editando) {
+                mostrarEstadoProducto(posicionAbierta.estado_visto, 'Se queda el estado que ya tiene el producto (se cambia en Administrar productos).');
+            } else {
+                mostrarEstadoProducto('Disponible', 'Ese SKU, lote y vencimiento no están registrados en Administrar productos: entra como Disponible.');
+            }
             caja.classList.remove('cupo-ok', 'cupo-no', 'cupo-info');
             if (!c || !c.cupo) {
                 caja.textContent = 'Este producto no está registrado en el Formato Conciliador (se puede ubicar igual).';
@@ -116,9 +137,9 @@
             campo('estiba_completa').checked = !!p.completa;
             campo('lote').value = p.lote || '';
             campo('fecha_vencimiento').value = p.vence || '';
-            campo('estado').value = p.estado || 'Disponible';
             campo('observaciones').value = p.observaciones || '';
         }
+        mostrarEstadoProducto(p.tiene ? p.estado_visto : 'Disponible', AYUDA_ESTADO);
         mostrarProducto();
         if (p.tiene && !campo('sku').value) { texto('producto').textContent = ''; }
         if (p.tiene && p.producto) { texto('producto').textContent = p.producto; texto('producto').classList.remove('ayuda-error'); }
@@ -269,6 +290,16 @@
                 var p = datos(e.target);
                 if (p && form) { abrirDetalle(p); }
             }
+        });
+    }
+
+    // EL PLANO (2026-10-13): tocar una celda abre el MISMO modal que su tarjeta (lleva el mismo data-posicion).
+    var plano = document.querySelector('.plano-posiciones');
+    if (plano) {
+        plano.addEventListener('click', function (e) {
+            var celda = e.target.closest('.plano-celda[data-posicion]');
+            var p = celda ? datos(celda) : null;
+            if (p && form) { abrirDetalle(p); }
         });
     }
 })();

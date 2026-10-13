@@ -811,7 +811,18 @@ tr.fila-sin-maestro:hover {
     color: var(--blanco);
 }
 
+/* Cuando el cuerpo y el pie van dentro de un <form> (como en Detalles de la posición), el form es el
+   hijo de la caja: sin esto no se achica al alto de la caja, el cuerpo no scrollea y los botones del
+   pie quedan afuera de la pantalla (2026-10-13). */
+.modal-caja > form {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
 .modal-cuerpo {
+    min-height: 0;
     padding: 20px;
     overflow-y: auto;   /* el que scrollea es el cuerpo, no el modal entero: la cabecera y los
                            botones se quedan siempre a la vista */

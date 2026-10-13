@@ -170,12 +170,8 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
         // De MENOR a MAYOR por número, comparando como NÚMERO y no como texto: en orden
         // alfabético '4319' va antes que '071' —compara el '4' contra el '0'— y la planilla
         // queda en un orden que no sirve para buscar. Las tiendas sin número, al final.
-        uasort($datos['puntos'], function ($a, $b) {
-            if (($a['numero'] === '') !== ($b['numero'] === '')) {
-                return $a['numero'] === '' ? 1 : -1;
-            }
-            return [(int) $a['numero'], $a['nombre']] <=> [(int) $b['numero'], $b['nombre']];
-        });
+        // El mismo orden que el Consolidado para rótulos (ver compararPuntosDeVenta).
+        uasort($datos['puntos'], 'compararPuntosDeVenta');
 
         $datos['totales'] = [
             'puntos'      => count($datos['puntos']),
@@ -189,7 +185,7 @@ function cajasPorPuntoDeVenta($pdo, array $filtros = []) {
     unset($datos);
 
     // El CEDI con menos tiendas primero, igual que en Consolidados: es el que se resuelve rápido.
-    uasort($porCedi, fn($a, $b) => count($a['puntos']) <=> count($b['puntos']));
+    ordenarCedisPorTiendas($porCedi);
 
     return $porCedi;
 }

@@ -82,6 +82,12 @@
 .rotulo-campos {
     flex: 1;
     min-height: 0;
+    /* El aire que sobra se reparte arriba, entre los campos y abajo (2026-10-09): con pocos campos
+       la letra crece (ver tamanos() en assets/js/rotulo.js) y el bloque queda centrado. El PDF lo
+       hace con padding calculado, porque dompdf no tiene flex. */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
 }
 
 /* 0,8mm, igual que el PDF: con 1,4mm los rótulos de nombres cortos no entraban en el papel (ver
