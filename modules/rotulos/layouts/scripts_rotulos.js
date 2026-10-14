@@ -140,9 +140,9 @@
                     !!datos.exito
                 );
             })
-            .catch(function () {
+            .catch(function (e) {
                 mostrarResultadoImpresion(
-                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'),
                     false
                 );
             })

@@ -82,7 +82,7 @@ switch ($_POST['accion'] ?? '') {
             $ruta = generarBackupUsuarios($pdo, ROOT_PATH . '/backups');
         } catch (Throwable $e) {
             error_log('Error generando el backup: ' . $e->getMessage());
-            guardarMensajeFlashTexto('error', 'No se pudo generar el backup. Intentalo de nuevo.');
+            guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el backup. Intentalo de nuevo.', $e));
             header("Location: {$vista}");
             exit();
         }

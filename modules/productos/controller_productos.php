@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $accion === 'exportar') {
     } catch (Throwable $e) {
         error_log('Error exportando los productos: ' . $e->getMessage());
         @unlink($ruta);
-        guardarMensajeFlashTexto('error', 'No se pudo generar el Excel de los productos.');
+        guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel de los productos.', $e));
         header("Location: {$vista}");
         exit();
     }

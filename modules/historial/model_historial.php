@@ -325,7 +325,7 @@ function restaurarEntregaHistorial($pdo, $idCarga, $cedi, $ordenCompra, $puntoVe
 
     } catch (PDOException $e) {
         error_log('Error restaurando entrega del historial: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo restaurar. Inténtalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo restaurar. Inténtalo de nuevo.', $e)];
     }
 }
 

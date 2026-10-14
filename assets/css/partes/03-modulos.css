@@ -1235,3 +1235,27 @@ tr.fila-total-general td {
 }
 .dialogo-campo:focus { outline: none; border-color: var(--vino); box-shadow: 0 0 0 3px var(--vino-claro); }
 .dialogo-campo.dialogo-campo-vacio { border-color: var(--error); box-shadow: 0 0 0 3px #fdecea; }
+
+/* LA RECOMENDACIÓN DE UN ERROR (2026-10-14): en los avisos y en los mensajes, resaltada aparte del
+   qué pasó, para que se lea de un vistazo qué hacer. Ver config/errores.php y assets/js/errores.js. */
+.recomendacion-error {
+    display: block;
+    margin: 10px 0 0;
+    padding: 9px 12px;
+    border-left: 4px solid var(--vino);
+    border-radius: 8px;
+    background: var(--vino-claro);
+    color: var(--texto);
+    font-size: .92em;
+    line-height: 1.45;
+    text-align: left;
+}
+.recomendacion-error strong {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--vino);
+    font-size: .82em;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.mensaje-sistema-texto p { margin: 0; }

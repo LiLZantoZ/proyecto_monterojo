@@ -73,7 +73,7 @@ function actualizarDatosPerfil($pdo, $idUsuario, $nombre, $cedula, $telefono) {
         return ['exito' => true, 'mensaje' => 'Tus datos se actualizaron.', 'nombre' => $nombre];
     } catch (PDOException $e) {
         error_log('Error actualizando el perfil: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar. Intentalo de nuevo.', $e)];
     }
 }
 
@@ -85,7 +85,7 @@ function actualizarImagenPerfil($pdo, $idUsuario, $rutaRelativa) {
         return ['exito' => true, 'mensaje' => 'Tu foto de perfil se actualizó.'];
     } catch (PDOException $e) {
         error_log('Error guardando la foto de perfil: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar la foto. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar la foto. Intentalo de nuevo.', $e)];
     }
 }
 
@@ -126,6 +126,6 @@ function cambiarContrasenaPerfil($pdo, $idUsuario, $actual, $nueva, $confirmacio
         return ['exito' => true, 'mensaje' => 'Tu contraseña se cambió.'];
     } catch (PDOException $e) {
         error_log('Error cambiando la contraseña: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo cambiar la contraseña. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo cambiar la contraseña. Intentalo de nuevo.', $e)];
     }
 }

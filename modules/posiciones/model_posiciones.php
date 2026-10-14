@@ -421,7 +421,7 @@ function actualizarEstibaPosicion($pdo, $id, array $d, $idUsuario) {
     } catch (PDOException $ex) {
         $pdo->rollBack();
         error_log('Error editando una estiba: ' . $ex->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando los cambios. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando los cambios. No se cambió nada.', $ex)];
     }
     return ['exito' => true, 'mensaje' => "Estiba de {$pos['ubicacion']} actualizada: " . describirEstibaPosicion($p + $e) . '.'];
 }
@@ -455,7 +455,7 @@ function llevarEstibaAPicking($pdo, $id, $idUsuario = null) {
     } catch (PDOException $ex) {
         $pdo->rollBack();
         error_log('Error llevando una estiba a picking: ' . $ex->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo llevar la estiba a picking. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo llevar la estiba a picking. No se cambió nada.', $ex)];
     }
     registrarMovimiento($pdo, 'Picking', $pos, ['id' => null] + $pos, $pos['cantidad_cajas'], $pos['estiba_completa'], $idUsuario, 'A picking');
     return ['exito' => true, 'mensaje' => "Estiba de {$pos['ubicacion']} llevada a picking (" . describirEstibaPosicion($pos)

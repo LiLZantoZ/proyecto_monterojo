@@ -46,7 +46,7 @@ switch ($_POST['accion'] ?? '') {
         $archivo = $_FILES['archivo'] ?? null;
 
         if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK) {
-            guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+            guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
             break;
         }
         if (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
@@ -56,7 +56,7 @@ switch ($_POST['accion'] ?? '') {
         // Sin esto, un POST armado a mano podría pasar una ruta del servidor en tmp_name y hacer que
         // el sistema lea un archivo que no subió nadie.
         if (!is_uploaded_file($archivo['tmp_name'])) {
-            guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+            guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
             break;
         }
 

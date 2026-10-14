@@ -36,3 +36,7 @@ foreach ($hojasDeEstiloApp as $hoja) {
     echo '    <link rel="stylesheet" href="' . BASE_URL . '/assets/css/partes/' . $hoja
        . '?v=' . assetVersion(ROOT_PATH . '/assets/css/partes/' . $hoja) . '">' . "\n";
 }
+
+// MANEJO DE ERRORES (2026-10-14): va en el <head>, antes que los scripts de la pantalla, porque
+// envuelve fetch(). Ver assets/js/errores.js.
+echo '    <script src="' . BASE_URL . '/assets/js/errores.js?v=' . assetVersion(ROOT_PATH . '/assets/js/errores.js') . '"></script>' . "\n";

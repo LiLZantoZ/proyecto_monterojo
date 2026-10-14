@@ -43,6 +43,9 @@ if (APP_ENV === 'production') {
     error_reporting(E_ALL);
 }
 
+// MANEJO DE ERRORES (2026-10-14): todo error sale con qué pasó y una recomendación. Ver config/errores.php.
+require_once __DIR__ . '/errores.php';
+
 // Nombre visible del sistema. Se imprime en el <title>, en el panel del login y en el sidebar.
 // Está acá y no escrito en cada vista para que cambiarlo sea tocar UNA línea: en el sistema de
 // bodega el texto estaba repetido en cada archivo y quedaron títulos que no coinciden entre sí.
@@ -345,8 +348,9 @@ try {
 
 } catch (PDOException $e) {
     // No exponer el detalle de la excepción (puede incluir host/usuario/nombre de BD) al usuario final
-    error_log("Error de conexión a la base de datos: " . $e->getMessage());
-    die("Error de conexión a la base de datos. Por favor, contacta al administrador del sistema.");
+    // Con qué pasó y qué hacer (MySQL apagado, contraseña, base que no existe…): ver explicarError().
+    $referenciaConexion = registrarErrorSistema($e);
+    responderErrorSistema(explicarError($e), $referenciaConexion, APP_ENV !== 'production' ? $e->getMessage() : null);
 }
 
 // Ruta absoluta en disco a la raíz del proyecto (la carpeta que contiene /assets, /modules,
@@ -467,3 +471,6 @@ function sesionUsuarioActiva() {
 function urlPanelDelRol($idRol = null) {
     return BASE_URL . '/inicio';
 }
+
+// Un formulario con un archivo más grande de lo que PHP acepta llega vacío: se avisa (ver config/errores.php).
+revisarSubidaDemasiadoGrande();

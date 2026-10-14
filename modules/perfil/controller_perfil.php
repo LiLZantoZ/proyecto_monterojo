@@ -82,15 +82,15 @@ function subirImagenPerfil($pdo, $idUsuario) {
 
     if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK) {
         $mensaje = ($archivo['error'] ?? null) === UPLOAD_ERR_INI_SIZE || ($archivo['error'] ?? null) === UPLOAD_ERR_FORM_SIZE
-            ? 'Esa imagen pesa demasiado.'
-            : 'No se pudo recibir la imagen. Probá de nuevo.';
+            ? 'Esa imagen pesa demasiado. Recomendación: elegí una foto más liviana o achicala antes de subirla.'
+            : textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE));
         return ['exito' => false, 'mensaje' => $mensaje];
     }
 
     // is_uploaded_file: sin esto, un POST armado a mano podría pasar una ruta del servidor en
     // tmp_name y hacer que el sistema "suba" un archivo que nadie subió.
     if (!is_uploaded_file($archivo['tmp_name'])) {
-        return ['exito' => false, 'mensaje' => 'No se pudo recibir la imagen. Probá de nuevo.'];
+        return ['exito' => false, 'mensaje' => textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE))];
     }
 
     $limiteBytes = 3 * 1024 * 1024;   // 3 MB: de sobra para una foto de perfil

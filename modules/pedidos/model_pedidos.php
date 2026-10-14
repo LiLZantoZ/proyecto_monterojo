@@ -158,7 +158,7 @@ function vaciarPedidos($pdo, array $partes) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error vaciando Pedidos: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error vaciando la tabla. No se borró nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error vaciando la tabla. No se borró nada.', $e)];
     }
     $texto = count($borrado) > 1 ? implode(', ', array_slice($borrado, 0, -1)) . ' y ' . end($borrado) : $borrado[0];
     return ['exito' => true, 'mensaje' => 'Se vació: ' . $texto . '.'];
@@ -313,7 +313,7 @@ function importarBasePedidos($pdo, $rutaArchivo, $idUsuario, $nombreArchivo = nu
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error guardando la base de Pedidos: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando el archivo. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando el archivo. No se cambió nada.', $e)];
     }
 
     $mil = fn($n) => number_format($n, 0, ',', '.');
@@ -505,7 +505,7 @@ function importarArchivoPedidos($pdo, $rutaArchivo, $idUsuario, $nombreArchivo =
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error guardando los pedidos: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando el archivo. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando el archivo. No se cambió nada.', $e)];
     }
 
     $mil = fn($n) => number_format($n, 0, ',', '.');
@@ -605,7 +605,7 @@ function importarInventarioPedidos($pdo, $rutaArchivo, $sede, $idUsuario, $nombr
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error guardando el inventario de Pedidos: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando el archivo. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando el archivo. No se cambió nada.', $e)];
     }
 
     $mil = fn($n) => number_format($n, 0, ',', '.');

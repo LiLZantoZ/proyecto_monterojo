@@ -210,7 +210,7 @@ function importarAlmacenesExito($pdo, $rutaArchivo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando almacenes del Éxito: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar la lista de almacenes en la base.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar la lista de almacenes en la base.', $e)];
     }
 
     $aplicado = aplicarAlmacenesExito($pdo);

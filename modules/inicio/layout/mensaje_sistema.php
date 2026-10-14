@@ -15,7 +15,14 @@ if ($mensajeSistema):
 <div class="mensaje-sistema <?php echo $esExito ? 'mensaje-exito' : 'mensaje-error'; ?>"
      id="mensaje-sistema" role="status" aria-live="polite">
     <i class="fa-solid <?php echo $esExito ? 'fa-circle-check' : 'fa-circle-exclamation'; ?> mensaje-sistema-icono" aria-hidden="true"></i>
-    <p class="mensaje-sistema-texto"><?php echo htmlspecialchars($mensajeSistema['texto']); ?></p>
+    <?php // La recomendación de un error, en su propio renglón (2026-10-14, ver config/errores.php).
+    $partesAviso = preg_split('/\s*Recomendación:\s*/u', (string) $mensajeSistema['texto'], 2); ?>
+    <div class="mensaje-sistema-texto">
+        <p><?php echo htmlspecialchars($partesAviso[0]); ?></p>
+        <?php if (isset($partesAviso[1])): ?>
+            <p class="recomendacion-error"><strong>Recomendación</strong><span><?php echo htmlspecialchars($partesAviso[1]); ?></span></p>
+        <?php endif; ?>
+    </div>
     <button type="button" class="mensaje-sistema-cerrar" id="mensaje-sistema-cerrar" aria-label="Cerrar aviso">&times;</button>
 </div>
 

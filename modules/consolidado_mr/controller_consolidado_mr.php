@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'exporta
     } catch (Throwable $e) {
         error_log('Error exportando el Consolidado MR: ' . $e->getMessage());
         @unlink($ruta);
-        guardarMensajeFlashTexto('error', 'No se pudo generar el Excel del Consolidado MR.');
+        guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel del Consolidado MR.', $e));
         header("Location: {$vista}");
         exit();
     }
@@ -92,7 +92,7 @@ validarCSRF();
 $archivoSubido = function () {
     $archivo = $_FILES['archivo'] ?? null;
     if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK) {
-        guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+        guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
         return null;
     }
     if (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
@@ -101,7 +101,7 @@ $archivoSubido = function () {
     }
     // Sin esto, un POST armado a mano podría pasar una ruta del servidor en tmp_name.
     if (!is_uploaded_file($archivo['tmp_name'])) {
-        guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+        guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
         return null;
     }
     return $archivo['tmp_name'];

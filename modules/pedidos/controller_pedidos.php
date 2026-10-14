@@ -28,7 +28,7 @@ validarCSRF();
 $archivoSubido = function () {
     $archivo = $_FILES['archivo'] ?? null;
     if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($archivo['tmp_name'])) {
-        guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+        guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
         return null;
     }
     if (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {

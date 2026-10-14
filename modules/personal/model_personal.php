@@ -69,7 +69,7 @@ function crearPersona($pdo, $nombre, $documento, $cargo) {
             return ['exito' => false, 'mensaje' => 'Ya hay alguien registrado con ese documento.'];
         }
         error_log('Error creando personal: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar. Inténtalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar. Inténtalo de nuevo.', $e)];
     }
 }
 
@@ -101,7 +101,7 @@ function editarPersona($pdo, $idPersonal, $nombre, $documento, $cargo, $estado) 
             return ['exito' => false, 'mensaje' => 'Ya hay alguien registrado con ese documento.'];
         }
         error_log('Error editando personal: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar. Inténtalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar. Inténtalo de nuevo.', $e)];
     }
 }
 
@@ -138,7 +138,7 @@ function eliminarPersona($pdo, $idPersonal) {
 
     } catch (PDOException $e) {
         error_log('Error eliminando personal: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo eliminar. Inténtalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo eliminar. Inténtalo de nuevo.', $e)];
     }
 }
 

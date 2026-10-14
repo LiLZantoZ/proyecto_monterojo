@@ -1822,7 +1822,7 @@ function importarConsolidado($pdo, $rutaArchivo, $nombreArchivo, $idUsuario) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando el consolidado: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar el archivo en la base.', 'filas' => 0, 'id_carga' => null];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar el archivo en la base.', $e), 'filas' => 0, 'id_carga' => null];
     }
 }
 
@@ -2113,7 +2113,7 @@ function importarMaestroDesdeSap($pdo, $rutaArchivo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando el maestro desde SAP: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar el maestro en la base.', 'filas' => 0, 'sin_empaque' => 0];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar el maestro en la base.', $e), 'filas' => 0, 'sin_empaque' => 0];
     }
 
     $cruzados = completarPluDelMaestro($pdo);
@@ -2493,7 +2493,7 @@ function importarMaestro($pdo, $rutaArchivo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando el maestro: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar el maestro en la base.', 'filas' => 0];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar el maestro en la base.', $e), 'filas' => 0];
     }
 
     completarPluDelMaestro($pdo);

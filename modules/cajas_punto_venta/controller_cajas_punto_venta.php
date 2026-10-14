@@ -63,7 +63,7 @@ if (($_POST['accion'] ?? '') === 'subir_almacenes' && $_SERVER['REQUEST_METHOD']
     if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($archivo['tmp_name'])) {
         // is_uploaded_file: sin esto, un POST armado a mano podría pasar una ruta del servidor en
         // tmp_name y hacer que el sistema lea un archivo que no subió nadie.
-        guardarMensajeFlashTexto('error', 'No se pudo recibir el archivo. Probá de nuevo.');
+        guardarMensajeFlashTexto('error', textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE)));
     } elseif (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
         guardarMensajeFlashTexto('error', 'La lista de almacenes tiene que ser un Excel (.xlsx o .xls).');
     } else {

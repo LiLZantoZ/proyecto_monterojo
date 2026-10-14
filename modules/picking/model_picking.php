@@ -495,7 +495,7 @@ function despacharEntregas($pdo, array $claves, $idUsuario) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error despachando entregas: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo despachar. Inténtalo de nuevo.', 'sin_personal' => []];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo despachar. Inténtalo de nuevo.', $e), 'sin_personal' => []];
     }
 }
 

@@ -27,7 +27,7 @@ try {
 } catch (Throwable $e) {
     error_log('Error exportando el rendimiento: ' . $e->getMessage());
     @unlink($ruta);
-    guardarMensajeFlashTexto('error', 'No se pudo generar el Excel del rendimiento.');
+    guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel del rendimiento.', $e));
     header("Location: {$vista}");
     exit();
 }

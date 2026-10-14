@@ -35,7 +35,7 @@
         opciones.headers = Object.assign({ 'Accept': 'application/json' }, opciones.headers || {});
         opciones.credentials = 'same-origin';
         return fetch(URL_API + '?accion=' + encodeURIComponent(accion), opciones).then(function (r) {
-            return r.json().catch(function () { return { error: 'El servidor respondió algo inesperado (código ' + r.status + ').' }; });
+            return r.json().catch(function (e) { return { error: Errores.texto(e, 'El servidor respondió algo inesperado (código ' + r.status + ').') }; });
         });
     }
 
@@ -142,9 +142,9 @@
         pedir('enviar', { mensaje: texto }).then(function (d) {
             escribiendo(false);
             agregar('assistant', d.respuesta || d.error || 'Sin respuesta.', true, !d.respuesta);
-        }).catch(function () {
+        }).catch(function (e) {
             escribiendo(false);
-            agregar('assistant', 'No se pudo conectar con el servidor. Intentá de nuevo.', true, true);
+            agregar('assistant', Errores.texto(e, 'No se pudo conectar con el servidor. Intentá de nuevo.'), true, true);
         }).finally(function () { bloquear(false); });
     }
 
@@ -177,7 +177,7 @@
                 listaAcciones.appendChild(b);
             });
             panelAcciones.hidden = false;
-        }).catch(function () { agregar('assistant', 'No se pudieron cargar las acciones.', true, true); });
+        }).catch(function (e) { agregar('assistant', Errores.texto(e, 'No se pudieron cargar las acciones.'), true, true); });
     }
 
     function abrirFormulario(nombre) {
@@ -253,10 +253,10 @@
                 agregar('user', '[Acción] ' + accion.etiqueta, true);
                 // El resultado que se muestra es el REAL: si falló, lo dice.
                 agregar('assistant', r.mensaje || r.error || 'Sin respuesta.', true, r.exito !== true);
-            }).catch(function () {
+            }).catch(function (e) {
                 ejecutar.disabled = false;
                 ejecutar.textContent = 'Ejecutar';
-                agregar('assistant', 'No se pudo conectar para ejecutar la acción.', true, true);
+                agregar('assistant', Errores.texto(e, 'No se pudo conectar para ejecutar la acción.'), true, true);
             });
         });
 

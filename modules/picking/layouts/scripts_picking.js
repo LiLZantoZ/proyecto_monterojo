@@ -215,8 +215,8 @@
 
                 modalAsignar.classList.remove('active');
             })
-            .catch(function () {
-                Dialogo.avisar('No se pudo conectar con el servidor para guardar la asignación.');
+            .catch(function (e) {
+                Dialogo.avisar(Errores.texto(e, 'No se pudo conectar con el servidor para guardar la asignación.'));
             })
             .finally(function () {
                 botonGuardar.disabled = false;
@@ -286,8 +286,8 @@
         })
         .then(function (r) { return r.json(); })
         .then(callback)
-        .catch(function () {
-            callback({ exito: false, error: 'No se pudo conectar con el servidor para despachar.' });
+        .catch(function (e) {
+            callback({ exito: false, error: Errores.texto(e, 'No se pudo conectar con el servidor para despachar.') });
         });
     }
 
@@ -709,9 +709,9 @@
                     !!datos.exito
                 );
             })
-            .catch(function () {
+            .catch(function (e) {
                 mostrarResultadoImpresion(
-                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'),
                     false
                 );
             })

@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $accion === 'exportar') {
     } catch (Throwable $e) {
         error_log('Error exportando el Formato Conciliador: ' . $e->getMessage());
         @unlink($ruta);
-        guardarMensajeFlashTexto('error', 'No se pudo generar el Excel del Formato Conciliador.');
+        guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel del Formato Conciliador.', $e));
         header("Location: {$vista}");
         exit();
     }

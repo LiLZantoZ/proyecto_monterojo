@@ -26,7 +26,7 @@ try {
 } catch (Throwable $e) {
     error_log('Error exportando la trazabilidad: ' . $e->getMessage());
     @unlink($ruta);
-    guardarMensajeFlashTexto('error', 'No se pudo generar el Excel de la trazabilidad.');
+    guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel de la trazabilidad.', $e));
     header("Location: {$vista}");
     exit();
 }

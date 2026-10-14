@@ -182,7 +182,7 @@ function crearUsuario($pdo, array $entrada, $contrasena, $confirmacion) {
         return ['exito' => true, 'mensaje' => $mensaje, 'id' => (int) $pdo->lastInsertId()];
     } catch (PDOException $e) {
         error_log('Error creando el usuario: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo crear la cuenta. Intentalo de nuevo.', 'id' => null];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo crear la cuenta. Intentalo de nuevo.', $e), 'id' => null];
     }
 }
 
@@ -234,7 +234,7 @@ function editarUsuario($pdo, $idUsuario, array $entrada, $contrasena, $confirmac
         $pdo->prepare($sql . " WHERE id_usuario = ?")->execute($p);
     } catch (PDOException $e) {
         error_log('Error editando el usuario: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudieron guardar los cambios. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudieron guardar los cambios. Intentalo de nuevo.', $e)];
     }
 
     $mensaje = "Se guardaron los cambios de {$d['nombre']}" . ($cambios ? ' (' . implode('; ', $cambios) . ').' : '.');
@@ -264,7 +264,7 @@ function eliminarUsuario($pdo, $idUsuario, $idQuienElimina) {
         $pdo->prepare("DELETE FROM usuarios WHERE id_usuario = ?")->execute([(int) $actual['id_usuario']]);
     } catch (PDOException $e) {
         error_log('Error eliminando el usuario: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo eliminar la cuenta. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo eliminar la cuenta. Intentalo de nuevo.', $e)];
     }
     borrarFotoUsuario($actual['imagen_url_Usuario']);
 
@@ -293,7 +293,7 @@ function guardarFotoUsuario($pdo, $idUsuario, ?array $archivo, callable $mover) 
     }
     if ($archivo['error'] !== UPLOAD_ERR_OK) {
         return ['exito' => false, 'mensaje' => in_array($archivo['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)
-            ? 'La foto pesa demasiado.' : 'No se pudo recibir la foto. Probá de nuevo.'];
+            ? 'La foto pesa demasiado. Recomendación: elegí una foto más liviana (menos de 3 MB) o achicala antes de subirla.' : textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE))];
     }
     if ($archivo['size'] > USUARIOS_FOTO_MAXIMA) {
         return ['exito' => false, 'mensaje' => 'La foto no puede pesar más de 3 MB.'];
@@ -318,7 +318,7 @@ function guardarFotoUsuario($pdo, $idUsuario, ?array $archivo, callable $mover) 
     } catch (PDOException $e) {
         @unlink($carpeta . '/' . $nombre);
         error_log('Error guardando la foto del usuario: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo guardar la foto. Intentalo de nuevo.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo guardar la foto. Intentalo de nuevo.', $e)];
     }
     borrarFotoUsuario($anterior);
     return ['exito' => true, 'mensaje' => 'foto nueva', 'ruta' => USUARIOS_CARPETA_FOTOS . $nombre];

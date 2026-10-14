@@ -285,8 +285,8 @@
             .then(function (d) {
                 mostrarResultadoImpresion(d.mensaje || d.error || 'No se pudo imprimir.', !!d.exito);
             })
-            .catch(function () {
-                mostrarResultadoImpresion('No se pudo contactar al servidor. Intentá de nuevo.', false);
+            .catch(function (e) {
+                mostrarResultadoImpresion(Errores.texto(e, 'No se pudo contactar al servidor. Intentá de nuevo.'), false);
             })
             .finally(function () {
                 botonEtiquetadora.disabled = false;

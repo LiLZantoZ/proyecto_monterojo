@@ -284,7 +284,7 @@ function importarCubicajes($pdo, $rutaArchivo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando cubicajes: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudieron guardar los cubicajes en la base.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudieron guardar los cubicajes en la base.', $e)];
     }
 
     $partes = [];

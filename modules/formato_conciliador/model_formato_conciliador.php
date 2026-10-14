@@ -129,7 +129,7 @@ function crearRegistrosConciliador($pdo, array $d, array $usuario) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error registrando en el Formato Conciliador: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando el registro. No se cargó nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando el registro. No se cargó nada.', $e)];
     }
     return ['exito' => true, 'mensaje' => ($estibas === 1 ? 'Registro guardado' : "{$estibas} registros guardados (uno por estiba)")
         . ": SKU {$sku}, lote {$lote}" . ($vence !== '' ? ', vence ' . date('d/m/Y', strtotime($vence)) : '')

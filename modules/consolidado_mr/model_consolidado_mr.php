@@ -113,7 +113,7 @@ function importarConsolidadoMr($pdo, $rutaArchivo, $idUsuario) {
         }
     } catch (Throwable $e) {
         error_log('Error leyendo Consolidado MR: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo leer el archivo. Revisá que sea el Excel del Consolidado MR.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo leer el archivo. Revisá que sea el Excel del Consolidado MR.', $e)];
     }
 
     // En "Ctd.facturada" y "Valor neto" gana la PRIMERA columna homónima (el número; la segunda es
@@ -142,7 +142,7 @@ function importarConsolidadoMr($pdo, $rutaArchivo, $idUsuario) {
             $libro = $lector->load($rutaArchivo);
         } catch (Throwable $e) {
             error_log('Error leyendo Consolidado MR: ' . $e->getMessage());
-            return ['exito' => false, 'mensaje' => 'No se pudo leer el archivo completo. Probá de nuevo.'];
+            return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo leer el archivo completo. Probá de nuevo.', $e)];
         }
         $hoja  = $libro->getSheet(0);
         $filas = [];
@@ -276,7 +276,7 @@ function importarConsolidadoMr($pdo, $rutaArchivo, $idUsuario) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error guardando Consolidado MR: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando el archivo. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando el archivo. No se cambió nada.', $e)];
     }
 
     $mil = fn($n) => number_format($n, 0, ',', '.');
@@ -676,7 +676,7 @@ function guardarEstadoManualMr($pdo, $factura, $campo, $valor, $idUsuario) {
             ->execute([$factura]);
     } catch (PDOException $e) {
         error_log('Error guardando el estado a mano del Consolidado MR: ' . $e->getMessage());
-        return ['exito' => false, 'error' => 'No se pudo guardar. Recargá la página y probá de nuevo.'];
+        return ['exito' => false, 'error' => conDetalleDeError('No se pudo guardar. Recargá la página y probá de nuevo.', $e)];
     }
     $fila = buscarFacturaMr($pdo, $factura);
     $envio = $fila['envio'] ?? ['grupo' => 'sin_estado'];

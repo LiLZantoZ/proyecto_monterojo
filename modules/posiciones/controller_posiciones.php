@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'exporta
     } catch (Throwable $e) {
         error_log('Error exportando las posiciones: ' . $e->getMessage());
         @unlink($ruta);
-        guardarMensajeFlashTexto('error', 'No se pudo generar el Excel de las posiciones.');
+        guardarMensajeFlashTexto('error', conDetalleDeError('No se pudo generar el Excel de las posiciones.', $e));
         header("Location: {$vista}");
         exit();
     }
@@ -98,7 +98,7 @@ switch ($accion) {
     case 'importar':
         $archivo = $_FILES['archivo'] ?? null;
         if (!$archivo || $archivo['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($archivo['tmp_name'])) {
-            $r = ['exito' => false, 'mensaje' => 'No se pudo recibir el archivo. Probá de nuevo.'];
+            $r = ['exito' => false, 'mensaje' => textoErrorConRecomendacion(explicarErrorDeSubida($archivo['error'] ?? UPLOAD_ERR_NO_FILE))];
         } elseif (!in_array(strtolower(pathinfo($archivo['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
             $r = ['exito' => false, 'mensaje' => 'El archivo tiene que ser un Excel (.xlsx o .xls).'];
         } else {

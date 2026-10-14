@@ -147,8 +147,8 @@
         })
         .then(function (r) { return r.json(); })
         .then(callback)
-        .catch(function () {
-            callback({ exito: false, error: 'No se pudo conectar con el servidor para restaurar.' });
+        .catch(function (e) {
+            callback({ exito: false, error: Errores.texto(e, 'No se pudo conectar con el servidor para restaurar.') });
         });
     }
 
@@ -219,8 +219,8 @@
         })
         .then(function (r) { return r.json(); })
         .then(callback)
-        .catch(function () {
-            callback({ exito: false, error: 'No se pudo conectar con el servidor para restaurar.' });
+        .catch(function (e) {
+            callback({ exito: false, error: Errores.texto(e, 'No se pudo conectar con el servidor para restaurar.') });
         });
     }
 
@@ -537,9 +537,9 @@
                     !!datos.exito
                 );
             })
-            .catch(function () {
+            .catch(function (e) {
                 mostrarResultadoImpresion(
-                    'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.',
+                    Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'),
                     false
                 );
             })

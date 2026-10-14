@@ -49,7 +49,18 @@
             cabecera.appendChild(titulo);
 
             var cuerpo = elemento('div', 'modal-cuerpo');
-            if (o.texto) { cuerpo.appendChild(elemento('p', 'dialogo-texto', o.texto)); }
+            if (o.texto) {
+                // "… Recomendación: …" (los errores, ver assets/js/errores.js y config/errores.php): la
+                // recomendación va aparte, resaltada, para que se lea qué hacer de un vistazo.
+                var partes = String(o.texto).split(/\s*Recomendación:\s*/);
+                cuerpo.appendChild(elemento('p', 'dialogo-texto', partes[0]));
+                if (partes.length > 1) {
+                    var rec = elemento('div', 'recomendacion-error');
+                    rec.appendChild(elemento('strong', null, 'Recomendación'));
+                    rec.appendChild(elemento('span', null, partes.slice(1).join(' ')));
+                    cuerpo.appendChild(rec);
+                }
+            }
             var campo = null;
             if (o.tipo === 'pedir') {
                 campo = elemento('input', 'dialogo-campo');

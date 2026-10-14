@@ -138,8 +138,8 @@
                 sel.classList.add('guardado');
                 setTimeout(function () { sel.classList.remove('guardado'); }, 1500);
             })
-            .catch(function () {
-                Dialogo.avisar('No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.');
+            .catch(function (e) {
+                Dialogo.avisar(Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'));
                 sel.value = sel.dataset.actual || '';
             })
             .finally(function () { sel.disabled = false; });
@@ -202,8 +202,8 @@
                 el.classList.add('guardado');
                 setTimeout(function () { el.classList.remove('guardado'); }, 1500);
             })
-            .catch(function () {
-                Dialogo.avisar('No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.');
+            .catch(function (e) {
+                Dialogo.avisar(Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'));
                 el.value = el.dataset.actual || '';
             })
             .finally(function () { el.disabled = false; });
@@ -245,8 +245,8 @@
                     }
                     window.location.reload();
                 })
-                .catch(function () {
-                    Dialogo.avisar('No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.');
+                .catch(function (e) {
+                    Dialogo.avisar(Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'));
                     btnGuardarT.disabled = false;
                 });
         });
@@ -272,8 +272,8 @@
                 sel.classList.add('guardado');
                 setTimeout(function () { sel.classList.remove('guardado'); }, 1500);
             })
-            .catch(function () {
-                Dialogo.avisar('No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.');
+            .catch(function (e) {
+                Dialogo.avisar(Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'));
                 sel.value = sel.dataset.actual;
             })
             .finally(function () { sel.disabled = false; });
@@ -303,8 +303,8 @@
                     if (!d.exito) { Dialogo.avisar(d.error || 'No se pudo guardar.'); btnConfirmarContado.disabled = false; return; }
                     window.location.reload();
                 })
-                .catch(function () {
-                    Dialogo.avisar('No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.');
+                .catch(function (e) {
+                    Dialogo.avisar(Errores.texto(e, 'No se pudo contactar al servidor. Revisá la conexión e intentá de nuevo.'));
                     btnConfirmarContado.disabled = false;
                 });
         });

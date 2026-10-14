@@ -165,7 +165,7 @@ function importarMaestroExito($pdo, $rutaArchivo) {
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error importando excepciones de Éxito: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando las excepciones. No se cambió nada.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando las excepciones. No se cambió nada.', $e)];
     }
 
     $partes = [];

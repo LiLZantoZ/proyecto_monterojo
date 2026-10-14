@@ -900,7 +900,7 @@ function importarFacturacionSap($pdo, $rutaArchivo, $idUsuario, array $encabezad
         $libro = $lector->load($rutaArchivo);
     } catch (Throwable $e) {
         error_log('Error leyendo facturación SAP: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'No se pudo leer el archivo de SAP. Revisá que sea el Excel correcto.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('No se pudo leer el archivo de SAP. Revisá que sea el Excel correcto.', $e)];
     }
 
     $hoja    = $libro->getSheet(0);
@@ -1034,7 +1034,7 @@ function importarFacturacionSap($pdo, $rutaArchivo, $idUsuario, array $encabezad
     } catch (PDOException $e) {
         $pdo->rollBack();
         error_log('Error guardando facturación SAP: ' . $e->getMessage());
-        return ['exito' => false, 'mensaje' => 'Hubo un error guardando las facturas. No se cambió nada en el tablero.'];
+        return ['exito' => false, 'mensaje' => conDetalleDeError('Hubo un error guardando las facturas. No se cambió nada en el tablero.', $e)];
     }
 
     $partes = [];
